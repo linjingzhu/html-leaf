@@ -76,9 +76,33 @@ check('Preview Edit provides an isolated direct source editor for Markdown and J
 check('Direct source input is immediate, undoable, bounded, and metadata guarded',
   js.includes("if(!directSourceUndoTokens.has(data.token)){pushUndo(page)")&&js.includes('page.source=data.source')&&
   js.includes('data.source.length>50_000_000')&&js.includes('editorArtifactReport?.(data.source)'));
+check('Clear targets its own View without an active-Inspector guard',
+  js.includes('pendingClearPageId=pageId;')&&js.includes('const selectionBelongsToPage=selectedElementFrame&&frameToPageId(selectedElementFrame)===page.id')&&
+  !/function openClearHtmlDialog\(slot\)[\s\S]{0,900}withUnsavedInspectorGuard/.test(js));
+check('Hierarchy always displays object type at the right edge',
+  js.includes('function hierarchyObjectType(el)')&&js.includes('<span class="hierarchy-type">')&&
+  read('src/renderer/styles.css').includes('.hierarchy-type{flex:none;margin-left:auto'));
+check('Hierarchy observes Page load and author DOM changes immediately',
+  js.includes('function bindHierarchyObserver(frame)')&&js.includes('observer.observe(doc.body,{subtree:true,childList:true,characterData:true,attributes:true})')&&
+  js.includes('bindHierarchyObserver(frame);'));
+check('Shift resize snaps dragged edges to nearby object alignment guides',
+  js.includes('const snapAdjustment=(position,guides)=>')&&js.includes("if(moveEvent.shiftKey&&(direction.includes('e')||direction.includes('w')))")&&
+  js.includes("if(moveEvent.shiftKey&&(direction.includes('n')||direction.includes('s')))"));
+check('Edit outline is 3px and View tool rows are 20 percent taller',
+  read('src/renderer/styles.css').includes('--view-head-h:34px')&&
+  read('src/renderer/styles.css').includes('outline:3px solid #ff3f46')&&
+  read('src/renderer/styles.css').includes('height:var(--view-head-h);flex:0 0 var(--view-head-h)'));
+check('A source document has one Page identity and one Compare binding',
+  js.includes('function pageDocumentKey(page)')&&js.includes('function loadedPageForPath(sourcePath)')&&
+  js.includes('This document is already open. Focused the existing Page.')&&js.includes('function bindPageToSlot(slot,nextPageId)')&&
+  js.includes('samePageDocument(nextPageId,state.views[other])'));
+check('Markdown and PDF Edit controls are enabled in their visual Views',
+  js.includes('function isDirectSourceEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)')&&
+  js.includes("const pdfAvailable=page?.documentType==='pdf'&&!!frame")&&js.includes("frame.dataset.previewRuntime=isPdfNativeEdit(page,slot)?'pdf-native-editor':'document-readonly'")&&
+  js.includes('Use the native PDF toolbar to highlight, draw, annotate, fill, sign'));
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
 const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
-console.log(`Leaf v0.5.16 Page export, cross-view search, and About QA: ${passed}/24 PASS`);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/31 PASS`);

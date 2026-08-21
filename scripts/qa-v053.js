@@ -19,8 +19,8 @@ check('Fold headers use subtle brighter treatment',css.includes('.property-group
 check('Collapsed invalid group exposes errors',js.includes('group-error-count')&&js.includes('group.open=true'));
 check('Code follows active visual Page',js.includes('const currentPageId=currentActivePageId()')&&js.includes('state.views.codePreview=currentPageId')&&js.includes('state.views.codePage=currentPageId'));
 check('Code enters source editor mode',js.includes("activeSlots.code='editor'"));
-check('Code Preview and Source cannot diverge',js.includes("if(key==='codePreview'||key==='codePage')")&&js.includes('state.views.codePreview=nextPageId')&&js.includes('state.views.codePage=nextPageId'));
-check('Split retains distinct independent Page bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('state.views.right!==leftId')&&js.includes("state.views[activeSlots.split==='right'?'right':'left']=pageId"));
+check('Code Preview and Source cannot diverge',js.includes("if(slot==='codePreview'||slot==='codePage')")&&js.includes('state.views.codePreview=nextPageId')&&js.includes('state.views.codePage=nextPageId'));
+check('Split retains distinct independent Page bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('!samePageDocument(state.views.right,leftId)')&&js.includes("bindPageToSlot(activeSlots.split==='right'?'right':'left',pageId)"));
 check('File menu uses the current leaf-content terminology',(html.includes('New Page')&&html.includes('Save Page')&&html.includes('Save Page As'))||(html.includes('New Document')&&html.includes('Save Document')&&html.includes('Save Document As')&&!html.includes('New Project <kbd>')));
 
 for(const script of ['qa-v052.js','qa-source-fidelity.js']){

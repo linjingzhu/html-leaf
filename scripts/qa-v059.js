@@ -16,8 +16,8 @@ check('Hierarchy defaults to editable Name mode',js.includes('hierarchyNameMode:
 check('Root is excluded by SelectionManager and Hierarchy handlers',js.includes("['HTML','BODY'].includes(element.tagName)")&&js.includes("if(node.depth===0)return")&&html.includes('id="hierarchyTree"'));
 check('Text CSS exposes at least 34 direct style properties',js.match(/key:'[^']+',label:'[^']+',property:'[^']+'/g)?.length>=34&&(js.includes("data-inspector-group=\"Text CSS\"")||js.includes("'Appearance/Text CSS'")));
 check('Text CSS values are read and applied through a shared property map',js.includes('TEXT_CSS_FIELDS.forEach(field=>{values[field.key]')&&js.includes("el.style[field.property]="));
-check('Split guarantees distinct left and right document bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('state.views.right!==leftId')&&js.includes("state.views.right=alternate.id"));
-check('Split selector collision swaps the opposite binding',js.includes("key==='left'&&nextPageId===state.views.right")&&js.includes("key==='right'&&nextPageId===state.views.left"));
+check('Split guarantees distinct left and right document bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('!samePageDocument(state.views.right,leftId)')&&js.includes("state.views.right=alternate.id"));
+check('Split selector collision swaps the opposite binding',js.includes('function bindPageToSlot(slot,nextPageId)')&&js.includes("const other=slot==='left'?'right':'left'")&&js.includes('samePageDocument(nextPageId,state.views[other])'));
 check('Used panel contains list and lower sandboxed preview',html.includes('id="usedComponentsList"')&&html.includes('id="usedComponentPreviewFrame" sandbox=""'));
 check('Used preview enforces a no-script Content Security Policy',js.includes("default-src 'none'; img-src data:; style-src 'unsafe-inline'"));
 check('Document selection synchronizes one-way into Used',js.includes('function syncUsedSelectionFromElement(')&&js.includes('usedDocumentSelectionSignature=null;selectedUsedComponentToken'));

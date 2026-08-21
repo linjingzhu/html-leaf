@@ -21,6 +21,12 @@ Project (.prj)                       Ctrl+N
 - `Save Page As` explicitly supports HTML, Markdown, JSON, and rendered PDF output. Cross-format exports leave the editable Page unchanged, while same-format Save As adopts the new file path.
 - Preview, both Compare panes, Code Preview, and Code Source all provide Search. Matches are highlighted without changing the Page DOM, and Enter/Shift+Enter moves to the next/previous result.
 - The final main-menu item is `Help`, with an `About Leaf` product-information dialog.
+- Clear acts on the clicked View even when another View is active. Unchanged Pages clear immediately and unsaved Pages retain the save/discard prompt.
+- Hierarchy updates from the loaded DOM as it changes and shows each object's type at the right edge.
+- Holding Shift while resizing snaps the dragged edge to nearby object edges and centers within 6px.
+- Edit uses a 3px red outline, and View title/search rows are 20% taller.
+- A source file is represented by one Page and cannot be opened into two Compare windows; duplicate imports focus the existing Page.
+- Markdown source editing works in every visual View. PDF Edit enables the native PDF annotation, highlight, fill, sign, undo/redo, and download tools.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 

@@ -34,6 +34,18 @@ Search is available in Preview, both Compare panes, Code Preview, and Code Sourc
 
 The main menu now ends with `Help > About Leaf`, which opens a keyboard-accessible product-information dialog.
 
+Clear now resolves its target from the clicked View instead of the active Inspector. An unchanged inactive Page clears immediately without activating that View, while unsaved content still uses the save/discard/cancel decision.
+
+Hierarchy displays an always-visible object type at the right edge. A per-frame mutation observer refreshes the tree after Page load and author DOM changes without waiting for a selection change. Editor overlays and runtime metadata remain excluded.
+
+Object resize handles collect nearby object edge and center guides when a drag starts. Holding Shift snaps the moving edge to a guide within 6px; without Shift the existing free resize behavior is unchanged.
+
+Edit mode now uses a 3px red inset outline. The View title row containing Edit and Search is 34px high, up from 28px.
+
+Leaf now assigns one identity to each source path. Importing the same source file focuses the existing Page, and selecting an already-visible Compare document swaps the opposite binding rather than duplicating it.
+
+Markdown and JSON direct-source Edit is available from every visual View. PDF Edit enables the bundled Chromium PDF viewer's native annotation surface for highlighting, drawing, form filling, signatures, undo/redo, and downloading the edited PDF; Leaf does not decode the PDF binary into application source.
+
 ## Supported Page formats
 
 - HTML / HTM
@@ -41,7 +53,7 @@ The main menu now ends with `Help > About Leaf`, which opens a keyboard-accessib
 - JSON
 - PDF
 
-Markdown and JSON Pages can be edited directly inside Preview by enabling the View's `Edit` toggle. Source changes update the Page immediately, participate in Undo/Redo, and retain the existing atomic-save and source-metadata protections. Disabling Edit restores the rendered Markdown preview or the formatted JSON preview. Invalid JSON remains editable and is shown with a validation diagnostic instead of being discarded.
+Markdown and JSON Pages can be edited directly in Preview, Compare, and Code Preview by enabling that View's `Edit` toggle. Source changes update the Page immediately, participate in Undo/Redo, and retain the existing atomic-save and source-metadata protections. Disabling Edit restores the rendered Markdown preview or the formatted JSON preview. Invalid JSON remains editable and is shown with a validation diagnostic instead of being discarded.
 
 Animated WebP is not registered as an independent Page format.
 
@@ -51,10 +63,10 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 Page export, cross-view search, About, hover inspection, and source-edit QA: 24/24
+- v0.5.16 Page lifecycle, editing, hierarchy, layout, export, search, and About QA: 31/31
 - Main-process Save Page As format and PDF rendering QA: 7/7
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional and adversarial QA: 29/29
-- Packaged Electron functional and adversarial QA: 29/29
+- Source Electron functional and adversarial QA: 35/35
+- Packaged Electron functional and adversarial QA: 35/35
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS

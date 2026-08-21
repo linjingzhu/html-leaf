@@ -82,10 +82,32 @@ async function main(){
   await sleep(100);await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await waitFor(`document.querySelector('#singleFrame').dataset.previewRuntime==='document-readonly'`);
   const markdownPreview=await evaluate(`(()=>{const doc=document.querySelector('#singleFrame').contentDocument;return{heading:doc.querySelector('h1')?.textContent,strong:doc.querySelector('strong')?.textContent}})()`);
   check('Markdown source edits directly and returns to rendered Preview',markdownEdit==='true'&&markdownPreview.heading==='Edited in Preview'&&markdownPreview.strong==='Markdown',JSON.stringify({markdownEdit,markdownPreview}));
+  const pageCountBeforeDuplicate=await evaluate(`document.querySelectorAll('.tree-row[data-node-id]').length`);
+  await dropPageFixture(path.join(__dirname,'..','tests','page-fixtures','focus-edit.md'));
+  const duplicateImport=await evaluate(`({before:${pageCountBeforeDuplicate},after:document.querySelectorAll('.tree-row[data-node-id]').length,selected:document.querySelector('.tree-row.selected .label')?.textContent})`);
+  check('Importing the same source document focuses its existing Page',duplicateImport.after===duplicateImport.before&&duplicateImport.selected==='focus-edit',JSON.stringify(duplicateImport));
   await evaluate(`document.querySelector('[data-mode="split"]').click()`);await sleep(180);
   const compareBoundary=await evaluate(`({mode:document.querySelector('[data-mode="split"]').classList.contains('active'),leftDisabled:document.querySelector('[data-edit-slot="left"]').disabled,leftType:document.querySelector('#leftFrame').dataset.previewRuntime})`);
-  check('Markdown and JSON direct source editing remains scoped to Preview',compareBoundary.mode&&compareBoundary.leftDisabled&&compareBoundary.leftType==='document-readonly',JSON.stringify(compareBoundary));
+  await evaluate(`document.querySelector('[data-edit-slot="left"]').click()`);await waitFor(`document.querySelector('#leftFrame').dataset.directSourceReady==='true'`);
+  const compareMarkdownEdit=await evaluate(`({runtime:document.querySelector('#leftFrame').dataset.previewRuntime,pressed:document.querySelector('[data-edit-slot="left"]').getAttribute('aria-pressed')})`);
+  check('Markdown Edit is available in Compare Views',compareBoundary.mode&&!compareBoundary.leftDisabled&&compareBoundary.leftType==='document-readonly'&&compareMarkdownEdit.runtime==='direct-source-editor'&&compareMarkdownEdit.pressed==='true',JSON.stringify({compareBoundary,compareMarkdownEdit}));
+  await evaluate(`document.querySelector('[data-edit-slot="left"]').click()`);await waitFor(`document.querySelector('#leftFrame').dataset.previewRuntime==='document-readonly'`);
+  await evaluate(`document.querySelector('[data-clear-slot="right"]').click()`);await sleep(60);
+  const inactiveClearPrompt=await evaluate(`({open:document.querySelector('#clearHtmlModal').classList.contains('show'),target:document.querySelector('#clearHtmlTarget').textContent,leftActive:document.querySelector('[data-view-slot="left"]').classList.contains('active-view')})`);
+  const inactiveClearResult=await evaluate(`({rightEmpty:document.querySelector('[data-view-slot="right"]').classList.contains('is-empty'),leftText:document.querySelector('#leftFrame').contentDocument.body.textContent,leftActive:document.querySelector('[data-view-slot="left"]').classList.contains('active-view')})`);
+  check('Clear executes immediately for an inactive unchanged View without switching the active View',!inactiveClearPrompt.open&&inactiveClearPrompt.leftActive&&inactiveClearResult.rightEmpty&&inactiveClearResult.leftText.includes('Edited in Preview')&&inactiveClearResult.leftActive,JSON.stringify({inactiveClearPrompt,inactiveClearResult}));
+  await evaluate(`(()=>{const left=document.querySelector('#leftPageSelect'),right=document.querySelector('#rightPageSelect');right.value=left.value;right.dispatchEvent(new Event('change',{bubbles:true}))})()`);await sleep(120);
+  const distinctCompare=await evaluate(`({left:document.querySelector('#leftPageSelect').value,right:document.querySelector('#rightPageSelect').value})`);
+  check('A document selected in the other Compare View is swapped, never duplicated',distinctCompare.left&&distinctCompare.right&&distinctCompare.left!==distinctCompare.right,JSON.stringify(distinctCompare));
   await evaluate(`document.querySelector('[data-mode="preview"]').click()`);await sleep(120);
+
+  await dropPageFixture(path.join(__dirname,'..','tests','page-fixtures','pdf-edit.pdf'));
+  await sleep(250);
+  const pdfBeforeEdit=await evaluate(`({disabled:document.querySelector('[data-edit-slot="single"]').disabled,runtime:document.querySelector('#singleFrame').dataset.previewRuntime})`);
+  await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(80);
+  const pdfEdit=await evaluate(`({pressed:document.querySelector('[data-edit-slot="single"]').getAttribute('aria-pressed'),runtime:document.querySelector('#singleFrame').dataset.previewRuntime,inspector:document.querySelector('#inspectorBody').textContent})`);
+  check('PDF Edit enables the native annotation View',!pdfBeforeEdit.disabled&&pdfBeforeEdit.runtime==='document-readonly'&&pdfEdit.pressed==='true'&&pdfEdit.runtime==='pdf-native-editor'&&pdfEdit.inspector.includes('PDF Edit'),JSON.stringify({pdfBeforeEdit,pdfEdit}));
+  await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(40);
 
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true}))`);await sleep(60);
   await evaluate(`(()=>{const input=document.querySelector('#modalInput');input.value='Manual Project';document.querySelector('#modalConfirm').click()})()`);await sleep(100);
@@ -131,12 +153,20 @@ async function main(){
   fs.writeFileSync(path.join(__dirname,'qa-evidence-search-v0516.png'),Buffer.from(searchScreenshot.data,'base64'));
   await evaluate(`(()=>{const input=document.querySelector('[data-view-search="single"] input');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
   await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(80);
-  const edit=await evaluate(`(()=>{const pane=document.querySelector('#singleView'),button=document.querySelector('[data-edit-slot="single"]');return{pressed:button.getAttribute('aria-pressed'),pane:pane.classList.contains('edit-active'),buttonColor:getComputedStyle(button).backgroundColor,border:getComputedStyle(pane).borderTopColor}})()`);
-  check('Edit activation turns both button and View outline red',edit.pressed==='true'&&edit.pane&&/rgb\((217, 60, 60|239, 77, 77)\)/.test(`${edit.buttonColor} ${edit.border}`),JSON.stringify(edit));
+  const edit=await evaluate(`(()=>{const pane=document.querySelector('#singleView'),button=document.querySelector('[data-edit-slot="single"]'),head=pane.querySelector('.view-pane-head');return{pressed:button.getAttribute('aria-pressed'),pane:pane.classList.contains('edit-active'),buttonColor:getComputedStyle(button).backgroundColor,outline:getComputedStyle(pane).outlineColor,outlineWidth:parseFloat(getComputedStyle(pane).outlineWidth),deviceScale:devicePixelRatio,headHeight:getComputedStyle(head).height}})()`);
+  check('Edit activation uses a visible 3px red outline and a 20 percent taller tool row',edit.pressed==='true'&&edit.pane&&edit.buttonColor==='rgb(217, 60, 60)'&&edit.outline==='rgb(255, 63, 70)'&&edit.outlineWidth>=2.5&&parseFloat(edit.headHeight)===34,JSON.stringify(edit));
 
   await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),target=frame.contentDocument.querySelector('h1');target.dispatchEvent(new frame.contentWindow.MouseEvent('pointerdown',{bubbles:true,cancelable:true}));})()`);await sleep(90);
   const inspector=await evaluate(`(()=>{const body=document.querySelector('#inspectorBody'),name=body.querySelector('.node-name');return{name:name?.textContent,parents:body.querySelectorAll(':scope > details.property-group').length,nested:body.querySelectorAll('.property-group .property-subgroup').length,nameSize:parseFloat(getComputedStyle(name).fontSize),resetVisible:document.querySelector('#resetInspectorBtn').getBoundingClientRect().width}})()`);
   check('Inspector shows a large object name and two-level folds',inspector.name==='Hero Title'&&inspector.parents>=3&&inspector.nested>=5&&inspector.nameSize>=15&&inspector.resetVisible===0,JSON.stringify(inspector));
+
+  const hierarchyBefore=await evaluate(`(()=>{const rows=[...document.querySelectorAll('#hierarchyTree .hierarchy-row')];const frame=document.querySelector('#singleFrame'),section=frame.contentDocument.createElement('section');section.dataset.hbeName='Live Added';section.textContent='Live hierarchy node';frame.contentDocument.body.appendChild(section);return{rows:rows.length,types:rows.map(row=>row.querySelector('.hierarchy-type')?.textContent)}})()`);
+  await waitFor(`[...document.querySelectorAll('#hierarchyTree .hierarchy-label')].some(label=>label.textContent==='Live Added')`);
+  const hierarchyAfter=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),rows=[...document.querySelectorAll('#hierarchyTree .hierarchy-row')];const added=rows.find(row=>row.querySelector('.hierarchy-label')?.textContent==='Live Added');frame.contentDocument.querySelector('[data-hbe-name="Live Added"]')?.remove();return{rows:rows.length,type:added?.querySelector('.hierarchy-type')?.textContent,allTyped:rows.every(row=>!!row.querySelector('.hierarchy-type'))}})()`);
+  check('Hierarchy shows right-side object types and updates on DOM mutation',hierarchyBefore.types.every(Boolean)&&hierarchyAfter.rows===hierarchyBefore.rows+1&&hierarchyAfter.type==='section'&&hierarchyAfter.allTyped,JSON.stringify({hierarchyBefore,hierarchyAfter}));
+
+  const shiftSnap=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),view=frame.contentWindow,doc=frame.contentDocument,target=doc.querySelector('h1'),peer=doc.querySelector('p'),handle=doc.querySelector('[data-scale-handle="e"]'),start=target.getBoundingClientRect();handle.dispatchEvent(new view.PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:31,button:0,clientX:start.right,clientY:start.top+(start.height/2)}));view.dispatchEvent(new view.PointerEvent('pointermove',{bubbles:true,cancelable:true,pointerId:31,button:0,clientX:start.right-30,clientY:start.top+(start.height/2)}));view.dispatchEvent(new view.PointerEvent('pointermove',{bubbles:true,cancelable:true,pointerId:31,button:0,shiftKey:true,clientX:start.right-4,clientY:start.top+(start.height/2)}));view.dispatchEvent(new view.PointerEvent('pointerup',{bubbles:true,cancelable:true,pointerId:31,button:0,shiftKey:true,clientX:start.right-4,clientY:start.top+(start.height/2)}));const end=target.getBoundingClientRect(),peerRect=peer.getBoundingClientRect();return{difference:Math.abs(end.right-peerRect.right),width:target.style.width,sourceChanged:document.querySelector('#sourceEditor').value.includes(target.style.width)}})()`);
+  check('Shift resize snaps an object edge to a nearby peer alignment',shiftSnap.difference<=1&&!!shiftSnap.width,JSON.stringify(shiftSnap));
 
   await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),doc=frame.contentDocument,target=doc.querySelector('p'),previous=doc.querySelector('h1');target.dispatchEvent(new frame.contentWindow.MouseEvent('mouseover',{bubbles:true,cancelable:true,relatedTarget:previous}))})()`);await sleep(60);
   const hoverInspection=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),doc=frame.contentDocument,highlight=doc.querySelector('[data-editor-overlay="hover-highlight"]'),tip=doc.querySelector('[data-editor-overlay="hover-tooltip"]'),selected=[...doc.querySelectorAll('[data-editor-overlay="1"]')].find(node=>node.querySelector('[data-scale-handle]'));return{highlight:highlight?.style.display,highlightWidth:parseFloat(highlight?.style.width),tooltip:tip?.style.display,text:tip?.textContent,tooltipLeft:parseFloat(tip?.style.left),tooltipTop:parseFloat(tip?.style.top),selection:selected?.style.display,hierarchySelected:document.querySelectorAll('#hierarchyTree .hierarchy-row.selected').length,inspectorName:document.querySelector('#inspectorBody .node-name')?.textContent}})()`);
@@ -157,6 +187,6 @@ async function main(){
 
   const screenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(__dirname,'qa-evidence-v0516.png'),Buffer.from(screenshot.data,'base64'));
-  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/29 PASS`);socket.close();
+  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/35 PASS`);socket.close();
 }
 main().catch(error=>{console.error(error.stack||error);process.exit(1);});

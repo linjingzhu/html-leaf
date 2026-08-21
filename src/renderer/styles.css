@@ -40,6 +40,7 @@
   --control-h:30px;
   --row-h:27px;
   --section-h:28px;
+  --view-head-h:34px;
   --sidebar-width:260px;
   --inspector-width:300px;
   --split-left:50%;
@@ -283,9 +284,9 @@ body.is-resizing .resize-shield{display:block}
   background:var(--canvas);border:1px solid transparent
 }
 .view-pane.active-view,.code-editor-pane.active-view{border-color:var(--focus-ring)}
-.view-pane.edit-active{border-color:#ef4d4d!important;box-shadow:inset 0 0 0 1px #ef4d4d}
+.view-pane.edit-active{border-color:transparent!important;outline:3px solid #ff3f46;outline-offset:-3px;box-shadow:inset 0 0 12px rgba(255,63,70,.18)}
 .view-pane-head{
-  height:var(--section-h);flex:0 0 var(--section-h);display:flex;align-items:center;gap:7px;padding:0 7px;
+  height:var(--view-head-h);flex:0 0 var(--view-head-h);display:flex;align-items:center;gap:7px;padding:0 7px;
   background:var(--panel);border-bottom:1px solid var(--border);color:var(--text-secondary);font-size:11px
 }
 .view-name{font-weight:600}
@@ -332,7 +333,7 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:block}
 }
 .viewport-size-fields>span{padding-bottom:8px;color:var(--muted)}
 .html-drop-zone{
-  display:none;position:absolute;inset:var(--section-h) 0 0;z-index:12;
+  display:none;position:absolute;inset:var(--view-head-h) 0 0;z-index:12;
   align-items:center;justify-content:center;flex-direction:column;gap:6px;
   background:var(--canvas);border:1px dashed var(--border-strong);
   color:var(--text-secondary);text-align:center;pointer-events:none
@@ -347,7 +348,7 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:block}
 }
 .view-pane.is-empty .preview-canvas{display:none}
 .code-editor-pane.is-empty .code-area{display:none}
-.code-drop-zone{inset:var(--section-h) 0 0}
+.code-drop-zone{inset:var(--view-head-h) 0 0}
 
 /* Code */
 .code-area{min-height:0;flex:1;position:relative;background:var(--editor,#14171c)}
@@ -675,7 +676,7 @@ body.document-view-only .document-fullscreen-target .viewport-zoom-indicator{dis
 .object-item{display:grid;grid-template-columns:22px 1fr auto;gap:7px;align-items:center;min-height:34px;padding:4px 6px;border-radius:4px;cursor:grab}.object-item:hover{background:var(--hover)}
 .object-icon{width:20px;height:20px;display:grid;place-items:center;background:var(--panel-secondary);border-radius:4px}.object-name{font-size:11px}.object-kind,.object-jira{font-size:9px;color:var(--muted)}.object-jira.native{color:var(--success)}.object-jira.converted{color:var(--warning)}.object-jira.lossy{color:#e58a3a}
 .left-horizontal-splitter{cursor:row-resize}.splitter-handle.horizontal::after{left:0!important;right:0!important;top:50%!important;bottom:auto!important;width:auto!important;height:1px!important;transform:translateY(-.5px)!important}
-.hierarchy-panel{display:grid;grid-template-rows:var(--section-h) minmax(0,1fr);min-height:0}.hierarchy-tree{overflow:auto;padding:5px}.hierarchy-row{height:27px;display:flex;align-items:center;gap:5px;border-radius:3px;font-size:10px}.hierarchy-row:hover{background:var(--hover)}.hierarchy-row.selected{background:var(--selection-bg)}
+.hierarchy-panel{display:grid;grid-template-rows:var(--section-h) minmax(0,1fr);min-height:0}.hierarchy-tree{overflow:auto;padding:5px}.hierarchy-row{height:27px;display:flex;align-items:center;gap:5px;border-radius:3px;font-size:10px}.hierarchy-row:hover{background:var(--hover)}.hierarchy-row.selected{background:var(--selection-bg)}.hierarchy-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hierarchy-type{flex:none;margin-left:auto;padding:1px 5px;border-radius:8px;background:var(--panel-secondary);color:var(--muted);font-size:8px;letter-spacing:.02em;text-transform:uppercase}
 .hierarchy-row.hierarchy-root{color:var(--muted);font-weight:700}.hierarchy-row.hierarchy-root:hover{background:transparent}
 .jira-check-btn{height:24px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text-secondary);font-size:10px}.jira-check-btn.stale::after{content:" *"}.jira-check-btn.blocked{color:var(--error);border-color:var(--error)}
 .jira-check-popover{position:fixed;right:18px;top:74px;z-index:100000;width:360px;background:var(--panel);border:1px solid var(--border-strong);border-radius:7px;box-shadow:var(--shadow-popover)}.jira-check-popover[hidden]{display:none}
