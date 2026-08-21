@@ -113,23 +113,18 @@ async function main(){
   await evaluate(`(()=>{const input=document.querySelector('#modalInput');input.value='Manual Project';document.querySelector('#modalConfirm').click()})()`);await sleep(100);
 
   await evaluate(`document.querySelector('[data-action="new-document"]').click()`);await sleep(60);
-  const documentDialog=await evaluate(`({open:document.querySelector('#inputModal').classList.contains('show'),title:document.querySelector('#modalTitle').textContent})`);
-  check('New Document is a separate middle-level command',documentDialog.open&&documentDialog.title==='New Document',JSON.stringify(documentDialog));
-  await evaluate(`(()=>{const input=document.querySelector('#modalInput');input.value='Reference Manual';document.querySelector('#modalConfirm').click()})()`);await sleep(100);
-  const documentCreated=await evaluate(`({documents:document.querySelectorAll('.document-card').length,pages:document.querySelectorAll('.tree-row[data-node-id]').length,crumbs:document.querySelector('#crumbs').textContent,title:document.querySelector('#workspaceTitle').textContent})`);
-  check('Document owns its initial Page inside the Project',documentCreated.documents===2&&documentCreated.pages===2&&documentCreated.crumbs.includes('Reference Manual')&&documentCreated.title.includes('Manual Project / Reference Manual'),JSON.stringify(documentCreated));
+  const documentCreated=await evaluate(`({dialog:document.querySelector('#inputModal').classList.contains('show'),documents:document.querySelectorAll('.document-card').length,pages:document.querySelectorAll('.tree-row[data-node-id]').length,crumbs:document.querySelector('#crumbs').textContent,title:document.querySelector('#workspaceTitle').textContent})`);
+  check('New Document is created directly in the Project tree without a dialog',!documentCreated.dialog&&documentCreated.documents===2,JSON.stringify(documentCreated));
+  check('The directly-created Document owns its initial Page',documentCreated.pages===2&&documentCreated.crumbs.includes('New Document')&&documentCreated.title.includes('Manual Project / New Document'),JSON.stringify(documentCreated));
 
   await evaluate(`(()=>{const card=document.querySelector('.document-card:last-child');card.querySelector(':scope > .tree-row .tree-row-add').click();document.querySelector('[data-tree-add="group"]').click()})()`);await sleep(60);
-  await evaluate(`(()=>{const input=document.querySelector('#modalInput');input.value='Section Group';document.querySelector('#modalConfirm').click()})()`);await sleep(100);
-  const group=await evaluate(`(()=>{const rows=[...document.querySelectorAll('.document-card:last-child .tree-row[data-node-id]')];const row=rows.find(item=>item.querySelector('.label')?.textContent==='Section Group');return{exists:!!row,depth:row?.dataset.depth,nodes:rows.length}})()`);
-  check('Group is created as a Document container',group.exists&&group.depth==='1'&&group.nodes===2,JSON.stringify(group));
+  const group=await evaluate(`(()=>{const rows=[...document.querySelectorAll('.document-card:last-child .tree-row[data-node-id]')];const row=rows.find(item=>item.querySelector('.label')?.textContent==='New Section');return{dialog:document.querySelector('#inputModal').classList.contains('show'),exists:!!row,depth:row?.dataset.depth,nodes:rows.length}})()`);
+  check('New Section is created directly as a Document container',!group.dialog&&group.exists&&group.depth==='1'&&group.nodes===2,JSON.stringify(group));
 
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}))`);await sleep(60);
-  const pageDialog=await evaluate(`({open:document.querySelector('#inputModal').classList.contains('show'),title:document.querySelector('#modalTitle').textContent})`);
-  check('Ctrl+Shift+N opens New Page for the active Document selection',pageDialog.open&&pageDialog.title==='New Page',JSON.stringify(pageDialog));
-  await evaluate(`(()=>{const input=document.querySelector('#modalInput');input.value='Child Page';document.querySelector('#modalConfirm').click()})()`);await sleep(100);
-  const childPage=await evaluate(`(()=>{const rows=[...document.querySelectorAll('.document-card:last-child .tree-row[data-node-id]')];const row=rows.find(item=>item.querySelector('.label')?.textContent==='Child Page');return{exists:!!row,depth:row?.dataset.depth,crumbs:document.querySelector('#crumbs').textContent}})()`);
-  check('New Page is inserted as the selected Group child',childPage.exists&&childPage.depth==='2'&&childPage.crumbs.includes('Section Group / Child Page'),JSON.stringify(childPage));
+  const childPage=await evaluate(`(()=>{const rows=[...document.querySelectorAll('.document-card:last-child .tree-row[data-node-id]')];const row=rows.find(item=>item.querySelector('.label')?.textContent==='New Page');return{dialog:document.querySelector('#inputModal').classList.contains('show'),exists:!!row,depth:row?.dataset.depth,crumbs:document.querySelector('#crumbs').textContent}})()`);
+  check('Ctrl+Shift+N creates New Page without a dialog',!childPage.dialog&&childPage.exists,JSON.stringify(childPage));
+  check('New Page is inserted as the selected Section child',childPage.depth==='2'&&childPage.crumbs.includes('New Section / New Page'),JSON.stringify(childPage));
 
   const source='<!doctype html>\n<html>\n<head><title>Needle</title></head>\n<body>\n<h1 data-hbe-name="Hero Title">Needle</h1>\n<p>Body</p>\n'+Array.from({length:120},(_,index)=>index===119?'<div>Body conclusion</div>':`<div>Line ${index+1}</div>`).join('\n')+'\n</body>\n</html>';
   await evaluate(`(()=>{document.querySelector('[data-mode="code"]').click();const editor=document.querySelector('#sourceEditor');editor.value=${JSON.stringify(source)};editor.dispatchEvent(new Event('input',{bubbles:true}));editor.scrollTop=36;editor.dispatchEvent(new Event('scroll'));})()`);await sleep(180);

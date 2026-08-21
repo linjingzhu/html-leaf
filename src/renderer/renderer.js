@@ -282,6 +282,14 @@
   function pageList(){ return state.documents.flatMap(p=>p.nodes.filter(n=>n.type==='page').map(n=>({project:p,page:n}))); }
   function selectedContext(){ return selectedTreeNode ? nodeById(selectedTreeNode) : {project:activeDocument(),node:null}; }
 
+  function uniqueTreeName(base,names){
+    const used=new Set(names.map(name=>String(name||'').trim().toLocaleLowerCase()));
+    if(!used.has(base.toLocaleLowerCase()))return base;
+    let suffix=2;
+    while(used.has(`${base} ${suffix}`.toLocaleLowerCase()))suffix++;
+    return `${base} ${suffix}`;
+  }
+
   function pageDocumentKey(page){
     const sourcePath=String(page?.sourcePath||'').trim();
     return sourcePath?`path:${sourcePath.replace(/\//g,'\\').toLocaleLowerCase()}`:`page:${page?.id||''}`;
@@ -551,61 +559,50 @@
     withUnsavedInspectorGuard(()=>{
       const project=activeDocument();
       if(!project){showToast('Create or select a document first');return;}
-      openModal('New Page','Create an empty HTML page inside the selected document.','Page name','Untitled Page',name=>{
-        const context=selectedContext();
-        const parentId=context.project?.id===project.id&&context.node?context.node.id:null;
-        const page={
-          id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
-          parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
-        };
-        project.nodes.push(page);project.expanded=true;state.selectedDocumentId=project.id;selectedTreeNode=page.id;
-        if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
-        const slot=activePageSlot();state.views[slot]=page.id;
-        if(state.mode==='code'){state.views.codePreview=page.id;state.views.codePage=page.id;}
-        clearInspector();activateLeftTab('project');renderAll();persist();showToast('New page created');
-      });
+      const context=selectedContext();
+      const parentId=context.project?.id===project.id&&context.node?context.node.id:null;
+      const name=uniqueTreeName('New Page',children(project,parentId).map(node=>node.name));
+      const page={
+        id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
+        parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
+      };
+      project.nodes.push(page);project.expanded=true;state.selectedDocumentId=project.id;selectedTreeNode=page.id;
+      if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
+      bindPageToSlot(activePageSlot(),page.id);
+      clearInspector();activateLeftTab('project');renderAll();persist();showToast('New page created');
     });
   }
 
   async function newDocument(){
     withUnsavedInspectorGuard(()=>{
-      openModal(
-        'New Document',
-        'Create a document with an Empty Page inside the current Leaf Project.',
-        'Document name',
-        'New Document',
-        name=>{
-          const pageId=uid('page');
-          const project={
-            id:uid('document'),
-            name,
-            color:'#5873d4',
-            filePath:null,
-            expanded:true,
-            nodes:[{
-               id:pageId,type:'page',name:'Empty Page',fileName:'untitled.html',documentType:'html',
-               parentId:null,order:0,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
-            }]
-          };
+      const pageId=uid('page');
+      const name=uniqueTreeName('New Document',state.documents.map(document=>document.name));
+      const project={
+        id:uid('document'),
+        name,
+        color:'#5873d4',
+        filePath:null,
+        expanded:true,
+        nodes:[{
+           id:pageId,type:'page',name:'Empty Page',fileName:'untitled.html',documentType:'html',
+           parentId:null,order:0,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
+        }]
+      };
 
-          state.documents=[...state.documents,project];
-          state.selectedDocumentId=project.id;
-          selectedTreeNode=pageId;
-          state.views.single=pageId;
-          state.views.left=pageId;
-          state.views.right=pageId;
-          state.views.codePreview=pageId;
-          state.views.codePage=pageId;
+      state.documents=[...state.documents,project];
+      state.selectedDocumentId=project.id;
+      selectedTreeNode=pageId;
+      state.views.single=pageId;
+      state.views.left=pageId;
+      state.views.right=pageId;
+      state.views.codePreview=pageId;
+      state.views.codePage=pageId;
 
-          clearInspector();
-          project.expanded=true;
-          activateLeftTab('project');
-          renderTree();
-          renderAll();
-          persist();
-          showToast('New document created');
-        }
-      );
+      clearInspector();
+      activateLeftTab('project');
+      renderAll();
+      persist();
+      showToast('New document created');
     });
   }
 
@@ -973,7 +970,7 @@
       const row=document.createElement('div');
       row.className=`tree-row document ${state.selectedDocumentId===project.id && !selectedTreeNode?'selected':''}`;
       row.dataset.documentId=project.id; row.dataset.depth=0; row.draggable=true;
-      row.innerHTML=`<span class="twisty">${project.expanded!==false?'▾':'▸'}</span><span class="document-swatch" style="background:${project.color}" title="Change document color"></span><span class="label">${esc(project.name)}</span><button class="tree-row-add" type="button" title="Add Page or Group">＋</button>`;
+      row.innerHTML=`<span class="twisty">${project.expanded!==false?'▾':'▸'}</span><span class="document-swatch" style="background:${project.color}" title="Change document color"></span><span class="label">${esc(project.name)}</span><button class="tree-row-add" type="button" title="New Page or Section">＋</button>`;
       row.onclick=e=>{
         if(e.target.closest('.tree-row-add'))return;
         refs.tree.focus({preventScroll:true});
@@ -1249,25 +1246,24 @@
     if(!project)return;
     withUnsavedInspectorGuard(()=>{
       const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
-      openModal('Add Empty Page','Create a blank page placeholder. Drop an HTML file from Explorer to load it.','Page name','Empty Page',name=>{
-        const page={id:uid('page'),type:'page',name,fileName:'untitled.html',documentType:'html',parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
-        project.nodes.push(page);selectedTreeNode=page.id;
-        if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
-        const slot=state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage');
-        state.views[slot]=page.id;
-        clearInspector();
-        renderAll();persist();
-      });
+      const name=uniqueTreeName('New Page',children(project,parentId).map(node=>node.name));
+      const page={id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
+      project.nodes.push(page);selectedTreeNode=page.id;state.selectedDocumentId=project.id;
+      if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
+      bindPageToSlot(activePageSlot(),page.id);
+      clearInspector();activateLeftTab('project');
+      renderAll();persist();showToast('New page created');
     });
   }
   function addGroup(project,targetNode,{asChild=false}={}){
     if(!project)return;
-    const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
-    openModal('Add Group','Create a group in the selected hierarchy.','Group name','New Group',name=>{
+    withUnsavedInspectorGuard(()=>{
+      const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
+      const name=uniqueTreeName('New Section',children(project,parentId).map(node=>node.name));
       const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true,container:true};
       project.nodes.push(group);selectedTreeNode=group.id;state.selectedDocumentId=project.id;
       if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
-      renderAll();persist();
+      clearInspector();activateLeftTab('project');renderAll();persist();showToast('New section created');
     });
   }
 

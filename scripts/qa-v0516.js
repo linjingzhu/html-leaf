@@ -12,8 +12,8 @@ function check(name,condition){if(!condition){console.error(`FAIL ${name}`);proc
 
 check('Release is v0.5.16',pkg.version==='0.5.16'&&pkg.build.directories.output==='release-v0.5.16');
 check('Canonical hierarchy is Project, Document, Page and Group',
-  html.includes('New Project <kbd>Ctrl+N</kbd>')&&html.includes('New Document…')&&
-  html.includes('New Page <kbd>Ctrl+Shift+N</kbd>')&&html.includes('Add Group (Container)'));
+  html.includes('New Project <kbd>Ctrl+N</kbd>')&&html.includes('data-action="new-document">New Document</button>')&&
+  html.includes('New Page <kbd>Ctrl+Shift+N</kbd>')&&html.includes('data-tree-add="group">New Section</button>'));
 check('Document View mode labels are Preview and Compare',
   html.includes('data-mode="preview" class="active" aria-label="Preview view">Preview</button>')&&
   html.includes('data-mode="split" aria-label="Compare view">Compare</button>')&&
@@ -56,6 +56,9 @@ check('Ctrl+N creates Project and Ctrl+Shift+N creates Page',
 check('New Page becomes a child of the active Document selection',
   js.includes("const parentId=context.project?.id===project.id&&context.node?context.node.id:null")&&
   js.includes('if(parentId){const parent=project.nodes.find'));
+check('New Document, Page, and Section create immediately without naming dialogs',
+  !js.includes("openModal('New Document'")&&!js.includes("openModal('New Page'")&&!js.includes("openModal('Add Group'")&&
+  js.includes("uniqueTreeName('New Document'")&&js.split("uniqueTreeName('New Page'").length>=3&&js.includes("uniqueTreeName('New Section'"));
 check('Group is explicitly normalized as a container',
   js.includes("if(page.type==='group')page.container=true")&&js.includes("type:'group',name,parentId")&&js.includes('container:true'));
 check('New Project schema remains leaf-project and v0.5.16',
@@ -109,4 +112,4 @@ const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{std
 check('v0.5.15 complete regression chain',prior.status===0);
 const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/32 PASS`);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/33 PASS`);

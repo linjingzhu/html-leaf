@@ -44,6 +44,8 @@ Edit mode now uses a 3px red inset outline. The View title row containing Edit a
 
 Vertical and horizontal splitters now reserve an 8px neutral gutter between adjacent panes while retaining a centered 1px drag guide.
 
+New Document, New Page, and New Section now create immediately in the Project tree without opening a naming dialog. The new object is selected, its parent is expanded, and repeated default names receive a collision-safe numeric suffix. F2 rename remains available afterward.
+
 Leaf now assigns one identity to each source path. Importing the same source file focuses the existing Page, and selecting an already-visible Compare document swaps the opposite binding rather than duplicating it.
 
 Markdown and JSON direct-source Edit is available from every visual View. PDF Edit enables the bundled Chromium PDF viewer's native annotation surface for highlighting, drawing, form filling, signatures, undo/redo, and downloading the edited PDF; Leaf does not decode the PDF binary into application source.
@@ -65,7 +67,7 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 Page lifecycle, editing, hierarchy, layout, export, search, and About QA: 32/32
+- v0.5.16 Page lifecycle, editing, hierarchy, layout, export, search, and About QA: 33/33
 - Main-process Save Page As format and PDF rendering QA: 7/7
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
 - Source Electron functional and adversarial QA: 36/36
