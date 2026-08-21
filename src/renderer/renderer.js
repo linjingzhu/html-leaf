@@ -318,6 +318,7 @@
     $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
+    $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;

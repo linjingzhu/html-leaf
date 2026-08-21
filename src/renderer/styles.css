@@ -81,6 +81,61 @@ body[data-theme="light"]{
 
   --shadow-popup:0 10px 24px rgba(20,24,32,.14);
 }
+body[data-theme="carbon"]{
+  color-scheme:dark;
+
+  --background:#050607;
+  --panel:#0a0b0d;
+  --panel-secondary:#101113;
+  --elevated:#17181b;
+  --canvas:#020304;
+  --input:#0d0e10;
+  --hover:#1a1b1e;
+  --selected:#26282c;
+
+  --foreground:#f1f1ee;
+  --text-secondary:#c5c5c1;
+  --muted:#85868a;
+  --disabled:#505156;
+  --inverse:#050607;
+
+  --border:#2c2d30;
+  --border-subtle:#1b1c1f;
+  --border-strong:#505155;
+  --focus-ring:#e3e3df;
+  --selection:#c9c9c5;
+  --selection-foreground:#050607;
+
+  --accent:#deded9;
+  --accent-foreground:#08090a;
+  --success:#9eaaa2;
+  --warning:#b5aa98;
+  --error:#cf7478;
+
+  --radius-control:2px;
+  --radius-popup:3px;
+  --radius-panel:2px;
+  --shadow-popup:0 16px 36px rgba(0,0,0,.62);
+}
+
+body[data-theme="carbon"] .menubar,
+body[data-theme="carbon"] .viewbar,
+body[data-theme="carbon"] .pane-title,
+body[data-theme="carbon"] .view-pane-head{
+  letter-spacing:.025em;
+}
+body[data-theme="carbon"] .document-swatch{filter:grayscale(1);opacity:.82}
+body[data-theme="carbon"] .document-card{background:#0c0d0f;border-color:#303135}
+body[data-theme="carbon"] .tree-row.selected,
+body[data-theme="carbon"] .hierarchy-row.selected{
+  background:#242529;
+  outline-color:#77787c;
+}
+body[data-theme="carbon"] .seg button.active,
+body[data-theme="carbon"] .left-tab.active{
+  color:#f7f7f4;
+  border-color:#d6d6d1;
+}
 
 *{box-sizing:border-box}
 *::-webkit-scrollbar{width:8px;height:8px}
