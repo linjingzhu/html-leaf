@@ -112,4 +112,6 @@ const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{std
 check('v0.5.15 complete regression chain',prior.status===0);
 const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/33 PASS`);
+const zoomScrollbar=spawnSync(process.execPath,[path.join(__dirname,'qa-zoom-scrollbar-v0516.js')],{stdio:'inherit'});
+check('zoom-independent document scrollbar regression QA',zoomScrollbar.status===0);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/34 PASS`);

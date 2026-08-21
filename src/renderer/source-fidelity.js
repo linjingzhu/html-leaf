@@ -4,7 +4,7 @@
 
   function stripEditorArtifactsFromDocument(doc){
     if(!doc) return doc;
-    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line]').forEach(n=>n.remove());
+    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime]').forEach(n=>n.remove());
     doc.querySelectorAll('[data-editor-element-id]').forEach(n=>n.removeAttribute('data-editor-element-id'));
     doc.querySelectorAll('*').forEach(node=>{
       if(!node.classList) return;
@@ -18,7 +18,7 @@
 
   function editorArtifactReport(html){
     const text=String(html||'');
-    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','table-cell-selected','viewport-object-drop-target'];
+    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','table-cell-selected','viewport-object-drop-target'];
     return patterns.map(pattern=>({pattern,count:(text.match(new RegExp(pattern,'g'))||[]).length})).filter(x=>x.count>0);
   }
 

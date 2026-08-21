@@ -30,6 +30,7 @@ Project (.prj)                       Ctrl+N
 - Preference now offers a third `Carbon` appearance beside Dark and Light. Carbon translates the supplied black-metal reference into five monochrome surface levels, silver focus and selection states, off-white typography, and tighter industrial corner geometry without affecting Page content.
 - The application bar now includes a left-panel toggle. It hides both the Project/Object/Used area and Hierarchy splitter, expands the document View immediately, and restores the panel independently from Inspector visibility.
 - Selecting an HTML table cell in Edit mode now opens an in-document toolbar for adding or deleting the selected row/column, merging right, and splitting a merged cell. Structural actions preserve selection, support Undo/Redo, and understand `colspan` while keeping editor controls out of saved HTML.
+- Document zoom now scales Page content without visually scaling its internal scrollbar. Preview scrollbars retain an 8px target at 5–200% zoom, including Compare and direct Markdown/JSON editing, and the runtime compensation never enters saved Page source.
 - A source file is represented by one Page and cannot be opened into two Compare windows; duplicate imports focus the existing Page.
 - Markdown source editing works in every visual View. PDF Edit enables the native PDF annotation, highlight, fill, sign, undo/redo, and download tools.
 

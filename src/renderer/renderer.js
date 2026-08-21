@@ -1287,6 +1287,31 @@
   const PREVIEW_ZOOM_MIN=5;
   const PREVIEW_ZOOM_MAX=200;
   const PREVIEW_ZOOM_STEP=10;
+  const PREVIEW_SCROLLBAR_VISUAL_SIZE=8;
+
+  function runtimePreviewScrollbarCss(zoom=100){
+    const scale=Math.max(.05,Number(zoom)/100||1);
+    const px=value=>`${Math.round((value/scale)*1000)/1000}px`;
+    return `*::-webkit-scrollbar{width:${px(PREVIEW_SCROLLBAR_VISUAL_SIZE)};height:${px(PREVIEW_SCROLLBAR_VISUAL_SIZE)}}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:rgba(112,120,132,.42);border:${px(2)} solid transparent;border-radius:${px(8)};background-clip:padding-box}*::-webkit-scrollbar-thumb:hover{background:rgba(112,120,132,.65);border:${px(2)} solid transparent;background-clip:padding-box}*::-webkit-scrollbar-corner{background:transparent}`;
+  }
+
+  function applyPreviewScrollbarCompensation(slot,zoom=previewZoomForSlot(slot)){
+    const frame=frameForEditSlot(slot);
+    if(!frame)return false;
+    const css=runtimePreviewScrollbarCss(zoom);
+    let applied=false;
+    try{
+      const style=frame.contentDocument?.querySelector('[data-leaf-scrollbar-runtime]');
+      if(style){style.textContent=css;applied=true;}
+    }catch{}
+    const token=frame.dataset.directSourceToken||frame.dataset.snapshotToken;
+    if(token){
+      try{frame.contentWindow.postMessage({__leafViewportChromeScale:true,token,css},'*');applied=true;}catch{}
+    }
+    frame.dataset.scrollbarVisualSize=String(PREVIEW_SCROLLBAR_VISUAL_SIZE);
+    frame.dataset.scrollbarCompensation=applied?'inverse-zoom':'native';
+    return applied;
+  }
 
   function previewZoomForSlot(slot){
     state.previewZoom=state.previewZoom||{};
@@ -1318,6 +1343,7 @@
     if(!surface || !canvas) return false;
     const zoom=previewZoomForSlot(slot);
     surface.style.zoom=String(zoom/100);
+    applyPreviewScrollbarCompensation(slot,zoom);
     canvas.classList.toggle('is-zoomed',zoom!==100);
     canvas.classList.toggle('is-fit',state.previewZoomMode?.[slot]==='fit');
     updatePreviewZoomIndicator(slot);
@@ -2480,6 +2506,7 @@
           } catch { parent.postMessage({__leafViewSearchResult:true,token:TOKEN,count:0,index:0},'*'); }
         };
         addEventListener('message', event => {
+          if(event.data && event.data.__leafViewportChromeScale===true && event.data.token===TOKEN){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof event.data.css==='string'&&event.data.css.length<1200)style.textContent=event.data.css;return;}
           if(event.data && event.data.__leafViewSearch===true && event.data.token===TOKEN){runSearch(event.data.query,event.data.index);return;}
           if(event.data && event.data.__hbeSnapshotRequest===TOKEN) sendSnapshot();
         });
@@ -2539,10 +2566,10 @@
   function isDirectSourceEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&isDirectSourceType(page);}
   function isPdfNativeEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&page?.documentType==='pdf';}
 
-  function buildDirectSourceEditor(page,token){
+  function buildDirectSourceEditor(page,token,zoom=100){
     const initial=JSON.stringify(String(page.source||'')).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
     const label=page.documentType==='json'?'JSON':'Markdown';
-    return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;color-scheme:dark}body{display:grid;grid-template-rows:38px 1fr 26px;background:#12161d;color:#d8dee9;font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif}.source-head,.source-foot{display:flex;align-items:center;gap:9px;padding:0 12px;background:#181e27;color:#9ba8ba}.source-head{border-bottom:1px solid #2b3442}.source-head strong{color:#f2f5f9}.source-foot{justify-content:space-between;border-top:1px solid #2b3442}.status.valid{color:#78d39a}.status.invalid{color:#ff8b8b}textarea{box-sizing:border-box;width:100%;height:100%;resize:none;border:0;outline:0;padding:18px 20px;background:#0f1319;color:#e4e9f0;tab-size:2;white-space:pre;overflow:auto;font:13px/1.58 Consolas,'SFMono-Regular',monospace;caret-color:#8ab4ff}textarea::selection{background:#315b96}*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:#3a4657;border:2px solid transparent;border-radius:8px;background-clip:padding-box}</style></head><body><div class="source-head"><strong>${label} Source</strong><span>Edit is applied immediately</span></div><textarea id="source" spellcheck="false" aria-label="${label} source editor"></textarea><div class="source-foot"><span id="status" class="status"></span><span>Tab: indent · Esc: finish</span></div><script>(()=>{const TOKEN=${JSON.stringify(token)};const INITIAL=${initial};const TYPE=${JSON.stringify(page.documentType)};const editor=document.getElementById('source');const status=document.getElementById('status');const send=(kind,extra={})=>parent.postMessage({__leafDirectSourceEdit:true,token:TOKEN,kind,...extra},'*');const validate=()=>{if(TYPE!=='json'){status.className='status';status.textContent=editor.value.split('\\n').length+' lines';return true}try{JSON.parse(editor.value);status.className='status valid';status.textContent='Valid JSON';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Invalid JSON';return false}};editor.value=INITIAL;validate();editor.addEventListener('pointerdown',()=>send('activate'),true);editor.addEventListener('input',()=>{validate();send('input',{source:editor.value})});editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();const start=editor.selectionStart,end=editor.selectionEnd;editor.setRangeText('  ',start,end,'end');editor.dispatchEvent(new Event('input'))}else if(event.key==='Escape'){event.preventDefault();send('exit')}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();send('save')}});addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();event.stopPropagation();send('zoom',{direction:event.deltaY<0?1:-1,clientX:event.clientX,clientY:event.clientY})},{capture:true,passive:false});addEventListener('message',event=>{const data=event.data;if(!data||data.token!==TOKEN)return;if(data.__leafDirectSourceSearch===true){const query=String(data.query||''),needle=query.toLocaleLowerCase(),matches=[];if(needle){const text=editor.value.toLocaleLowerCase();let from=0;while(from<=text.length-needle.length){const at=text.indexOf(needle,from);if(at<0)break;matches.push(at);from=at+Math.max(1,needle.length)}}const index=matches.length?((Number(data.index)||0)%matches.length+matches.length)%matches.length:0;if(matches.length){editor.focus();editor.setSelectionRange(matches[index],matches[index]+query.length)}send('search-result',{count:matches.length,index});return}if(data.__leafDirectSourceReply!==true)return;editor.value=String(data.source||'');validate();if(data.message){status.className='status invalid';status.textContent=data.message}});setTimeout(()=>{editor.focus();send('activate');send('ready')},0)})();<\/script></body></html>`;
+    return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;color-scheme:dark}body{display:grid;grid-template-rows:38px 1fr 26px;background:#12161d;color:#d8dee9;font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif}.source-head,.source-foot{display:flex;align-items:center;gap:9px;padding:0 12px;background:#181e27;color:#9ba8ba}.source-head{border-bottom:1px solid #2b3442}.source-head strong{color:#f2f5f9}.source-foot{justify-content:space-between;border-top:1px solid #2b3442}.status.valid{color:#78d39a}.status.invalid{color:#ff8b8b}textarea{box-sizing:border-box;width:100%;height:100%;resize:none;border:0;outline:0;padding:18px 20px;background:#0f1319;color:#e4e9f0;tab-size:2;white-space:pre;overflow:auto;font:13px/1.58 Consolas,'SFMono-Regular',monospace;caret-color:#8ab4ff}textarea::selection{background:#315b96}</style><style data-leaf-scrollbar-runtime>${runtimePreviewScrollbarCss(zoom)}</style></head><body><div class="source-head"><strong>${label} Source</strong><span>Edit is applied immediately</span></div><textarea id="source" spellcheck="false" aria-label="${label} source editor"></textarea><div class="source-foot"><span id="status" class="status"></span><span>Tab: indent · Esc: finish</span></div><script>(()=>{const TOKEN=${JSON.stringify(token)};const INITIAL=${initial};const TYPE=${JSON.stringify(page.documentType)};const editor=document.getElementById('source');const status=document.getElementById('status');const send=(kind,extra={})=>parent.postMessage({__leafDirectSourceEdit:true,token:TOKEN,kind,...extra},'*');const validate=()=>{if(TYPE!=='json'){status.className='status';status.textContent=editor.value.split('\\n').length+' lines';return true}try{JSON.parse(editor.value);status.className='status valid';status.textContent='Valid JSON';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Invalid JSON';return false}};editor.value=INITIAL;validate();editor.addEventListener('pointerdown',()=>send('activate'),true);editor.addEventListener('input',()=>{validate();send('input',{source:editor.value})});editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();const start=editor.selectionStart,end=editor.selectionEnd;editor.setRangeText('  ',start,end,'end');editor.dispatchEvent(new Event('input'))}else if(event.key==='Escape'){event.preventDefault();send('exit')}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();send('save')}});addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();event.stopPropagation();send('zoom',{direction:event.deltaY<0?1:-1,clientX:event.clientX,clientY:event.clientY})},{capture:true,passive:false});addEventListener('message',event=>{const data=event.data;if(!data||data.token!==TOKEN)return;if(data.__leafViewportChromeScale===true){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof data.css==='string'&&data.css.length<1200)style.textContent=data.css;return}if(data.__leafDirectSourceSearch===true){const query=String(data.query||''),needle=query.toLocaleLowerCase(),matches=[];if(needle){const text=editor.value.toLocaleLowerCase();let from=0;while(from<=text.length-needle.length){const at=text.indexOf(needle,from);if(at<0)break;matches.push(at);from=at+Math.max(1,needle.length)}}const index=matches.length?((Number(data.index)||0)%matches.length+matches.length)%matches.length:0;if(matches.length){editor.focus();editor.setSelectionRange(matches[index],matches[index]+query.length)}send('search-result',{count:matches.length,index});return}if(data.__leafDirectSourceReply!==true)return;editor.value=String(data.source||'');validate();if(data.message){status.className='status invalid';status.textContent=data.message}});setTimeout(()=>{editor.focus();send('activate');send('ready')},0)})();<\/script></body></html>`;
   }
 
   function configureFrameRuntime(frame,page,slot){
@@ -2626,7 +2653,7 @@
       frame.dataset.snapshotToken='';
       frame.dataset.snapshotPageId=page.id;
       renderedSnapshotCache.delete(frame);
-      frame.srcdoc=buildDirectSourceEditor(page,directToken);
+      frame.srcdoc=buildDirectSourceEditor(page,directToken,previewZoomForSlot(slot));
       return;
     }
     frame.dataset.directSourceToken='';
@@ -2637,12 +2664,13 @@
     renderedSnapshotCache.delete(frame);
     const nextSource=buildPreviewSource(page,{allowScripts:scripted,bridgeToken:snapshotToken});
     const renderToken=`render-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
-    const runtimeSource=nextSource.replace('</head>',`<meta data-editor-overlay="1" name="hbe-render-token" content="${renderToken}"><style data-editor-overlay="1">*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:rgba(112,120,132,.42);border:2px solid transparent;border-radius:8px;background-clip:padding-box}*::-webkit-scrollbar-thumb:hover{background:rgba(112,120,132,.65);border:2px solid transparent;background-clip:padding-box}</style></head>`);
+    const runtimeSource=nextSource.replace('</head>',`<meta data-editor-overlay="1" name="hbe-render-token" content="${renderToken}"><style data-editor-overlay="1" data-leaf-scrollbar-runtime="1">${runtimePreviewScrollbarCss(previewZoomForSlot(slot))}</style></head>`);
     frame.srcdoc=runtimeSource;
   }
 
   function onPreviewFrameLoad(frame){
     const slot=previewSlotForFrame(frame);
+    if(slot)applyPreviewScrollbarCompensation(slot);
     if(frame.dataset.previewRuntime==='direct-source-editor'){
       disconnectHierarchyObserver(frame);
       updateInspectorEditControls();
