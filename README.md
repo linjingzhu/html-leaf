@@ -28,6 +28,7 @@ Project (.prj)                       Ctrl+N
 - Every vertical and horizontal splitter reserves an 8px neutral gutter, leaving clear breathing room between adjacent panes while retaining the centered drag guide.
 - New Document, New Page, and New Section create immediately in the Project tree without opening a naming dialog. Repeated items receive collision-safe numbered names and remain available for later F2 rename.
 - Preference now offers a third `Carbon` appearance beside Dark and Light. Carbon translates the supplied black-metal reference into five monochrome surface levels, silver focus and selection states, off-white typography, and tighter industrial corner geometry without affecting Page content.
+- The application bar now includes a left-panel toggle. It hides both the Project/Object/Used area and Hierarchy splitter, expands the document View immediately, and restores the panel independently from Inspector visibility.
 - A source file is represented by one Page and cannot be opened into two Compare windows; duplicate imports focus the existing Page.
 - Markdown source editing works in every visual View. PDF Edit enables the native PDF annotation, highlight, fill, sign, undo/redo, and download tools.
 

@@ -48,6 +48,8 @@ New Document, New Page, and New Section now create immediately in the Project tr
 
 Preference now includes a third `Carbon` theme beside Dark and Light. Carbon uses five black-to-graphite surface levels, silver interaction states, off-white text hierarchy, low corner radii, and restrained chrome letter spacing based on the supplied monochrome industrial reference. The theme is limited to Leaf application chrome and does not restyle loaded Page content.
 
+The application bar now includes an accessible left-panel toggle. Collapsing it removes the Project/Object/Used area, Hierarchy area, and left splitter from layout so the active document View receives the recovered width. The left panel and Inspector can be hidden or restored independently, including when both are collapsed.
+
 Leaf now assigns one identity to each source path. Importing the same source file focuses the existing Page, and selecting an already-visible Compare document swaps the opposite binding rather than duplicating it.
 
 Markdown and JSON direct-source Edit is available from every visual View. PDF Edit enables the bundled Chromium PDF viewer's native annotation surface for highlighting, drawing, form filling, signatures, undo/redo, and downloading the edited PDF; Leaf does not decode the PDF binary into application source.
@@ -76,5 +78,7 @@ Animated WebP is not registered as an independent Page format.
 - Packaged Electron functional and adversarial QA: 36/36
 - Carbon theme static regression QA: 10/10
 - Carbon theme functional and persistence QA: 4/4
+- Left-panel toggle static regression QA: 10/10
+- Left-panel toggle functional and independent-panel QA: 5/5
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS
