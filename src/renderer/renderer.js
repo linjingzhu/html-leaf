@@ -2939,7 +2939,7 @@
       const standardEditTitle=active?'Disable Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
         ?'Edit is unavailable for this Page in the current View'
-        :directAvailable&&!active?`Edit ${page.documentType==='json'?'JSON':'Markdown'} source directly in Focus`:standardEditTitle;
+        :directAvailable&&!active?`Edit ${page.documentType==='json'?'JSON':'Markdown'} source directly in Preview`:standardEditTitle;
     });
 
     if(refs.resetInspectorBtn){

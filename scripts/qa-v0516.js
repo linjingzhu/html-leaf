@@ -14,8 +14,8 @@ check('Release is v0.5.16',pkg.version==='0.5.16'&&pkg.build.directories.output=
 check('Canonical hierarchy is Project, Document, Page and Group',
   html.includes('New Project <kbd>Ctrl+N</kbd>')&&html.includes('New Document…')&&
   html.includes('New Page <kbd>Ctrl+Shift+N</kbd>')&&html.includes('Add Group (Container)'));
-check('Document View mode labels are Focus and Compare',
-  html.includes('data-mode="preview" class="active" aria-label="Focus view">Focus</button>')&&
+check('Document View mode labels are Preview and Compare',
+  html.includes('data-mode="preview" class="active" aria-label="Preview view">Preview</button>')&&
   html.includes('data-mode="split" aria-label="Compare view">Compare</button>')&&
   html.includes('data-mode="code">Code</button>'));
 check('Project save commands own Ctrl+S shortcuts',
@@ -48,7 +48,7 @@ check('Supported Page formats include HTML, Markdown, JSON, and PDF',
   main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])")&&
   main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']")&&
   !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
-check('Focus Edit provides an isolated direct source editor for Markdown and JSON',
+check('Preview Edit provides an isolated direct source editor for Markdown and JSON',
   js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}")&&
   js.includes("frame.dataset.previewRuntime='direct-source-editor'")&&js.includes("frame.setAttribute('sandbox','allow-scripts')")&&
   js.includes('__leafDirectSourceEdit:true'));
@@ -58,4 +58,4 @@ check('Direct source input is immediate, undoable, bounded, and metadata guarded
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy, .prj, and Focus source-edit QA: ${passed}/17 PASS`);
+console.log(`Leaf v0.5.16 hierarchy, .prj, and Preview source-edit QA: ${passed}/17 PASS`);

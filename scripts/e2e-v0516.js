@@ -34,7 +34,7 @@ async function main(){
   };
 
   const modeLabels=await evaluate(`[...document.querySelectorAll('#viewSeg button[data-mode]')].map(button=>({mode:button.dataset.mode,label:button.textContent.trim(),aria:button.getAttribute('aria-label')}))`);
-  check('Document View modes are labelled Focus, Compare, and Code',JSON.stringify(modeLabels)===JSON.stringify([{mode:'preview',label:'Focus',aria:'Focus view'},{mode:'split',label:'Compare',aria:'Compare view'},{mode:'code',label:'Code',aria:null}]),JSON.stringify(modeLabels));
+  check('Document View modes are labelled Preview, Compare, and Code',JSON.stringify(modeLabels)===JSON.stringify([{mode:'preview',label:'Preview',aria:'Preview view'},{mode:'split',label:'Compare',aria:'Compare view'},{mode:'code',label:'Code',aria:null}]),JSON.stringify(modeLabels));
 
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true}))`);await sleep(60);
   const dialog=await evaluate(`({open:document.querySelector('#inputModal').classList.contains('show'),title:document.querySelector('#modalTitle').textContent,documents:document.querySelectorAll('.document-card').length})`);
@@ -45,18 +45,18 @@ async function main(){
 
   await dropPageFixture(path.join(__dirname,'..','tests','page-fixtures','focus-edit.json'));
   const jsonImported=await evaluate(`(()=>{const row=document.querySelector('.tree-row.selected');const button=document.querySelector('[data-edit-slot="single"]');return{name:row?.querySelector('.label')?.textContent,icon:row?.querySelector('.ico')?.textContent,disabled:button.disabled,runtime:document.querySelector('#singleFrame').dataset.previewRuntime}})()`);
-  check('JSON imports as an editable Focus Page',jsonImported.name==='focus-edit'&&jsonImported.icon==='{}'&&!jsonImported.disabled&&jsonImported.runtime==='document-readonly',JSON.stringify(jsonImported));
+  check('JSON imports as an editable Preview Page',jsonImported.name==='focus-edit'&&jsonImported.icon==='{}'&&!jsonImported.disabled&&jsonImported.runtime==='document-readonly',JSON.stringify(jsonImported));
   await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(180);
   const jsonEdit=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame');return{runtime:frame.dataset.previewRuntime,ready:frame.dataset.directSourceReady,sandbox:frame.getAttribute('sandbox'),sourceUi:frame.getAttribute('srcdoc')?.includes('JSON Source')}})()`);
   await replaceFocusedText('{"leaf":"edited","items":[1,2]}');
   await sleep(100);
-  check('JSON opens in the ready isolated Focus source editor',jsonEdit.runtime==='direct-source-editor'&&jsonEdit.ready==='true'&&jsonEdit.sandbox==='allow-scripts'&&jsonEdit.sourceUi,JSON.stringify(jsonEdit));
+  check('JSON opens in the ready isolated Preview source editor',jsonEdit.runtime==='direct-source-editor'&&jsonEdit.ready==='true'&&jsonEdit.sandbox==='allow-scripts'&&jsonEdit.sourceUi,JSON.stringify(jsonEdit));
   await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(180);
   const jsonPreview=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame');return{valid:frame.contentDocument.querySelector('.json-valid')?.textContent,text:frame.contentDocument.querySelector('pre')?.textContent}})()`);
   check('Disabling Edit restores the formatted JSON preview',jsonPreview.valid==='Valid JSON'&&jsonPreview.text.includes('"edited"')&&jsonPreview.text.includes('\n  "items"'),JSON.stringify(jsonPreview));
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true,cancelable:true}))`);await sleep(180);
   const jsonUndo=await evaluate(`document.querySelector('#singleFrame').contentDocument.querySelector('pre')?.textContent`);
-  check('Focus JSON editing participates in Undo',jsonUndo.includes('"leaf": true')&&!jsonUndo.includes('edited'),jsonUndo);
+  check('Preview JSON editing participates in Undo',jsonUndo.includes('"leaf": true')&&!jsonUndo.includes('edited'),jsonUndo);
 
   await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(180);
   await replaceFocusedText('{"leaf":');await sleep(80);
@@ -67,14 +67,14 @@ async function main(){
 
   await dropPageFixture(path.join(__dirname,'..','tests','page-fixtures','focus-edit.md'));
   await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(180);
-  const markdownSource='# Edited in Focus\n\nDirect **Markdown** editing.';
+  const markdownSource='# Edited in Preview\n\nDirect **Markdown** editing.';
   const markdownEdit=await evaluate(`document.querySelector('#singleFrame').dataset.directSourceReady`);await replaceFocusedText(markdownSource);
   await sleep(100);await evaluate(`document.querySelector('[data-edit-slot="single"]').click()`);await sleep(180);
   const markdownPreview=await evaluate(`(()=>{const doc=document.querySelector('#singleFrame').contentDocument;return{heading:doc.querySelector('h1')?.textContent,strong:doc.querySelector('strong')?.textContent}})()`);
-  check('Markdown source edits directly and returns to rendered Focus preview',markdownEdit==='true'&&markdownPreview.heading==='Edited in Focus'&&markdownPreview.strong==='Markdown',JSON.stringify({markdownEdit,markdownPreview}));
+  check('Markdown source edits directly and returns to rendered Preview',markdownEdit==='true'&&markdownPreview.heading==='Edited in Preview'&&markdownPreview.strong==='Markdown',JSON.stringify({markdownEdit,markdownPreview}));
   await evaluate(`document.querySelector('[data-mode="split"]').click()`);await sleep(180);
   const compareBoundary=await evaluate(`({mode:document.querySelector('[data-mode="split"]').classList.contains('active'),leftDisabled:document.querySelector('[data-edit-slot="left"]').disabled,leftType:document.querySelector('#leftFrame').dataset.previewRuntime})`);
-  check('Markdown and JSON direct source editing remains scoped to Focus',compareBoundary.mode&&compareBoundary.leftDisabled&&compareBoundary.leftType==='document-readonly',JSON.stringify(compareBoundary));
+  check('Markdown and JSON direct source editing remains scoped to Preview',compareBoundary.mode&&compareBoundary.leftDisabled&&compareBoundary.leftType==='document-readonly',JSON.stringify(compareBoundary));
   await evaluate(`document.querySelector('[data-mode="preview"]').click()`);await sleep(120);
 
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true}))`);await sleep(60);
