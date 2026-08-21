@@ -80,19 +80,20 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf']);
 
 function documentTypeForPath(filePath) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
   if (extension === '.html' || extension === '.htm') return 'html';
   if (extension === '.md' || extension === '.markdown') return 'markdown';
+  if (extension === '.json') return 'json';
   if (extension === '.pdf') return 'pdf';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, and PDF pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -110,7 +111,7 @@ async function readDocumentPath(filePath) {
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Markdown pages must be files smaller than 50 MB.');
+  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Text pages must be files smaller than 50 MB.');
   const source = await fs.readFile(filePath, 'utf8');
   return { ...common, source, loadedSource: source };
 }
@@ -119,7 +120,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
@@ -192,6 +193,82 @@ async function copyDocumentAs({ sourcePath, suggestedName }) {
   if (!destination.toLowerCase().endsWith(`.${extension}`)) destination += `.${extension}`;
   await atomicWriteFile(destination, await fs.readFile(sourcePath));
   return destination;
+}
+
+const PAGE_EXPORT_FORMATS = {
+  html: { extension: 'html', name: 'HTML Page' },
+  markdown: { extension: 'md', name: 'Markdown Page' },
+  json: { extension: 'json', name: 'JSON Page' },
+  pdf: { extension: 'pdf', name: 'PDF Document' }
+};
+
+function printableHtml(source, baseUrl) {
+  const safeBase = (() => {
+    try {
+      const url = new URL(String(baseUrl || ''));
+      return ['file:', 'http:', 'https:'].includes(url.protocol) ? url.href.replace(/["<>]/g, '') : '';
+    } catch { return ''; }
+  })();
+  const guards = `${safeBase ? `<base href="${safeBase}">` : ''}<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; connect-src 'none'; object-src 'none'; frame-src 'none';">`;
+  const html = String(source || '');
+  if (/<head[\s>]/i.test(html)) return html.replace(/<head([^>]*)>/i, `<head$1>${guards}`);
+  if (/<html[\s>]/i.test(html)) return html.replace(/<html([^>]*)>/i, `<html$1><head>${guards}</head>`);
+  return `<!doctype html><html><head>${guards}</head><body>${html}</body></html>`;
+}
+
+async function renderPageToPdf(source, baseUrl) {
+  if (String(source || '').length > 50_000_000) throw new Error('Printable pages must be smaller than 50 MB.');
+  const dir = await ensureSessionTempDir();
+  const tempPath = path.join(dir, `print-${process.pid}-${Date.now()}.html`);
+  const printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      javascript: false
+    }
+  });
+  try {
+    await atomicWriteFile(tempPath, printableHtml(source, baseUrl), 'utf8');
+    await printWindow.loadFile(tempPath);
+    await new Promise(resolve => setTimeout(resolve, 180));
+    return await printWindow.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true });
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.destroy();
+    try { await fs.unlink(tempPath); } catch {}
+  }
+}
+
+async function exportPageAs({ format, suggestedName, source, sourcePath, sourceType, baseUrl }) {
+  const normalized = String(format || '').toLowerCase();
+  const type = PAGE_EXPORT_FORMATS[normalized];
+  if (!type) throw new Error('Unsupported Page export format.');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Page As',
+    defaultPath: suggestedName || `page.${type.extension}`,
+    filters: [{ name: type.name, extensions: [type.extension] }]
+  });
+  if (result.canceled || !result.filePath) return null;
+  let filePath = result.filePath;
+  if (!filePath.toLowerCase().endsWith(`.${type.extension}`)) filePath += `.${type.extension}`;
+
+  if (normalized === 'pdf') {
+    if (sourceType === 'pdf') {
+      if (!sourcePath || path.extname(sourcePath).toLowerCase() !== '.pdf') throw new Error('A valid PDF source is required.');
+      const stat = await fs.stat(sourcePath);
+      if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF pages must be files smaller than 500 MB.');
+      await atomicWriteFile(filePath, await fs.readFile(sourcePath));
+    } else {
+      await atomicWriteFile(filePath, await renderPageToPdf(source, baseUrl));
+    }
+  } else {
+    const text = String(source ?? '');
+    if (text.length > 50_000_000) throw new Error('Text Page exports must be smaller than 50 MB.');
+    await atomicWriteFile(filePath, text, 'utf8');
+  }
+  return filePath;
 }
 
 async function exportObjectAsset({ format, suggestedName, source }) {
@@ -407,6 +484,7 @@ app.whenReady().then(() => {
   ipcMain.handle('file:exportText', (_e, payload) => exportTextFile(payload));
   ipcMain.handle('file:saveTextPath', (_e, payload) => saveTextPath(payload));
   ipcMain.handle('file:copyDocumentAs', (_e, payload) => copyDocumentAs(payload));
+  ipcMain.handle('file:exportPageAs', (_e, payload) => exportPageAs(payload));
   ipcMain.handle('file:exportObjectAsset', (_e, payload) => exportObjectAsset(payload));
   ipcMain.handle('file:exportObjectAssets', (_e, payload) => exportObjectAssets(payload));
   ipcMain.handle('file:readLocalAssetDataUrl', (_e, url) => readLocalAssetDataUrl(url));

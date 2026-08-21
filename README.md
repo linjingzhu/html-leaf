@@ -14,7 +14,25 @@ Project (.prj)                       Ctrl+N
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the Project.
 - `Ctrl+Shift+N` creates a Page under the currently selected object in the active Document.
 - New Projects save as `.prj`; legacy `.leaf`, `.hbeproj`, and JSON projects remain openable and migrate through Save As.
-- Supported Page formats remain HTML, Markdown, and PDF.
+- Supported Page formats are HTML, Markdown, JSON, and PDF. Markdown and JSON can be edited directly in Preview with the View's Edit toggle.
+- Document View modes are labelled `Preview`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
+- The application menu now starts at the left edge without an embedded product icon; executable, installer, Desktop, and Start Menu icons remain branded.
+- Hovering an object in HTML Edit shows a DevTools-style highlight and a property tooltip with its selector, editable name, rendered size, role, display mode, and keyboard-focusability. The current selection remains active while another object is inspected.
+- `Save Page As` explicitly supports HTML, Markdown, JSON, and rendered PDF output. Cross-format exports leave the editable Page unchanged, while same-format Save As adopts the new file path.
+- Preview, both Compare panes, Code Preview, and Code Source all provide Search. Matches are highlighted without changing the Page DOM, and Enter/Shift+Enter moves to the next/previous result.
+- The final main-menu item is `Help`, with an `About Leaf` product-information dialog.
+- Clear acts on the clicked View even when another View is active. Unchanged Pages clear immediately and unsaved Pages retain the save/discard prompt.
+- Hierarchy updates from the loaded DOM as it changes and shows each object's type at the right edge.
+- Holding Shift while resizing snaps the dragged edge to nearby object edges and centers within 6px.
+- Edit uses a 3px red outline, and View title/search rows are 20% taller.
+- Every vertical and horizontal splitter reserves an 8px neutral gutter, leaving clear breathing room between adjacent panes while retaining the centered drag guide.
+- New Document, New Page, and New Section create immediately in the Project tree without opening a naming dialog. Repeated items receive collision-safe numbered names and remain available for later F2 rename.
+- Preference now offers a third `Carbon` appearance beside Dark and Light. Carbon translates the supplied black-metal reference into five monochrome surface levels, silver focus and selection states, off-white typography, and tighter industrial corner geometry without affecting Page content.
+- The application bar now includes a left-panel toggle. It hides both the Project/Object/Used area and Hierarchy splitter, expands the document View immediately, and restores the panel independently from Inspector visibility.
+- Selecting an HTML table cell in Edit mode now opens an in-document toolbar for adding or deleting the selected row/column, merging right, and splitting a merged cell. Structural actions preserve selection, support Undo/Redo, and understand `colspan` while keeping editor controls out of saved HTML.
+- Document zoom now scales Page content without visually scaling its internal scrollbar. Preview scrollbars retain an 8px target at 5–200% zoom, including Compare and direct Markdown/JSON editing, and the runtime compensation never enters saved Page source.
+- A source file is represented by one Page and cannot be opened into two Compare windows; duplicate imports focus the existing Page.
+- Markdown source editing works in every visual View. PDF Edit enables the native PDF annotation, highlight, fill, sign, undo/redo, and download tools.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
@@ -25,12 +43,12 @@ Leaf now uses one consistent three-level content model:
 ```text
 Leaf Project (.leaf)
 └─ Documents
-   └─ Pages (HTML / Markdown / PDF)
+   └─ Pages (HTML / Markdown / JSON / PDF)
 ```
 
 - The former Leaf Document is now a **Leaf Project**.
 - Former Projects are now **Documents**.
-- HTML, Markdown, and PDF child documents are now **Pages**.
+- HTML, Markdown, JSON, and PDF child documents are now **Pages**.
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the active Page.
 - File actions now use New Page, New Document, and Open/Save Leaf Project terminology.
 - New `.leaf` files use the `leaf-project` / `documents` schema.
@@ -40,8 +58,8 @@ Leaf Project (.leaf)
 
 - Native document fullscreen now hides the operating-system title bar. The only remaining control is a circular translucent Show UI icon.
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` now create, save, and save-as the active document rather than the active project.
-- A `.leaf` document serializes the complete project collection. Each project can contain HTML, Markdown, and PDF documents.
-- HTML, Markdown, and PDF files can be dragged from Explorer directly into a Project card; multiple files are imported independently.
+- A `.leaf` document serializes the complete project collection. Each project can contain HTML, Markdown, JSON, and PDF documents.
+- HTML, Markdown, JSON, and PDF files can be dragged from Explorer directly into a Project card; multiple files are imported independently.
 - Edit activation turns both its button and owning View outline red.
 - Code View uses non-wrapping source, synchronized line numbers, and a title-bar search field focused by `Ctrl+F`.
 - Inspector uses two-level foldable groups, enlarges the selected object name, and hides Reset.
@@ -75,7 +93,7 @@ Release details and verification: `docs/RELEASE_v0.5.14.md`.
 - Added the supplied leaf artwork as the Windows executable and taskbar icon.
 - Added a branded NSIS installer with matching installer and uninstall icons.
 - Added matching Desktop and Start Menu shortcut icons.
-- Added the product icon to the upper-left application bar.
+- The supplied product artwork remains the Windows executable, installer, Desktop, and Start Menu icon. The former menu-bar icon was removed in v0.5.16.
 
 ## v0.5.9 — Document Hierarchy and Text Fidelity
 

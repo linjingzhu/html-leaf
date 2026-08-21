@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportText: (payload) => ipcRenderer.invoke('file:exportText', payload),
   saveTextPath: (payload) => ipcRenderer.invoke('file:saveTextPath', payload),
   copyDocumentAs: (payload) => ipcRenderer.invoke('file:copyDocumentAs', payload),
+  exportPageAs: (payload) => ipcRenderer.invoke('file:exportPageAs', payload),
   exportObjectAsset: (payload) => ipcRenderer.invoke('file:exportObjectAsset', payload),
   exportObjectAssets: (payload) => ipcRenderer.invoke('file:exportObjectAssets', payload),
   readLocalAssetDataUrl: (url) => ipcRenderer.invoke('file:readLocalAssetDataUrl', url),

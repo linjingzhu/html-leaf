@@ -7,11 +7,16 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+<div class="app-startup" id="appStartup" role="status" aria-live="polite">
+  <div class="app-startup-mark" aria-hidden="true">L</div>
+  <div class="app-startup-copy">
+    <strong>Starting Leaf</strong>
+    <span id="appStartupMessage">Preparing the editor and document views…</span>
+  </div>
+  <div class="app-startup-progress" aria-hidden="true"><i></i></div>
+</div>
 <div class="app" id="appRoot">
   <header class="menubar">
-    <div class="product-mark" title="Leaf" aria-label="Leaf">
-      <img src="./assets/product-icon.png" alt="" />
-    </div>
     <nav class="main-menu" id="mainMenu" aria-label="Application menu">
       <div class="menu">
         <button class="menu-trigger">File</button>
@@ -21,7 +26,7 @@
           <button data-action="save-project">Save Project <kbd>Ctrl+S</kbd></button>
           <button data-action="save-project-as">Save Project As <kbd>Ctrl+Shift+S</kbd></button>
           <div class="separator"></div>
-          <button data-action="new-document">New Document…</button>
+          <button data-action="new-document">New Document</button>
           <button data-action="new-page">New Page <kbd>Ctrl+Shift+N</kbd></button>
           <button data-action="save-page">Save Page</button>
           <button data-action="save-page-as">Save Page As…</button>
@@ -65,17 +70,28 @@
           <div class="menu-label">Appearance</div>
           <button data-pref-theme="dark">Dark <span class="check theme-dark">✓</span></button>
           <button data-pref-theme="light">Light <span class="check theme-light"></span></button>
+          <button data-pref-theme="carbon">Carbon <span class="check theme-carbon"></span></button>
+        </div>
+      </div>
+
+      <div class="menu">
+        <button class="menu-trigger">Help</button>
+        <div class="menu-popup">
+          <button data-action="about">About Leaf</button>
         </div>
       </div>
     </nav>
 
+    <button class="panel-toggle-top sidebar-toggle-top" id="sidebarToggleTop" type="button"
+            aria-controls="leftSidebar" aria-expanded="true" aria-label="Hide left panel" title="Hide left panel">◨</button>
     <div class="menubar-spacer"></div>
     <div class="workspace-title" id="workspaceTitle">Untitled Workspace</div>
-    <button class="inspector-toggle-top" id="inspectorToggleTop" title="Toggle Inspector">◧</button>
+    <button class="panel-toggle-top inspector-toggle-top" id="inspectorToggleTop" type="button"
+            aria-controls="inspector" aria-expanded="true" aria-label="Hide Inspector" title="Hide Inspector">◧</button>
   </header>
 
   <section class="workspace" id="workspace">
-    <aside class="sidebar">
+    <aside class="sidebar" id="leftSidebar">
       <div class="left-top">
         <div class="left-tabs">
           <button class="left-tab active" data-left-tab="project">Project</button>
@@ -84,6 +100,9 @@
         </div>
         <section class="left-tab-panel active" data-left-panel="project">
           <div class="pane-title"><span>Documents</span><button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button></div>
+          <div class="objects-toolbar project-search-toolbar">
+            <input id="projectSearch" type="search" placeholder="Search documents..." aria-label="Search Project documents" />
+          </div>
           <div class="tree" id="tree" tabindex="0"></div>
         </section>
         <section class="left-tab-panel" data-left-panel="objects">
@@ -124,8 +143,8 @@
         <div class="crumbs" id="crumbs">No page selected</div>
         <div class="spacer"></div>
         <div class="seg" id="viewSeg">
-          <button data-mode="preview" class="active">Preview</button>
-          <button data-mode="split">Split</button>
+          <button data-mode="preview" class="active" aria-label="Preview view">Preview</button>
+          <button data-mode="split" aria-label="Compare view">Compare</button>
           <button data-mode="code">Code</button>
         </div>
       </div>
@@ -134,7 +153,10 @@
         <section class="view-pane single-view viewport-mode is-active active-view" data-mode-panel="preview" id="singleView">
           <div class="view-pane-head">
             <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
-            <span class="view-page-name" id="singlePageName"></span>
+            <select class="page-select" id="singlePageName" aria-label="Preview Page"></select>
+            <div class="view-search" data-view-search="single" role="search">
+              <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Preview"><span data-view-search-status aria-live="polite"></span>
+            </div>
             <div class="spacer"></div>
             <button class="jira-check-btn" data-jira-check-slot="single">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="single" aria-label="Preview render size">
@@ -161,7 +183,7 @@
           <div class="html-drop-zone" data-drop-slot="single">
             <div class="drop-icon">⇩</div>
             <strong>Drop Page here</strong>
-            <span>HTML, Markdown, or PDF</span>
+            <span>HTML, Markdown, JSON, or PDF</span>
           </div>
         </section>
 
@@ -170,6 +192,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="left" aria-pressed="false">Edit</button>
               <select class="page-select" id="leftPageSelect"></select>
+              <div class="view-search" data-view-search="left" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search left Compare view"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="spacer"></div>
               <button class="jira-check-btn" data-jira-check-slot="left">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="left" aria-label="Left preview render size">
@@ -201,6 +226,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="right" aria-pressed="false">Edit</button>
               <select class="page-select" id="rightPageSelect"></select>
+              <div class="view-search" data-view-search="right" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search right Compare view"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="atlassian-preview-toolbar" id="atlassianPreviewToolbar" hidden>
                 <strong>Jira ticket body</strong>
                 <span id="atlassianPreviewSource"></span>
@@ -248,6 +276,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="codePreview" aria-pressed="false">Edit</button>
               <select class="page-select" id="codePreviewSelect"></select>
+              <div class="view-search" data-view-search="codePreview" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Code preview"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="spacer"></div>
               <button class="jira-check-btn" data-jira-check-slot="codePreview">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="codePreview" aria-label="Code preview render size">
@@ -308,6 +339,12 @@
         </div>
       </div>
 
+      <div class="inspector-property-search" role="search">
+        <span aria-hidden="true">⌕</span>
+        <input id="inspectorPropertySearch" type="search" placeholder="Search properties..." aria-label="Search Inspector properties" />
+        <span id="inspectorPropertySearchStatus" aria-live="polite"></span>
+      </div>
+
       <div class="structured-toolbar" id="tableToolbar" hidden>
         <div class="structured-toolbar-title">Table</div>
         <div class="structured-toolbar-row">
@@ -342,6 +379,11 @@
   <button data-object-context="delete">Delete <span>Del</span></button>
 </div>
 
+<div id="usedContextMenu" class="context-menu" role="menu" tabindex="-1" hidden>
+  <button data-used-context="highlight">Highlight Instances</button>
+  <button data-used-context="clear">Clear Highlights</button>
+</div>
+
 <div id="treeContextMenu" class="context-menu" role="menu" tabindex="-1" hidden>
   <button data-context="rename">Rename <span>F2</span></button>
   <button data-context="copy">Copy <span>Ctrl+C</span></button>
@@ -349,13 +391,13 @@
   <button data-context="duplicate">Duplicate <span>Ctrl+D</span></button>
   <button data-context="delete">Delete <span>Del</span></button>
   <div class="separator"></div>
-  <button data-context="add-page">Add Empty Page</button>
-  <button data-context="add-group">Add Group (Container)</button>
+  <button data-context="add-page">New Page</button>
+  <button data-context="add-group">New Section</button>
 </div>
 
 <div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
-  <button data-tree-add="page">Add Page</button>
-  <button data-tree-add="group">Add Group (Container)</button>
+  <button data-tree-add="page">New Page</button>
+  <button data-tree-add="group">New Section</button>
 </div>
 
 <input type="color" id="documentColorPicker" hidden />
@@ -369,6 +411,34 @@
       <button class="btn" id="modalCancel">Cancel</button>
       <button class="btn primary" id="modalConfirm">OK</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="savePageAsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="savePageAsTitle">
+    <h3 id="savePageAsTitle">Save Page As</h3>
+    <p>Choose the output format. Converting to PDF creates a rendered document; other conversions preserve the source in a compatible text representation.</p>
+    <label class="modal-field">Format
+      <select id="savePageAsFormat">
+        <option value="html">HTML (.html)</option>
+        <option value="markdown">Markdown (.md)</option>
+        <option value="json">JSON (.json)</option>
+        <option value="pdf">PDF (.pdf)</option>
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="savePageAsCancel">Cancel</button>
+      <button class="btn primary" id="savePageAsConfirm">Save As…</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="aboutModal" role="presentation">
+  <div class="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="about-brand"><img src="./assets/product-icon.png" alt=""><div><h3 id="aboutTitle">Leaf</h3><span>Version 0.5.16</span></div></div>
+    <p>Visual project editor for HTML, Markdown, JSON, and PDF pages.</p>
+    <dl class="about-details"><div><dt>Project format</dt><dd>.prj</dd></div><div><dt>Runtime</dt><dd>Electron</dd></div><div><dt>Security</dt><dd>Sandboxed previews</dd></div></dl>
+    <div class="modal-actions"><button class="btn primary" id="aboutClose">OK</button></div>
   </div>
 </div>
 
@@ -423,12 +493,13 @@
 
 <div class="modal-backdrop" id="replaceHtmlModal" role="presentation">
   <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="replaceHtmlTitle">
-    <h3 id="replaceHtmlTitle">Replace loaded Page?</h3>
-    <p>The current Viewport already contains a page. Replace it with the dropped page?</p>
+    <h3 id="replaceHtmlTitle">Open dropped Page</h3>
+    <p id="replaceHtmlMessage">The current View already contains a Page. Open the dropped file as a new Page or replace the current Page.</p>
     <div class="clear-html-target" id="replaceHtmlTarget"></div>
     <div class="modal-actions">
       <button class="btn" id="replaceHtmlCancel">Cancel</button>
-      <button class="btn primary" id="replaceHtmlConfirm">Replace</button>
+      <button class="btn" id="replaceHtmlOpenNew">Open as New Page</button>
+      <button class="btn danger" id="replaceHtmlConfirm">Replace Current</button>
     </div>
   </div>
 </div>
@@ -493,6 +564,21 @@
 <script src="./jira-compat.js"></script>
 <script src="./semantic-document.js"></script>
 <script src="./jira-export.js"></script>
-<script src="./renderer.js"></script>
+<script>
+  (() => {
+    const loadRenderer = () => {
+      const script = document.createElement('script');
+      script.src = './renderer.js';
+      script.async = true;
+      script.onerror = () => {
+        const message = document.querySelector('#appStartupMessage');
+        if (message) message.textContent = 'Leaf could not start. Restart the application.';
+        document.querySelector('#appStartup')?.classList.add('startup-error');
+      };
+      document.body.appendChild(script);
+    };
+    setTimeout(loadRenderer, 80);
+  })();
+</script>
 </body>
 </html>

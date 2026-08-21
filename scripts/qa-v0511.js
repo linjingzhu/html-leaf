@@ -12,7 +12,7 @@ function check(name,condition){if(!condition){console.error(`FAIL ${name}`);proc
 check('Package and product names are Leaf',pkg.name==='leaf'&&pkg.build?.productName==='Leaf');
 check('Windows identity is registered for Leaf',pkg.build?.appId==='com.leaf.editor'&&main.includes("app.setAppUserModelId('com.leaf.editor')"));
 check('Electron runtime name is Leaf',main.includes("app.setName('Leaf')")&&main.includes("title: 'Leaf'"));
-check('Renderer document and product mark are labelled Leaf',html.includes('<title>Leaf</title>')&&html.includes('title="Leaf" aria-label="Leaf"'));
+check('Renderer document is labelled Leaf without a menu-bar product mark',html.includes('<title>Leaf</title>')&&html.includes('aria-label="Application menu"')&&!html.includes('class="product-mark"'));
 check('Executable and installer artifacts use Leaf filenames',pkg.build?.win?.artifactName?.startsWith('Leaf-')&&pkg.build?.nsis?.artifactName?.startsWith('Leaf-Setup-'));
 check('Desktop and Start Menu shortcuts are named Leaf',pkg.build?.nsis?.shortcutName==='Leaf');
 check('Leaf container dialogs use the Leaf product name',main.split("name: 'Leaf Project'").length===3||main.split("name: 'Leaf Document'").length===3);

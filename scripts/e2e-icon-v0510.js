@@ -25,13 +25,13 @@ async function main(){
   await send('Runtime.enable');
   await send('Page.enable');
   await sleep(350);
-  const result=await evaluate(`(() => {const mark=document.querySelector('.product-mark'),image=mark?.querySelector('img'),rect=mark?.getBoundingClientRect();return{title:document.title,aria:mark?.getAttribute('aria-label'),mark:!!mark,complete:image?.complete,naturalWidth:image?.naturalWidth,naturalHeight:image?.naturalHeight,left:rect?.left,top:rect?.top,width:rect?.width,height:rect?.height,first:document.querySelector('.menubar')?.firstElementChild===mark};})()`);
-  if(result.title!=='Leaf'||result.aria!=='Leaf'||!result.mark||!result.complete||result.naturalWidth!==512||result.naturalHeight!==512||Math.abs(result.left)>1||Math.abs(result.top)>1||!result.first){
-    throw new Error(`Product icon E2E failed: ${JSON.stringify(result)}`);
+  const result=await evaluate(`(() => {const bar=document.querySelector('.menubar'),menu=document.querySelector('#mainMenu'),file=document.querySelector('.menu-trigger');return{title:document.title,mark:!!document.querySelector('.product-mark'),first:bar?.firstElementChild===menu,fileLeft:file?.getBoundingClientRect().left};})()`);
+  if(result.title!=='Leaf'||result.mark||!result.first||Math.abs(result.fileLeft)>1){
+    throw new Error(`Main-menu icon removal E2E failed: ${JSON.stringify(result)}`);
   }
   const screenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(__dirname,'qa-evidence-v0511.png'),Buffer.from(screenshot.data,'base64'));
-  console.log(`PASS packaged product icon E2E ${JSON.stringify(result)}`);
+  console.log(`PASS packaged main-menu icon removal E2E ${JSON.stringify(result)}`);
   socket.close();
 }
 

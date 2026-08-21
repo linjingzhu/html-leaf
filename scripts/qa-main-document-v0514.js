@@ -19,10 +19,10 @@ async function main(){
   const api=context.__leafMainTest;let passed=0;
   const check=(name,condition)=>{if(!condition)throw new Error(`FAIL ${name}`);passed++;console.log(`PASS ${name}`);};
   try{
-    const htmlPath=path.join(temp,'page.html'),mdPath=path.join(temp,'notes.md'),pdfPath=path.join(temp,'guide.pdf'),webpPath=path.join(temp,'motion.webp'),txtPath=path.join(temp,'bad.txt');
-    await fsp.writeFile(htmlPath,'<!doctype html><h1>Leaf</h1>');await fsp.writeFile(mdPath,'# Leaf');await fsp.writeFile(pdfPath,Buffer.from('%PDF-1.4\n'));await fsp.writeFile(webpPath,Buffer.from('RIFF0000WEBPVP8XANIMANMF'));await fsp.writeFile(txtPath,'no');
-    const html=await api.readDocumentPath(htmlPath),md=await api.readDocumentPath(mdPath),pdf=await api.readDocumentPath(pdfPath);
-    check('Main loader classifies HTML, Markdown, and PDF',html.documentType==='html'&&md.documentType==='markdown'&&pdf.documentType==='pdf');
+    const htmlPath=path.join(temp,'page.html'),mdPath=path.join(temp,'notes.md'),jsonPath=path.join(temp,'data.json'),pdfPath=path.join(temp,'guide.pdf'),webpPath=path.join(temp,'motion.webp'),txtPath=path.join(temp,'bad.txt');
+    await fsp.writeFile(htmlPath,'<!doctype html><h1>Leaf</h1>');await fsp.writeFile(mdPath,'# Leaf');await fsp.writeFile(jsonPath,'{"leaf":true}');await fsp.writeFile(pdfPath,Buffer.from('%PDF-1.4\n'));await fsp.writeFile(webpPath,Buffer.from('RIFF0000WEBPVP8XANIMANMF'));await fsp.writeFile(txtPath,'no');
+    const html=await api.readDocumentPath(htmlPath),md=await api.readDocumentPath(mdPath),jsonPage=await api.readDocumentPath(jsonPath),pdf=await api.readDocumentPath(pdfPath);
+    check('Main loader classifies HTML, Markdown, JSON, and PDF',html.documentType==='html'&&md.documentType==='markdown'&&jsonPage.documentType==='json'&&jsonPage.source==='{"leaf":true}'&&pdf.documentType==='pdf');
     check('PDF remains binary/read-only and uses a file preview URL',pdf.source===''&&pdf.previewUrl.startsWith('file:'));
     let unsupported=false;try{await api.readDocumentPath(txtPath);}catch{unsupported=true;}
     check('Unsupported Explorer files are rejected',unsupported);

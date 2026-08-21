@@ -2,13 +2,14 @@
   "name": "leaf",
   "version": "0.5.16",
   "private": true,
-  "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/PDF page support.",
+  "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/JSON/PDF page support.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "qa": "node scripts/qa-v0516.js",
     "qa:fidelity": "node scripts/qa-source-fidelity.js",
+    "qa:zoom-scrollbar": "node scripts/qa-zoom-scrollbar-v0516.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
     "dist:win": "electron-builder --win nsis zip --x64 --publish never"
   },
