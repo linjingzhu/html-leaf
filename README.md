@@ -18,6 +18,9 @@ Project (.prj)                       Ctrl+N
 - Document View modes are labelled `Preview`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
 - The application menu now starts at the left edge without an embedded product icon; executable, installer, Desktop, and Start Menu icons remain branded.
 - Hovering an object in HTML Edit shows a DevTools-style highlight and a property tooltip with its selector, editable name, rendered size, role, display mode, and keyboard-focusability. The current selection remains active while another object is inspected.
+- `Save Page As` explicitly supports HTML, Markdown, JSON, and rendered PDF output. Cross-format exports leave the editable Page unchanged, while same-format Save As adopts the new file path.
+- Preview, both Compare panes, Code Preview, and Code Source all provide Search. Matches are highlighted without changing the Page DOM, and Enter/Shift+Enter moves to the next/previous result.
+- The final main-menu item is `Help`, with an `About Leaf` product-information dialog.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 

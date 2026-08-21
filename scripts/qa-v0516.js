@@ -19,7 +19,7 @@ check('Document View mode labels are Preview and Compare',
   html.includes('data-mode="split" aria-label="Compare view">Compare</button>')&&
   html.includes('data-mode="code">Code</button>'));
 check('Main menu starts at the left edge without a product icon',
-  !html.includes('class="product-mark"')&&!html.includes('./assets/product-icon.png')&&
+  !html.includes('class="product-mark"')&&html.includes('<nav class="main-menu" id="mainMenu"')&&
   !read('src/renderer/styles.css').includes('.product-mark{'));
 check('Hover inspection uses an independent highlight without changing selection',
   js.includes("hoverOverlay.dataset.editorOverlay='hover-highlight'")&&
@@ -28,6 +28,17 @@ check('Hover tooltip exposes object identity, geometry, role, display, and focus
   js.includes("hoverTooltip.dataset.editorOverlay='hover-tooltip'")&&
   js.includes("['Name',objectDisplayName(el)]")&&js.includes("['Role',implicitRole(el)]")&&
   js.includes("['Display',computed.display||'—']")&&js.includes("['Focusable',isKeyboardFocusable(el)?'Yes':'No']"));
+check('Save Page As supports HTML, Markdown, JSON, and rendered PDF',
+  ['html','markdown','json','pdf'].every(format=>html.includes(`option value="${format}"`))&&
+  main.includes('async function exportPageAs')&&main.includes('printToPDF({ printBackground: true, preferCSSPageSize: true })')&&
+  read('src/preload.js').includes("exportPageAs: (payload) => ipcRenderer.invoke('file:exportPageAs'"));
+check('Every visual View owns non-mutating highlight search with Enter navigation',
+  (html.match(/data-view-search=/g)||[]).length===4&&html.includes('id="codeSearch"')&&
+  js.includes("CSS.highlights.set('leaf-search-all'")&&js.includes("CSS.highlights.set('leaf-search-current'")&&
+  js.includes("if(event.key==='Enter'){event.preventDefault();refreshViewSearch"));
+check('Help is the final main menu and About opens product information',
+  html.lastIndexOf('<button class="menu-trigger">Help</button>')>html.lastIndexOf('<button class="menu-trigger">Preference</button>')&&
+  html.includes('data-action="about"')&&html.includes('id="aboutModal"')&&js.includes("case 'about': return openAboutDialog()"));
 check('Project save commands own Ctrl+S shortcuts',
   html.includes('Save Project <kbd>Ctrl+S</kbd>')&&html.includes('Save Project As <kbd>Ctrl+Shift+S</kbd>')&&
   js.includes('saveLeafProject(true)')&&js.includes('saveLeafProject(false)'));
@@ -68,4 +79,6 @@ check('Direct source input is immediate, undoable, bounded, and metadata guarded
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy, hover inspection, and source-edit QA: ${passed}/20 PASS`);
+const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
+check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
+console.log(`Leaf v0.5.16 Page export, cross-view search, and About QA: ${passed}/24 PASS`);

@@ -64,6 +64,13 @@
           <button data-pref-theme="light">Light <span class="check theme-light"></span></button>
         </div>
       </div>
+
+      <div class="menu">
+        <button class="menu-trigger">Help</button>
+        <div class="menu-popup">
+          <button data-action="about">About Leaf</button>
+        </div>
+      </div>
     </nav>
 
     <div class="menubar-spacer"></div>
@@ -132,6 +139,9 @@
           <div class="view-pane-head">
             <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
             <span class="view-page-name" id="singlePageName"></span>
+            <div class="view-search" data-view-search="single" role="search">
+              <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Preview"><span data-view-search-status aria-live="polite"></span>
+            </div>
             <div class="spacer"></div>
             <button class="jira-check-btn" data-jira-check-slot="single">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="single" aria-label="Preview render size">
@@ -167,6 +177,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="left" aria-pressed="false">Edit</button>
               <select class="page-select" id="leftPageSelect"></select>
+              <div class="view-search" data-view-search="left" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search left Compare view"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="spacer"></div>
               <button class="jira-check-btn" data-jira-check-slot="left">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="left" aria-label="Left preview render size">
@@ -198,6 +211,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="right" aria-pressed="false">Edit</button>
               <select class="page-select" id="rightPageSelect"></select>
+              <div class="view-search" data-view-search="right" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search right Compare view"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="atlassian-preview-toolbar" id="atlassianPreviewToolbar" hidden>
                 <strong>Jira ticket body</strong>
                 <span id="atlassianPreviewSource"></span>
@@ -245,6 +261,9 @@
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="codePreview" aria-pressed="false">Edit</button>
               <select class="page-select" id="codePreviewSelect"></select>
+              <div class="view-search" data-view-search="codePreview" role="search">
+                <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Code preview"><span data-view-search-status aria-live="polite"></span>
+              </div>
               <div class="spacer"></div>
               <button class="jira-check-btn" data-jira-check-slot="codePreview">Check Atlassian</button>
             <select class="viewport-size-select" data-preview-size-slot="codePreview" aria-label="Code preview render size">
@@ -366,6 +385,34 @@
       <button class="btn" id="modalCancel">Cancel</button>
       <button class="btn primary" id="modalConfirm">OK</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="savePageAsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="savePageAsTitle">
+    <h3 id="savePageAsTitle">Save Page As</h3>
+    <p>Choose the output format. Converting to PDF creates a rendered document; other conversions preserve the source in a compatible text representation.</p>
+    <label class="modal-field">Format
+      <select id="savePageAsFormat">
+        <option value="html">HTML (.html)</option>
+        <option value="markdown">Markdown (.md)</option>
+        <option value="json">JSON (.json)</option>
+        <option value="pdf">PDF (.pdf)</option>
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="savePageAsCancel">Cancel</button>
+      <button class="btn primary" id="savePageAsConfirm">Save As…</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="aboutModal" role="presentation">
+  <div class="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="about-brand"><img src="./assets/product-icon.png" alt=""><div><h3 id="aboutTitle">Leaf</h3><span>Version 0.5.16</span></div></div>
+    <p>Visual project editor for HTML, Markdown, JSON, and PDF pages.</p>
+    <dl class="about-details"><div><dt>Project format</dt><dd>.prj</dd></div><div><dt>Runtime</dt><dd>Electron</dd></div><div><dt>Security</dt><dd>Sandboxed previews</dd></div></dl>
+    <div class="modal-actions"><button class="btn primary" id="aboutClose">OK</button></div>
   </div>
 </div>
 

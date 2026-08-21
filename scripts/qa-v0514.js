@@ -21,7 +21,7 @@ check('Leaf shortcuts target the active hierarchy',(js.includes("e.shiftKey&&e.k
 check('Edit state uses a red button and red View outline',js.includes("classList.toggle('edit-active',active)")&&css.includes('.view-pane.edit-active')&&css.includes('background:#d93c3c'));
 check('App and preview scrollbars use compact styling',css.includes('*::-webkit-scrollbar{width:8px;height:8px}')&&js.includes('<style data-editor-overlay="1">*::-webkit-scrollbar'));
 check('Code line rail follows editor metrics and scrolling',html.includes('wrap="off"')&&js.includes('syncLineRailScroll')&&js.includes('translateY(${-refs.source.scrollTop}px)')&&css.includes('font:12px/1.55'));
-check('Code search bar and Ctrl+F focus path exist',html.includes('id="codeSearch"')&&js.includes("modifier&&e.key.toLowerCase()==='f'&&state.mode==='code'")&&js.includes('findCodeMatch'));
+check('Code search bar and Ctrl+F focus path exist',html.includes('id="codeSearch"')&&(js.includes("modifier&&e.key.toLowerCase()==='f'&&state.mode==='code'")||js.includes('activeViewSearchInput()'))&&js.includes('findCodeMatch'));
 check('Inspector supports two foldable grouping levels',js.includes('class="property-subgroup"')&&js.includes("data-inspector-group=\"General\"")&&js.includes("'Appearance/Typography'"));
 check('Inspector object name has prominent typography',css.includes('.node-name{')&&css.includes('font-size:15px')&&css.includes('font-weight:750'));
 check('Raster export captures the rendered object',main.includes('webContents.capturePage')&&js.includes('captureRenderedObject(element,snapshot,format)'));

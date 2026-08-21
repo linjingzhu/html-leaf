@@ -16,7 +16,7 @@ function check(name,condition){if(!condition){console.error(`FAIL ${name}`);proc
 check('Windows ICO contains a multi-resolution icon directory',ico.readUInt16LE(2)===1&&ico.readUInt16LE(4)>=9);
 check('Renderer product PNG is a valid 512px square PNG',productPng.subarray(1,4).toString()==='PNG'&&productPng.readUInt32BE(16)===512&&productPng.readUInt32BE(20)===512);
 check('BrowserWindow uses the branded Windows icon',main.includes("icon: path.join(__dirname, '..', 'build', 'icon.ico')"));
-check('Main menu begins without an embedded product mark',!html.includes('class="product-mark"')&&!html.includes('./assets/product-icon.png')&&html.includes('<nav class="main-menu" id="mainMenu"'));
+check('Main menu begins without an embedded product mark',!html.includes('class="product-mark"')&&html.includes('<nav class="main-menu" id="mainMenu"'));
 check('Removed product mark leaves no application-bar gutter styles',!css.includes('.product-mark{')&&!css.includes('.product-mark img{'));
 check('Windows package uses branded application icon',pkg.build?.win?.icon==='build/icon.ico');
 check('Installer and uninstaller use branded icons',pkg.build?.nsis?.installerIcon==='build/installerIcon.ico'&&pkg.build?.nsis?.uninstallerIcon==='build/icon.ico');

@@ -28,6 +28,12 @@ The embedded Leaf icon has been removed from the left side of the application me
 
 When HTML Edit is active, hovering a rendered object now shows a translucent blue object highlight and a viewport-clamped property tooltip. The tooltip reports the selector, object name, rendered dimensions, semantic role, computed display mode, and keyboard-focusability. Hover inspection is separate from persistent selection, so inspecting another object does not clear the selected widget or Inspector state.
 
+`Save Page As` now opens an explicit format selector for HTML, Markdown, JSON, and PDF. HTML-to-Markdown uses the semantic document converter, JSON cross-format output uses a lossless Leaf Page source envelope, and PDF output is generated through a sandboxed, JavaScript-disabled print window with print backgrounds enabled. Saving in the Page's current format adopts the new path; cross-format output is treated as an export copy so the editable source type is not destructively replaced.
+
+Search is available in Preview, both Compare panes, Code Preview, and Code Source. Preview matches use the browser CSS Highlight API, so highlighting does not inject wrapper elements or alter serialized source. Enter advances and Shift+Enter moves backward, wrapping across matches and scrolling the current result into view. Scripted opaque-origin previews and direct Markdown/JSON editors use token-validated search bridges.
+
+The main menu now ends with `Help > About Leaf`, which opens a keyboard-accessible product-information dialog.
+
 ## Supported Page formats
 
 - HTML / HTM
@@ -45,8 +51,10 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 hierarchy, hover inspection, Preview source-edit, and menu-bar QA: 20/20
+- v0.5.16 Page export, cross-view search, About, hover inspection, and source-edit QA: 24/24
+- Main-process Save Page As format and PDF rendering QA: 7/7
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional and adversarial QA: 25/25
+- Source Electron functional and adversarial QA: 29/29
+- Packaged Electron functional and adversarial QA: 29/29
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS
