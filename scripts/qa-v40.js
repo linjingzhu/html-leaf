@@ -1,0 +1,25 @@
+const fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const js=fs.readFileSync(path.join(root,'src/renderer/renderer.js'),'utf8');
+const reg=fs.readFileSync(path.join(root,'src/renderer/widget-registry.js'),'utf8');
+const compat=fs.readFileSync(path.join(root,'src/renderer/jira-compat.js'),'utf8');
+const css=fs.readFileSync(path.join(root,'src/renderer/styles.css'),'utf8');
+let p=0,f=0;function c(n,v){if(v){console.log('PASS ',n);p++;}else{console.error('FAIL ',n);f++;}}
+c('Registry creates widgets',reg.includes('function create(type,doc)')&&reg.includes("data-hbe-id"));
+c('Registry validates containers',reg.includes('function canContain(element)'));
+c('Palette drop is consumed in viewport',js.includes("application/x-hbe-object-template")&&js.includes("doc.addEventListener('drop'"));
+c('Palette drop is consumed in hierarchy',js.includes('handleHierarchyDrop'));
+c('Hierarchy existing node move supported',js.includes('application/x-hbe-existing-element'));
+c('DOM mutation commits source',js.includes('function commitDomMutation')&&js.includes('syncFrameToPage(frame,page)'));
+c('Hierarchy expand/collapse exists',js.includes('hierarchyExpanded')&&js.includes('data-twisty'));
+c('Selection manager exists',js.includes('const SelectionManager='));
+c('Common splitter supports horizontal axis',js.includes("aria-orientation')==='horizontal'?'y':'x'"));
+c('Hierarchy splitter uses beginResizeSession',js.includes('handle:refs.leftHorizontalSplitter')&&js.includes('beginResizeSession({'));
+c('Hierarchy ratio persisted',js.includes('state.layout.leftTopRatio=value'));
+c('Jira check uses same export resolver',js.includes('const payload=await htmlForSemanticExport(page)'));
+c('Export result carries diagnostics',js.includes('return {semantic,sourceKind:payload.sourceKind,diagnostics}'));
+c('Issue mapping has stable identity',compat.includes('objectId:el.getAttribute')&&compat.includes('occurrence:index'));
+c('Marker resolver uses objectId',js.includes('issue.objectId?candidates.find'));
+c('ADF markers removed before source serialization',js.includes("[data-adf-marker],[data-hbe-drop-line]"));
+c('Row resize cursor state exists',css.includes('body.is-resizing-row'));
+console.log(`\n${p}/${p+f} checks passed.`);process.exit(f?1:0);

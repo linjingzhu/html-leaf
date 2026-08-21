@@ -1,0 +1,54 @@
+{
+  "name": "leaf",
+  "version": "0.5.16",
+  "private": true,
+  "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/PDF page support.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "qa": "node scripts/qa-v0516.js",
+    "qa:fidelity": "node scripts/qa-source-fidelity.js",
+    "icons:build": "python scripts/build-icons.py build/icon.png .",
+    "dist:win": "electron-builder --win nsis zip --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "43.4.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.leaf.editor",
+    "productName": "Leaf",
+    "asar": true,
+    "directories": {
+      "output": "release-v0.5.16",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "README.md",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "Leaf-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Leaf",
+      "installerIcon": "build/installerIcon.ico",
+      "installerHeaderIcon": "build/installerHeaderIcon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "Leaf-Setup-${version}-${arch}.${ext}"
+    }
+  }
+}

@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leaf</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<div class="app" id="appRoot">
+  <header class="menubar">
+    <div class="product-mark" title="Leaf" aria-label="Leaf">
+      <img src="./assets/product-icon.png" alt="" />
+    </div>
+    <nav class="main-menu" id="mainMenu" aria-label="Application menu">
+      <div class="menu">
+        <button class="menu-trigger">File</button>
+        <div class="menu-popup">
+          <button data-action="new-project">New Project <kbd>Ctrl+N</kbd></button>
+          <button data-action="open-project">Open Project…</button>
+          <button data-action="save-project">Save Project <kbd>Ctrl+S</kbd></button>
+          <button data-action="save-project-as">Save Project As <kbd>Ctrl+Shift+S</kbd></button>
+          <div class="separator"></div>
+          <button data-action="new-document">New Document…</button>
+          <button data-action="new-page">New Page <kbd>Ctrl+Shift+N</kbd></button>
+          <button data-action="save-page">Save Page</button>
+          <button data-action="save-page-as">Save Page As…</button>
+          <div class="separator"></div>
+          <button data-action="import">Import Pages…</button>
+          <button data-action="export">Export HTML</button>
+          <div class="separator"></div>
+          <button data-action="jira-export">Jira / Atlassian Export…</button>
+          <button data-action="copy-jira">Copy for Jira</button>
+          <button data-action="copy-markdown">Copy as Markdown</button>
+          <button data-action="export-adf">Export ADF JSON</button>
+          <div class="separator"></div>
+          <div class="submenu">
+            <button>Recent <span>›</span></button>
+            <div class="submenu-popup" id="recentMenu"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu">
+        <button class="menu-trigger">Edit</button>
+        <div class="menu-popup">
+          <button data-action="undo">Undo <kbd>Ctrl+Z</kbd></button>
+          <button data-action="redo">Redo <kbd>Ctrl+Shift+Z</kbd></button>
+        </div>
+      </div>
+
+      <div class="menu">
+        <button class="menu-trigger">Preference</button>
+        <div class="menu-popup preference-menu">
+          <div class="menu-label">Language</div>
+          <button data-pref-lang="ko">한국어 <span class="check lang-ko">✓</span></button>
+          <button data-pref-lang="en">English <span class="check lang-en"></span></button>
+          <div class="separator"></div>
+          <div class="menu-label">UI Scale</div>
+          <button data-pref-scale="0.9">90%</button>
+          <button data-pref-scale="1">100%</button>
+          <button data-pref-scale="1.1">110%</button>
+          <button data-pref-scale="1.25">125%</button>
+          <div class="separator"></div>
+          <div class="menu-label">Appearance</div>
+          <button data-pref-theme="dark">Dark <span class="check theme-dark">✓</span></button>
+          <button data-pref-theme="light">Light <span class="check theme-light"></span></button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="menubar-spacer"></div>
+    <div class="workspace-title" id="workspaceTitle">Untitled Workspace</div>
+    <button class="inspector-toggle-top" id="inspectorToggleTop" title="Toggle Inspector">◧</button>
+  </header>
+
+  <section class="workspace" id="workspace">
+    <aside class="sidebar">
+      <div class="left-top">
+        <div class="left-tabs">
+          <button class="left-tab active" data-left-tab="project">Project</button>
+          <button class="left-tab" data-left-tab="objects">Objects</button>
+          <button class="left-tab" data-left-tab="used">Used</button>
+        </div>
+        <section class="left-tab-panel active" data-left-panel="project">
+          <div class="pane-title"><span>Documents</span><button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button></div>
+          <div class="tree" id="tree" tabindex="0"></div>
+        </section>
+        <section class="left-tab-panel" data-left-panel="objects">
+          <div class="objects-toolbar">
+            <input id="objectSearch" type="search" placeholder="Search objects..." />
+            <div class="objects-filter"><button class="active" data-object-filter="all">All</button><button data-object-filter="jira-safe">Atlassian Safe</button></div>
+          </div>
+          <div class="objects-list" id="objectsList"></div>
+        </section>
+        <section class="left-tab-panel" data-left-panel="used">
+          <div class="used-components-head">
+            <span>Extracted from active HTML</span>
+            <div class="used-components-head-actions">
+              <button class="tiny-btn active" id="toggleUsedPreview" type="button" aria-pressed="true" title="Show or hide component preview">Preview</button>
+              <button class="tiny-btn" id="refreshUsedComponents" type="button" title="Refresh extracted components">↻</button>
+            </div>
+          </div>
+          <div class="objects-list used-components-list" id="usedComponentsList"></div>
+          <div class="used-preview-splitter splitter-handle horizontal" id="usedPreviewSplitter" role="separator" aria-orientation="horizontal" aria-label="Resize Used component preview"></div>
+          <section class="used-component-preview" aria-label="Selected component preview">
+            <div class="used-component-preview-head"><span>Preview</span><span id="usedComponentPreviewName">No component selected</span></div>
+            <iframe id="usedComponentPreviewFrame" sandbox="" title="Used component preview"></iframe>
+          </section>
+        </section>
+      </div>
+      <div class="left-horizontal-splitter splitter-handle horizontal" id="leftHorizontalSplitter" role="separator" aria-orientation="horizontal"></div>
+      <section class="hierarchy-panel">
+        <div class="pane-title"><span>Hierarchy</span><button class="hierarchy-name-toggle active" id="hierarchyNameModeToggle" type="button" aria-pressed="true" title="Show editable object names">Name</button></div>
+        <div class="hierarchy-tree" id="hierarchyTree"></div>
+      </section>
+    </aside>
+
+    <div class="sidebar-resizer splitter-handle" id="sidebarResizer"
+         role="separator" aria-orientation="vertical" aria-label="Resize document tree"></div>
+
+    <main class="main">
+      <div class="viewbar">
+        <div class="crumbs" id="crumbs">No page selected</div>
+        <div class="spacer"></div>
+        <div class="seg" id="viewSeg">
+          <button data-mode="preview" class="active">Preview</button>
+          <button data-mode="split">Split</button>
+          <button data-mode="code">Code</button>
+        </div>
+      </div>
+
+      <div class="viewport-host" id="viewportHost">
+        <section class="view-pane single-view viewport-mode is-active active-view" data-mode-panel="preview" id="singleView">
+          <div class="view-pane-head">
+            <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
+            <span class="view-page-name" id="singlePageName"></span>
+            <div class="spacer"></div>
+            <button class="jira-check-btn" data-jira-check-slot="single">Check Atlassian</button>
+            <select class="viewport-size-select" data-preview-size-slot="single" aria-label="Preview render size">
+                <option value="responsive">Responsive</option>
+                <option value="1920x1080">1920 × 1080</option>
+                <option value="1440x900">1440 × 900</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="768x1024">768 × 1024</option>
+                <option value="390x844">390 × 844</option>
+                <option value="custom">Custom…</option>
+            </select>
+              <span class="preview-runtime-badge" data-runtime-badge="single" hidden></span>
+              <button class="viewport-clear-btn" type="button" data-clear-slot="single" title="Clear loaded HTML">Clear</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="single" aria-pressed="false" title="View page without app UI">⛶</button>
+          </div>
+          <div class="preview-canvas" data-preview-canvas="single">
+            <input class="viewport-zoom-indicator" data-preview-zoom="single" aria-label="Viewport zoom percentage" inputmode="numeric" value="100%" />
+            <div class="preview-stage">
+              <div class="preview-surface" data-preview-surface="single">
+                <iframe id="singleFrame" sandbox="allow-same-origin"></iframe>
+              </div>
+            </div>
+          </div>
+          <div class="html-drop-zone" data-drop-slot="single">
+            <div class="drop-icon">⇩</div>
+            <strong>Drop Page here</strong>
+            <span>HTML, Markdown, or PDF</span>
+          </div>
+        </section>
+
+        <div class="dual-view viewport-mode" data-mode-panel="split" id="splitView">
+          <section class="view-pane active-view" data-view-slot="left">
+            <div class="view-pane-head">
+              <button class="viewport-edit-toggle" type="button" data-edit-slot="left" aria-pressed="false">Edit</button>
+              <select class="page-select" id="leftPageSelect"></select>
+              <div class="spacer"></div>
+              <button class="jira-check-btn" data-jira-check-slot="left">Check Atlassian</button>
+            <select class="viewport-size-select" data-preview-size-slot="left" aria-label="Left preview render size">
+                <option value="responsive">Responsive</option>
+                <option value="1920x1080">1920 × 1080</option>
+                <option value="1440x900">1440 × 900</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="768x1024">768 × 1024</option>
+                <option value="390x844">390 × 844</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <span class="preview-runtime-badge" data-runtime-badge="left" hidden></span>
+              <button class="viewport-clear-btn" type="button" data-clear-slot="left" title="Clear loaded HTML">Clear</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="left" aria-pressed="false" title="View page without app UI">⛶</button>
+              <span class="active-pill">Active</span>
+            </div>
+            <div class="preview-canvas" data-preview-canvas="left">
+            <input class="viewport-zoom-indicator" data-preview-zoom="left" aria-label="Viewport zoom percentage" inputmode="numeric" value="100%" />
+              <div class="preview-stage">
+                <div class="preview-surface" data-preview-surface="left">
+                  <iframe id="leftFrame" sandbox="allow-same-origin"></iframe>
+                </div>
+              </div>
+            </div>
+            <div class="html-drop-zone" data-drop-slot="left"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Left View</span></div>
+          </section>
+          <div class="view-divider splitter-handle" id="splitDivider" role="separator" aria-orientation="vertical" aria-label="Resize split preview"></div>
+          <section class="view-pane" data-view-slot="right">
+            <div class="view-pane-head">
+              <button class="viewport-edit-toggle" type="button" data-edit-slot="right" aria-pressed="false">Edit</button>
+              <select class="page-select" id="rightPageSelect"></select>
+              <div class="atlassian-preview-toolbar" id="atlassianPreviewToolbar" hidden>
+                <strong>Jira ticket body</strong>
+                <span id="atlassianPreviewSource"></span>
+              </div>
+              <div class="spacer"></div>
+              <div class="atlassian-preview-actions" id="atlassianPreviewActions" hidden>
+                <div class="seg atlassian-format-seg" aria-label="Atlassian preview source format">
+                  <button class="active" type="button" data-atlassian-format="rich">Rich</button>
+                  <button type="button" data-atlassian-format="markdown">MD</button>
+                  <button type="button" data-atlassian-format="adf">ADF</button>
+                </div>
+                <button class="tiny-btn" type="button" id="atlassianOpenFile" title="Open Markdown or ADF JSON">Open</button>
+                <button class="tiny-btn" type="button" id="atlassianPreviewClose" title="Return to the normal Split view">×</button>
+                <input type="file" id="atlassianFileInput" accept=".md,.markdown,.json,application/json,text/markdown" hidden>
+              </div>
+              <button class="jira-check-btn" data-jira-check-slot="right">Check Atlassian</button>
+            <select class="viewport-size-select" data-preview-size-slot="right" aria-label="Right preview render size">
+                <option value="responsive">Responsive</option>
+                <option value="1920x1080">1920 × 1080</option>
+                <option value="1440x900">1440 × 900</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="768x1024">768 × 1024</option>
+                <option value="390x844">390 × 844</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <span class="preview-runtime-badge" data-runtime-badge="right" hidden></span>
+              <button class="viewport-clear-btn" type="button" data-clear-slot="right" title="Clear loaded HTML">Clear</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="right" aria-pressed="false" title="View page without app UI">⛶</button>
+              <span class="active-pill">Active</span>
+            </div>
+            <div class="preview-canvas" data-preview-canvas="right">
+            <input class="viewport-zoom-indicator" data-preview-zoom="right" aria-label="Viewport zoom percentage" inputmode="numeric" value="100%" />
+              <div class="preview-stage">
+                <div class="preview-surface" data-preview-surface="right">
+                  <iframe id="rightFrame" sandbox="allow-same-origin"></iframe>
+                </div>
+              </div>
+            </div>
+            <div class="html-drop-zone" data-drop-slot="right"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Right View</span></div>
+          </section>
+        </div>
+
+        <div class="code-view viewport-mode" data-mode-panel="code" id="codeView">
+          <section class="view-pane active-view" data-view-slot="code-preview">
+            <div class="view-pane-head">
+              <button class="viewport-edit-toggle" type="button" data-edit-slot="codePreview" aria-pressed="false">Edit</button>
+              <select class="page-select" id="codePreviewSelect"></select>
+              <div class="spacer"></div>
+              <button class="jira-check-btn" data-jira-check-slot="codePreview">Check Atlassian</button>
+            <select class="viewport-size-select" data-preview-size-slot="codePreview" aria-label="Code preview render size">
+                <option value="responsive">Responsive</option>
+                <option value="1920x1080">1920 × 1080</option>
+                <option value="1440x900">1440 × 900</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="768x1024">768 × 1024</option>
+                <option value="390x844">390 × 844</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <span class="preview-runtime-badge" data-runtime-badge="codePreview" hidden></span>
+              <button class="viewport-clear-btn" type="button" data-clear-slot="codePreview" title="Clear loaded HTML">Clear</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="codePreview" aria-pressed="false" title="View page without app UI">⛶</button>
+              <span class="active-pill">Active</span>
+            </div>
+            <div class="preview-canvas" data-preview-canvas="codePreview">
+            <input class="viewport-zoom-indicator" data-preview-zoom="codePreview" aria-label="Viewport zoom percentage" inputmode="numeric" value="100%" />
+              <div class="preview-stage">
+                <div class="preview-surface" data-preview-surface="codePreview">
+                  <iframe id="codePreviewFrame" sandbox="allow-same-origin"></iframe>
+                </div>
+              </div>
+            </div>
+            <div class="html-drop-zone" data-drop-slot="codePreview"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Preview</span></div>
+          </section>
+          <div class="view-divider splitter-handle" id="codeDivider" role="separator" aria-orientation="vertical" aria-label="Resize preview and code editor"></div>
+          <section class="code-editor-pane">
+            <div class="view-pane-head">
+              <select class="page-select" id="codePageSelect"></select>
+              <div class="code-search" role="search">
+                <span aria-hidden="true">⌕</span>
+                <input id="codeSearch" type="search" placeholder="Search code" aria-label="Search code" />
+                <span id="codeSearchStatus" aria-live="polite"></span>
+              </div>
+              <div class="spacer"></div>
+              <button class="viewport-clear-btn" type="button" data-clear-slot="codePage" title="Clear loaded HTML">Clear</button>
+              <span id="dirtyMark" class="dirty" hidden>● Unsaved</span>
+              <span class="active-pill">Active</span>
+            </div>
+            <div class="code-area" id="codeArea">
+              <div id="lineRail" class="line-rail"></div>
+              <textarea id="sourceEditor" spellcheck="false" wrap="off"></textarea>
+            </div>
+            <div class="html-drop-zone code-drop-zone" data-drop-slot="codePage"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Code View</span></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <div class="inspector-resizer splitter-handle" id="inspectorResizer" role="separator" aria-orientation="vertical" aria-label="Resize Inspector"></div>
+
+    <aside class="inspector" id="inspector">
+      <div class="pane-title inspector-title">
+        <span>Inspector</span>
+        <div class="inspector-head-actions">
+          <button class="tiny-btn" id="collapseInspector" title="Collapse Inspector">⟩</button>
+        </div>
+      </div>
+
+      <div class="structured-toolbar" id="tableToolbar" hidden>
+        <div class="structured-toolbar-title">Table</div>
+        <div class="structured-toolbar-row">
+          <button class="tiny-btn" id="tableAddRow">+ Row</button>
+          <button class="tiny-btn" id="tableAddColumn">+ Column</button>
+          <button class="tiny-btn" id="tableDeleteRow">− Row</button>
+          <button class="tiny-btn" id="tableDeleteColumn">− Column</button>
+        </div>
+        <div class="structured-toolbar-row">
+          <button class="tiny-btn" id="tableToggleHeaderRow">Header Row</button>
+          <button class="tiny-btn" id="tableMergeRight">Merge →</button>
+          <button class="tiny-btn" id="tableUnmerge">Unmerge</button>
+        </div>
+      </div>
+      <div class="inspector-body" id="inspectorBody"></div>
+
+      <div class="inspector-actions" id="inspectorActions" hidden>
+        <button class="btn" id="resetInspectorBtn" type="button" disabled hidden>Reset</button>
+        <button class="btn primary" id="exportElementBtn" type="button">Export…</button>
+      </div>
+    </aside>
+  </section>
+</div>
+
+<div id="objectContextMenu" class="context-menu object-context-menu" role="menu" tabindex="-1" hidden>
+  <button data-object-context="copy">Copy <span>Ctrl+C</span></button>
+  <button data-object-context="paste">Paste <span>Ctrl+V</span></button>
+  <button data-object-context="duplicate">Duplicate <span>Ctrl+D</span></button>
+  <button data-object-context="edit-text">Edit Text <span>F2</span></button>
+  <button data-object-context="export">Export…</button>
+  <div class="separator"></div>
+  <button data-object-context="delete">Delete <span>Del</span></button>
+</div>
+
+<div id="treeContextMenu" class="context-menu" role="menu" tabindex="-1" hidden>
+  <button data-context="rename">Rename <span>F2</span></button>
+  <button data-context="copy">Copy <span>Ctrl+C</span></button>
+  <button data-context="paste">Paste <span>Ctrl+V</span></button>
+  <button data-context="duplicate">Duplicate <span>Ctrl+D</span></button>
+  <button data-context="delete">Delete <span>Del</span></button>
+  <div class="separator"></div>
+  <button data-context="add-page">Add Empty Page</button>
+  <button data-context="add-group">Add Group (Container)</button>
+</div>
+
+<div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
+  <button data-tree-add="page">Add Page</button>
+  <button data-tree-add="group">Add Group (Container)</button>
+</div>
+
+<input type="color" id="documentColorPicker" hidden />
+
+<div class="modal-backdrop" id="inputModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle"></h3>
+    <p id="modalDesc"></p>
+    <input id="modalInput" />
+    <div class="modal-actions">
+      <button class="btn" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalConfirm">OK</button>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="modal-backdrop jira-export-backdrop" id="jiraExportModal" role="presentation">
+  <div class="modal jira-export-modal" role="dialog" aria-modal="true" aria-labelledby="jiraExportTitle">
+    <div class="jira-export-header">
+      <div>
+        <h3 id="jiraExportTitle">Jira / Atlassian Export</h3>
+        <p id="jiraExportSource">Current page</p>
+      </div>
+      <button class="tiny-btn" id="jiraExportClose" title="Close">×</button>
+    </div>
+
+    <div class="jira-export-tabs" role="tablist">
+      <button class="active" type="button" data-jira-mode="rich">Jira Rich Text</button>
+      <button type="button" data-jira-mode="markdown">Markdown</button>
+      <button type="button" data-jira-mode="adf">ADF JSON</button>
+    </div>
+
+    <div class="jira-export-meta">
+      <span id="jiraExportRuntime"></span>
+      <span id="jiraExportStats"></span>
+    </div>
+
+    <div class="jira-export-warning" id="jiraExportWarnings" hidden></div>
+
+    <div class="jira-export-preview rich-preview" id="jiraRichPreview"></div>
+    <textarea class="jira-export-preview text-preview" id="jiraTextPreview" spellcheck="false" hidden readonly></textarea>
+
+    <div class="modal-actions jira-export-actions">
+      <button class="btn" id="jiraExportCancel">Cancel</button>
+      <button class="btn" id="jiraExportSave">Save Output</button>
+      <button class="btn primary" id="jiraExportCopy">Copy</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="clearHtmlModal" role="presentation">
+  <div class="modal clear-html-modal" role="dialog" aria-modal="true" aria-labelledby="clearHtmlTitle">
+    <h3 id="clearHtmlTitle">Clear loaded HTML?</h3>
+    <p id="clearHtmlMessage">This keeps the page slot but removes the currently loaded HTML content.</p>
+    <div class="clear-html-target" id="clearHtmlTarget"></div>
+    <div class="modal-actions">
+      <button class="btn" id="clearHtmlCancel">Cancel</button>
+      <button class="btn danger" id="clearHtmlConfirm">Clear without saving</button>
+      <button class="btn primary" id="clearHtmlSave">Save &amp; Clear</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="replaceHtmlModal" role="presentation">
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="replaceHtmlTitle">
+    <h3 id="replaceHtmlTitle">Replace loaded Page?</h3>
+    <p>The current Viewport already contains a page. Replace it with the dropped page?</p>
+    <div class="clear-html-target" id="replaceHtmlTarget"></div>
+    <div class="modal-actions">
+      <button class="btn" id="replaceHtmlCancel">Cancel</button>
+      <button class="btn primary" id="replaceHtmlConfirm">Replace</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="viewportSizeModal" role="presentation">
+  <div class="modal viewport-size-modal" role="dialog" aria-modal="true" aria-labelledby="viewportSizeTitle">
+    <h3 id="viewportSizeTitle">Custom Preview Size</h3>
+    <p>HTML이 렌더링될 iframe viewport의 CSS pixel 크기를 지정합니다.</p>
+    <div class="viewport-size-fields">
+      <label>Width <input id="viewportWidthInput" type="number" min="240" max="3840" step="1" value="1280" /></label>
+      <span>×</span>
+      <label>Height <input id="viewportHeightInput" type="number" min="240" max="2160" step="1" value="720" /></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="viewportSizeCancel">Cancel</button>
+      <button class="btn primary" id="viewportSizeApply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="objectExportModal" role="presentation">
+  <div class="modal object-export-modal" role="dialog" aria-modal="true" aria-labelledby="objectExportTitle">
+    <h3 id="objectExportTitle">Export selected object</h3>
+    <p id="objectExportDescription">Export the selected object with its current visual styling.</p>
+    <div class="object-export-fields">
+      <label>Format
+        <select id="objectExportFormat">
+          <option value="png">PNG</option>
+          <option value="jpg">JPG</option>
+          <option value="svg">SVG</option>
+        </select>
+      </label>
+      <label>Scale
+        <select id="objectExportScale">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+    </div>
+    <div class="object-export-summary" id="objectExportSummary"></div>
+    <div class="modal-actions">
+      <button class="btn" id="objectExportCancel">Cancel</button>
+      <button class="btn primary" id="objectExportConfirm">Export</button>
+    </div>
+  </div>
+</div>
+
+<div class="resize-shield" id="resizeShield" aria-hidden="true"></div>
+
+<div class="jira-check-popover" id="jiraCheckPopover" hidden>
+  <div class="jira-check-popover-head"><strong>Atlassian Compatibility</strong><button class="tiny-btn" id="jiraCheckClose">×</button></div>
+  <div class="jira-check-summary" id="jiraCheckSummary"></div>
+  <div class="jira-check-list" id="jiraCheckList"></div>
+  <div class="jira-check-actions"><button class="btn" id="jiraCheckClear">Clear Markers</button><button class="btn primary" id="jiraCheckRecheck">Recheck</button></div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="./source-fidelity.js"></script>
+<script src="./widget-registry.js"></script>
+<script src="./jira-compat.js"></script>
+<script src="./semantic-document.js"></script>
+<script src="./jira-export.js"></script>
+<script src="./renderer.js"></script>
+</body>
+</html>
