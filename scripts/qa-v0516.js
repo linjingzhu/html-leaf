@@ -132,6 +132,19 @@ check('Script-isolated previews receive local-anchor protection',js.includes("ra
 check('Occupied View drop offers Cancel, Open as New, and Replace',html.includes('id="replaceHtmlCancel"')&&html.includes('id="replaceHtmlOpenNew"')&&html.includes('id="replaceHtmlConfirm"'));
 check('Drop choices route to separate new-Page and replace transactions',js.includes('refs.replaceHtmlOpenNew.onclick=async')&&js.includes('await addHtmlResultToDocument(pending.result,pending.slot)')&&js.includes("showToast('Page replaced')"));
 check('Selecting another object commits text without reselecting the old object',js.includes('endInlineTextEdit({commit:true,restoreSelection:false})')&&js.includes('function endInlineTextEdit({commit=true,restoreSelection=true}={})'));
+check('Overlay components establish a persistent free-positioning context',read('src/renderer/widget-registry.js').includes("position:relative;display:block;min-height:240px")&&js.includes("placement.mode==='free'"));
+check('Selection overlay exposes a move handle with an existing-object payload',js.includes("moveHandle.dataset.editorOverlay='move-handle'")&&js.includes("setData('application/x-hbe-existing-element',id)"));
+check('Palette, Used, and existing objects share viewport placement previews',js.includes('function calculateViewportPlacement(')&&js.includes('function renderViewportPlacementPreview(')&&js.includes('data.template&&!data.used&&!data.existing'));
+check('Placement preview distinguishes free, inside, before, and after targets',js.includes("placement.mode==='free'?'Free position'")&&js.includes("placement.mode==='inside'?'Place inside'")&&js.includes("placement.mode==='before'?'Insert before':'Insert after'"));
+check('Inspector owns live property-name search',html.includes('id="inspectorPropertySearch"')&&js.includes('function filterInspectorProperties()')&&js.includes("querySelectorAll('.property-row,.inspector-property-row')"));
+check('Project tree owns document search with ancestor preservation',html.includes('id="projectSearch"')&&js.includes('function projectTreeSearchContext(project)')&&js.includes('while(current?.parentId){visible.add(current.parentId)'));
+check('Preview scrollbar colors derive from the same app muted token',js.includes("getPropertyValue('--muted')")&&js.includes('background:color-mix(in srgb,${muted} 42%,transparent)'));
+check('Used selection synchronization runs only while Used is open',js.includes("if(!document.querySelector('[data-left-panel=\"used\"]')?.classList.contains('active'))return")&&js.includes('usedDocumentSelectionSignature=usedComponentSignature(selectedElement)'));
+check('Used context menu highlights runtime instances without source metadata',html.includes('id="usedContextMenu"')&&js.includes("marker.dataset.editorOverlay='used-instance-highlight'")&&js.includes('function highlightUsedInstances(token)'));
+check('Used extraction removes nested runtime overlays',js.includes("clone.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line]')"));
+check('Table drag selection calculates contiguous row or column ranges',js.includes('function tableRangeCells(startCell,endCell)')&&js.includes('if(rowDistance>columnDistance)')&&js.includes('function beginTableRangeDrag(cell,frame,event)'));
+check('Table row and column actions consume the accumulated selection',js.includes('function selectedTableRowIndexes(table)')&&js.includes('function selectedTableColumnIndexes(table)')&&js.includes('const selectedColumns=selectedTableColumnIndexes(table)'));
+check('Preview Page name is a document dropdown like Compare',html.includes('<select class="page-select" id="singlePageName"')&&js.includes("['#singlePageName','single',refs.singleFrame]"));
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
@@ -139,4 +152,4 @@ const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
 const zoomScrollbar=spawnSync(process.execPath,[path.join(__dirname,'qa-zoom-scrollbar-v0516.js')],{stdio:'inherit'});
 check('zoom-independent document scrollbar regression QA',zoomScrollbar.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/51 PASS`);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/64 PASS`);

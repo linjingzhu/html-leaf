@@ -100,6 +100,9 @@
         </div>
         <section class="left-tab-panel active" data-left-panel="project">
           <div class="pane-title"><span>Documents</span><button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button></div>
+          <div class="objects-toolbar project-search-toolbar">
+            <input id="projectSearch" type="search" placeholder="Search documents..." aria-label="Search Project documents" />
+          </div>
           <div class="tree" id="tree" tabindex="0"></div>
         </section>
         <section class="left-tab-panel" data-left-panel="objects">
@@ -150,7 +153,7 @@
         <section class="view-pane single-view viewport-mode is-active active-view" data-mode-panel="preview" id="singleView">
           <div class="view-pane-head">
             <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
-            <span class="view-page-name" id="singlePageName"></span>
+            <select class="page-select" id="singlePageName" aria-label="Preview Page"></select>
             <div class="view-search" data-view-search="single" role="search">
               <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Preview"><span data-view-search-status aria-live="polite"></span>
             </div>
@@ -336,6 +339,12 @@
         </div>
       </div>
 
+      <div class="inspector-property-search" role="search">
+        <span aria-hidden="true">⌕</span>
+        <input id="inspectorPropertySearch" type="search" placeholder="Search properties..." aria-label="Search Inspector properties" />
+        <span id="inspectorPropertySearchStatus" aria-live="polite"></span>
+      </div>
+
       <div class="structured-toolbar" id="tableToolbar" hidden>
         <div class="structured-toolbar-title">Table</div>
         <div class="structured-toolbar-row">
@@ -368,6 +377,11 @@
   <button data-object-context="export">Export…</button>
   <div class="separator"></div>
   <button data-object-context="delete">Delete <span>Del</span></button>
+</div>
+
+<div id="usedContextMenu" class="context-menu" role="menu" tabindex="-1" hidden>
+  <button data-used-context="highlight">Highlight Instances</button>
+  <button data-used-context="clear">Clear Highlights</button>
 </div>
 
 <div id="treeContextMenu" class="context-menu" role="menu" tabindex="-1" hidden>

@@ -183,7 +183,7 @@
         break;
       case 'overlay':
         el=setCommon(doc.createElement('div'),type,'Overlay');
-        el.style.cssText='display:grid;min-height:120px;padding:12px;';
+        el.style.cssText='position:relative;display:block;min-height:240px;padding:12px;overflow:visible;';
         el.setAttribute('data-hbe-layout','overlay');
         break;
       case 'canvas':
