@@ -80,19 +80,20 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf', '.webp']);
 
 function documentTypeForPath(filePath) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
   if (extension === '.html' || extension === '.htm') return 'html';
   if (extension === '.md' || extension === '.markdown') return 'markdown';
   if (extension === '.pdf') return 'pdf';
+  if (extension === '.webp') return 'webp';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, PDF, and Animated WebP pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -101,12 +102,12 @@ async function readDocumentPath(filePath) {
     title: path.basename(filePath, path.extname(filePath)),
     documentType,
     baseUrl: baseUrlForFile(filePath),
-    previewUrl: documentType === 'pdf' ? pathToFileURL(filePath).href : null,
+    previewUrl: documentType === 'pdf' || documentType === 'webp' ? pathToFileURL(filePath).href : null,
     initialSnapshotPath: null
   };
-  if (documentType === 'pdf') {
+  if (documentType === 'pdf' || documentType === 'webp') {
     const stat = await fs.stat(filePath);
-    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF pages must be files smaller than 500 MB.');
+    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF and WebP pages must be files smaller than 500 MB.');
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
@@ -119,7 +120,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf', 'webp'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
@@ -335,7 +336,7 @@ async function openProjectFile() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Open Leaf Project',
     properties: ['openFile'],
-    filters: [{ name: 'Leaf Project', extensions: ['leaf', 'hbeproj', 'json'] }]
+    filters: [{ name: 'Leaf Project', extensions: ['prj', 'leaf', 'hbeproj', 'json'] }]
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
@@ -354,12 +355,12 @@ async function saveProjectFile({ filePath, project }) {
 async function saveProjectFileAs({ suggestedName, project }) {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save Project As',
-    defaultPath: suggestedName || 'project.leaf',
-    filters: [{ name: 'Leaf Project', extensions: ['leaf'] }]
+    defaultPath: suggestedName || 'project.prj',
+    filters: [{ name: 'Leaf Project', extensions: ['prj'] }]
   });
   if (result.canceled || !result.filePath) return null;
   let filePath = result.filePath;
-  if (!/\.leaf$/i.test(filePath)) filePath += '.leaf';
+  if (!/\.prj$/i.test(filePath)) filePath += '.prj';
   await atomicWriteFile(filePath, JSON.stringify(project, null, 2), 'utf8');
   return filePath;
 }

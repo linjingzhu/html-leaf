@@ -19,11 +19,12 @@ async function main(){
   const api=context.__leafMainTest;let passed=0;
   const check=(name,condition)=>{if(!condition)throw new Error(`FAIL ${name}`);passed++;console.log(`PASS ${name}`);};
   try{
-    const htmlPath=path.join(temp,'page.html'),mdPath=path.join(temp,'notes.md'),pdfPath=path.join(temp,'guide.pdf'),txtPath=path.join(temp,'bad.txt');
-    await fsp.writeFile(htmlPath,'<!doctype html><h1>Leaf</h1>');await fsp.writeFile(mdPath,'# Leaf');await fsp.writeFile(pdfPath,Buffer.from('%PDF-1.4\n'));await fsp.writeFile(txtPath,'no');
-    const html=await api.readDocumentPath(htmlPath),md=await api.readDocumentPath(mdPath),pdf=await api.readDocumentPath(pdfPath);
-    check('Main loader classifies HTML, Markdown, and PDF',html.documentType==='html'&&md.documentType==='markdown'&&pdf.documentType==='pdf');
+    const htmlPath=path.join(temp,'page.html'),mdPath=path.join(temp,'notes.md'),pdfPath=path.join(temp,'guide.pdf'),webpPath=path.join(temp,'motion.webp'),txtPath=path.join(temp,'bad.txt');
+    await fsp.writeFile(htmlPath,'<!doctype html><h1>Leaf</h1>');await fsp.writeFile(mdPath,'# Leaf');await fsp.writeFile(pdfPath,Buffer.from('%PDF-1.4\n'));await fsp.writeFile(webpPath,Buffer.from('RIFF0000WEBPVP8XANIMANMF'));await fsp.writeFile(txtPath,'no');
+    const html=await api.readDocumentPath(htmlPath),md=await api.readDocumentPath(mdPath),pdf=await api.readDocumentPath(pdfPath),webp=await api.readDocumentPath(webpPath);
+    check('Main loader classifies HTML, Markdown, PDF, and WebP',html.documentType==='html'&&md.documentType==='markdown'&&pdf.documentType==='pdf'&&webp.documentType==='webp');
     check('PDF remains binary/read-only and uses a file preview URL',pdf.source===''&&pdf.previewUrl.startsWith('file:'));
+    check('Animated WebP remains binary and uses its original file URL',webp.source===''&&webp.loadedSource===''&&webp.previewUrl.startsWith('file:'));
     let unsupported=false;try{await api.readDocumentPath(txtPath);}catch{unsupported=true;}
     check('Unsupported Explorer files are rejected',unsupported);
     const large=path.join(temp,'large.html');const handle=await fsp.open(large,'w');await handle.truncate(50_000_001);await handle.close();
@@ -33,7 +34,7 @@ async function main(){
     const exported=await api.exportObjectAssets({format:'png',items:[{suggestedName:'same.png',source:png},{suggestedName:'same.png',source:png}]});
     check('Batch export creates one unique file per selected object',exported.length===2&&path.basename(exported[0])==='same.png'&&path.basename(exported[1])==='same-2.png'&&exported.every(file=>fs.existsSync(file)));
     check('Batch export leaves no staging artifacts',!(await fsp.readdir(output)).some(name=>name.includes('.leaf-stage-')));
-    console.log(`Leaf v0.5.14 main-process adversarial QA: ${passed}/6 PASS`);
+    console.log(`Leaf v0.5.14 main-process adversarial QA: ${passed}/7 PASS`);
   }finally{await fsp.rm(temp,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error.stack||error);process.exit(1);});

@@ -16,7 +16,7 @@ check('Save before Clear uses atomic main-process path',main.includes('async fun
 check('Split left inherits the active visual document',js.includes("if(nextMode==='split')")&&js.includes('ensureDistinctSplitBindings(currentPageId)')&&js.includes('state.views.left=leftId'));
 check('New Project activates Projects panel',js.includes("activateLeftTab('project')")&&js.includes('project.expanded=true'));
 check('Occupied drop asks for replacement confirmation',html.includes('id="replaceHtmlModal"')&&js.includes('pendingHtmlDrop={slot,pageId:page.id,result}'));
-check('Replacement updates the existing page',js.includes("showToast('HTML replaced')")&&js.includes('page.source=pending.result.source'));
+check('Replacement updates the existing page',(js.includes("showToast('HTML replaced')")||js.includes("showToast('Page replaced')"))&&js.includes('page.source=pending.result.source'));
 check('Hierarchy begins at BODY Root',js.includes('const root=doc.body')&&js.includes("n.depth===0?'Root'"));
 
 for(const script of ['qa-v051.js','qa-source-fidelity.js']){

@@ -16,14 +16,15 @@
       <div class="menu">
         <button class="menu-trigger">File</button>
         <div class="menu-popup">
-          <button data-action="new-page">New Page <kbd>Ctrl+N</kbd></button>
-          <button data-action="save-page">Save Page <kbd>Ctrl+S</kbd></button>
-          <button data-action="save-page-as">Save Page As <kbd>Ctrl+Shift+S</kbd></button>
-          <button data-action="new-document">New Document…</button>
+          <button data-action="new-project">New Project <kbd>Ctrl+N</kbd></button>
+          <button data-action="open-project">Open Project…</button>
+          <button data-action="save-project">Save Project <kbd>Ctrl+S</kbd></button>
+          <button data-action="save-project-as">Save Project As <kbd>Ctrl+Shift+S</kbd></button>
           <div class="separator"></div>
-          <button data-action="open-leaf-project">Open Leaf Project…</button>
-          <button data-action="save-leaf-project">Save Leaf Project</button>
-          <button data-action="save-leaf-project-as">Save Leaf Project As…</button>
+          <button data-action="new-document">New Document…</button>
+          <button data-action="new-page">New Page <kbd>Ctrl+Shift+N</kbd></button>
+          <button data-action="save-page">Save Page</button>
+          <button data-action="save-page-as">Save Page As…</button>
           <div class="separator"></div>
           <button data-action="import">Import Pages…</button>
           <button data-action="export">Export HTML</button>
@@ -159,8 +160,8 @@
           </div>
           <div class="html-drop-zone" data-drop-slot="single">
             <div class="drop-icon">⇩</div>
-            <strong>Drop HTML here</strong>
-            <span>Drag a .html or .htm file from Explorer</span>
+            <strong>Drop Page here</strong>
+            <span>HTML, Markdown, PDF, or Animated WebP</span>
           </div>
         </section>
 
@@ -193,7 +194,7 @@
                 </div>
               </div>
             </div>
-            <div class="html-drop-zone" data-drop-slot="left"><div class="drop-icon">⇩</div><strong>Drop HTML here</strong><span>Load into Left View</span></div>
+            <div class="html-drop-zone" data-drop-slot="left"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Left View</span></div>
           </section>
           <div class="view-divider splitter-handle" id="splitDivider" role="separator" aria-orientation="vertical" aria-label="Resize split preview"></div>
           <section class="view-pane" data-view-slot="right">
@@ -238,7 +239,7 @@
                 </div>
               </div>
             </div>
-            <div class="html-drop-zone" data-drop-slot="right"><div class="drop-icon">⇩</div><strong>Drop HTML here</strong><span>Load into Right View</span></div>
+            <div class="html-drop-zone" data-drop-slot="right"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Right View</span></div>
           </section>
         </div>
 
@@ -271,7 +272,7 @@
                 </div>
               </div>
             </div>
-            <div class="html-drop-zone" data-drop-slot="codePreview"><div class="drop-icon">⇩</div><strong>Drop HTML here</strong><span>Load into Preview</span></div>
+            <div class="html-drop-zone" data-drop-slot="codePreview"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Preview</span></div>
           </section>
           <div class="view-divider splitter-handle" id="codeDivider" role="separator" aria-orientation="vertical" aria-label="Resize preview and code editor"></div>
           <section class="code-editor-pane">
@@ -291,7 +292,7 @@
               <div id="lineRail" class="line-rail"></div>
               <textarea id="sourceEditor" spellcheck="false" wrap="off"></textarea>
             </div>
-            <div class="html-drop-zone code-drop-zone" data-drop-slot="codePage"><div class="drop-icon">⇩</div><strong>Drop HTML here</strong><span>Load into Code Editor</span></div>
+            <div class="html-drop-zone code-drop-zone" data-drop-slot="codePage"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Code View</span></div>
           </section>
         </div>
       </div>
@@ -349,12 +350,12 @@
   <button data-context="delete">Delete <span>Del</span></button>
   <div class="separator"></div>
   <button data-context="add-page">Add Empty Page</button>
-  <button data-context="add-group">Add Group</button>
+  <button data-context="add-group">Add Group (Container)</button>
 </div>
 
 <div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
   <button data-tree-add="page">Add Page</button>
-  <button data-tree-add="group">Add Group</button>
+  <button data-tree-add="group">Add Group (Container)</button>
 </div>
 
 <input type="color" id="documentColorPicker" hidden />
@@ -422,8 +423,8 @@
 
 <div class="modal-backdrop" id="replaceHtmlModal" role="presentation">
   <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="replaceHtmlTitle">
-    <h3 id="replaceHtmlTitle">Replace loaded HTML?</h3>
-    <p>The current Viewport already contains an HTML page. Replace it with the dropped page?</p>
+    <h3 id="replaceHtmlTitle">Replace loaded Page?</h3>
+    <p>The current Viewport already contains a page. Replace it with the dropped page?</p>
     <div class="clear-html-target" id="replaceHtmlTarget"></div>
     <div class="modal-actions">
       <button class="btn" id="replaceHtmlCancel">Cancel</button>

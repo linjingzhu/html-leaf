@@ -2,7 +2,7 @@
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const ROOT = null;
-  const stateKey = 'leaf-v0-5-15-state';
+  const stateKey = 'leaf-v0-5-16-state';
 
   const refs = {
     workspace: $('#workspace'), tree: $('#tree'), inspector: $('#inspector'),
@@ -161,7 +161,7 @@
   function createDefaultState(){
     const page = uid('page');
     return {
-      version:'0.5.15',
+      version:'0.5.16',
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
@@ -192,7 +192,7 @@
   function normalizeState(input){
     const fallback=createDefaultState();
     const s=input && typeof input==='object' ? input : fallback;
-    s.version='0.5.15';
+    s.version='0.5.16';
     s.projectName=String(s.projectName||s.documentName||fallback.projectName);
     s.projectFilePath=typeof s.projectFilePath==='string'?s.projectFilePath:(typeof s.documentFilePath==='string'?s.documentFilePath:null);
     s.mode=['preview','split','code'].includes(s.mode) ? s.mode : 'preview';
@@ -224,13 +224,14 @@
     });
     if(!s.documents.length)s.documents=fallback.documents;
     s.documents.forEach(project=>project.nodes.forEach(page=>{
+      if(page.type==='group')page.container=true;
       if(page.type==='page'){
         page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
-        if(!['html','markdown','pdf'].includes(page.documentType)){
-          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        if(!['html','markdown','pdf','webp'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.webp$/i.test(page.fileName||'')?'webp':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
         }
-        if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
+        if(['pdf','webp'].includes(page.documentType)&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
       }
     }));
     s.views={...fallback.views,...(s.views||{})};
@@ -388,10 +389,14 @@
 
   async function handleAction(action){
     switch(action){
+      case 'new-project': return newProject();
       case 'new-page': return newPage();
       case 'new-document': return newDocument();
       case 'save-page': return savePage(false);
       case 'save-page-as': return savePage(true);
+      case 'open-project': return openLeafProject();
+      case 'save-project': return saveLeafProject(false);
+      case 'save-project-as': return saveLeafProject(true);
       case 'open-leaf-project': return openLeafProject();
       case 'save-leaf-project': return saveLeafProject(false);
       case 'save-leaf-project-as': return saveLeafProject(true);
@@ -459,7 +464,7 @@
   }
 
   function leafProjectSerializable(){
-    return {format:'leaf-project',version:'0.5.15',name:state.projectName||'Leaf Project',documents:clone(state.documents)};
+    return {format:'leaf-project',version:'0.5.16',name:state.projectName||'Leaf Project',documents:clone(state.documents)};
   }
 
   function loadLeafProjectPayload(payload,filePath){
@@ -482,11 +487,12 @@
   async function saveLeafProject(forceAs){
     try{
       const payload=leafProjectSerializable();
-      const filePath=forceAs||!state.projectFilePath
-        ?await window.electronAPI.saveProjectAs({suggestedName:`${exportSafeName(state.projectName||'project')}.leaf`,project:payload})
+      const requiresPrjPath=!/\.prj$/i.test(state.projectFilePath||'');
+      const filePath=forceAs||!state.projectFilePath||requiresPrjPath
+        ?await window.electronAPI.saveProjectAs({suggestedName:`${exportSafeName(state.projectName||'project')}.prj`,project:payload})
         :await window.electronAPI.saveProject({filePath:state.projectFilePath,project:payload});
       if(!filePath)return false;
-      state.projectFilePath=filePath;state.projectName=filePath.split(/[\\/]/).pop().replace(/\.leaf$/i,'')||state.projectName;
+      state.projectFilePath=filePath;state.projectName=filePath.split(/[\\/]/).pop().replace(/\.(?:prj|leaf)$/i,'')||state.projectName;
       addRecent(filePath,state.projectName);renderAll();persist();showToast('Leaf project saved');return true;
     }catch(error){console.error('Leaf project save failed',error);showToast(`Save failed: ${error.message}`);return false;}
   }
@@ -499,18 +505,37 @@
     return state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage');
   }
 
+  function newProject(){
+    withUnsavedInspectorGuard(()=>{
+      openModal('New Project','Create a new Project saved as a .prj file.','Project name','Untitled Project',name=>{
+        const fresh=createDefaultState();
+        state.projectName=name;
+        state.projectFilePath=null;
+        state.documents=fresh.documents;
+        state.selectedDocumentId=fresh.selectedDocumentId;
+        state.views=fresh.views;
+        state.mode='preview';
+        activeSlots={split:'left',code:'preview'};
+        state.activeSlots=activeSlots;
+        selectedTreeNode=fresh.selectedTreeNode;
+        clearInspector();activateLeftTab('project');renderAll();persist();showToast('New project created');
+      });
+    });
+  }
+
   function newPage(){
     withUnsavedInspectorGuard(()=>{
       const project=activeDocument();
       if(!project){showToast('Create or select a document first');return;}
       openModal('New Page','Create an empty HTML page inside the selected document.','Page name','Untitled Page',name=>{
         const context=selectedContext();
-        const parentId=context.project?.id===project.id&&context.node?.type==='group'?context.node.id:(context.project?.id===project.id?context.node?.parentId||null:null);
+        const parentId=context.project?.id===project.id&&context.node?context.node.id:null;
         const page={
           id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
           parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
         };
         project.nodes.push(page);project.expanded=true;state.selectedDocumentId=project.id;selectedTreeNode=page.id;
+        if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
         const slot=activePageSlot();state.views[slot]=page.id;
         if(state.mode==='code'){state.views.codePreview=page.id;state.views.codePage=page.id;}
         clearInspector();activateLeftTab('project');renderAll();persist();showToast('New page created');
@@ -617,13 +642,13 @@
   async function savePage(forceAs){
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
-    if(page.documentType==='pdf'&&!forceAs){showToast('PDF pages are read-only. Use Save As to copy the file.');return false;}
+    if(['pdf','webp'].includes(page.documentType)&&!forceAs){showToast(`${page.documentType==='webp'?'Animated WebP':'PDF'} pages are read-only. Use Save As to copy the file.`);return false;}
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
           let filePath=null;
-          if(page.documentType==='pdf'){
-            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
+          if(['pdf','webp'].includes(page.documentType)){
+            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.${page.documentType}`});
           }else if(page.documentType==='markdown'){
             filePath=forceAs||!page.sourcePath
               ?await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
@@ -636,7 +661,7 @@
           if(!filePath){resolve(false);return;}
           page.sourcePath=filePath;
           page.fileName=filePath.split(/[\\/]/).pop()||page.fileName;
-          if(page.documentType==='pdf')page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
+          if(['pdf','webp'].includes(page.documentType))page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
           else page.loadedSource=page.source;
           renderAll();persist();showToast(forceAs?'Page saved as new file':'Page saved');resolve(true);
         }catch(error){console.error('Page save failed',error);showToast(`Save failed: ${error.message}`);resolve(false);}
@@ -772,11 +797,11 @@
     $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
-  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf)$/i.test(file.name||'');}
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf|webp)$/i.test(file.name||'');}
 
   async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, or PDF pages');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, PDF, or Animated WebP pages');return;}
     try{
       for(const file of files){
         const result=await window.electronAPI.readDroppedPage(file);
@@ -906,7 +931,7 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':'◇';
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='webp'?'WP':node.documentType==='markdown'?'MD':'◇';
       row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
@@ -1129,7 +1154,7 @@
     if(!project)return;
     const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
     openModal('Add Group','Create a group in the selected hierarchy.','Group name','New Group',name=>{
-      const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true};
+      const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true,container:true};
       project.nodes.push(group);selectedTreeNode=group.id;state.selectedDocumentId=project.id;
       if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
       renderAll();persist();
@@ -2244,7 +2269,7 @@
   }
 
   function pageHasRenderableContent(page){
-    return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
+    return !!page && !page.isEmpty && (['pdf','webp'].includes(page.documentType)?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
 
@@ -2297,6 +2322,10 @@
 
   function buildPreviewSource(page,{allowScripts=false,bridgeToken=''}={}){
     if(!page) return '<!doctype html><html><body></body></html>';
+    if(page.documentType==='webp'){
+      const imageUrl=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob:; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;background:#111;overflow:auto}body{display:flex;align-items:center;justify-content:center}img{display:block;max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img src="${esc(imageUrl)}" alt="${esc(page.name||page.fileName||'Animated WebP')}"></body></html>`;
+    }
     if(page.documentType==='markdown'){
       const rich=window.JiraExport?.markdownToRichHtml?.(page.source||'')||`<pre>${esc(page.source||'')}</pre>`;
       return `<!doctype html><html><head><base href="${esc(page.baseUrl||'')}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline'; font-src file: data: https: http:;"><style>html{color-scheme:light}body{max-width:920px;margin:0 auto;padding:42px 48px;color:#20242a;background:#fff;font:15px/1.65 system-ui,-apple-system,'Segoe UI',sans-serif}img{max-width:100%}pre{overflow:auto;padding:14px;background:#f4f5f7;border-radius:6px}code{font-family:Consolas,monospace}table{border-collapse:collapse}th,td{border:1px solid #d9dde3;padding:7px 9px}</style></head><body>${rich}</body></html>`;
@@ -2317,7 +2346,7 @@
       frame.closest('.view-pane')?.classList.remove('scripted-preview');
       frame.dataset.previewRuntime='document-readonly';
       const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
-      if(page.documentType==='markdown')frame.setAttribute('sandbox','allow-same-origin');
+      if(page.documentType==='markdown'||page.documentType==='webp')frame.setAttribute('sandbox','allow-same-origin');
       else frame.removeAttribute('sandbox');
       return false;
     }
@@ -2368,6 +2397,12 @@
       frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
       frame.removeAttribute('srcdoc');
       frame.src=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      return;
+    }
+    if(page.documentType==='webp'){
+      frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
+      frame.removeAttribute('src');
+      frame.srcdoc=buildPreviewSource(page);
       return;
     }
     frame.removeAttribute('src');
@@ -2547,7 +2582,7 @@
     });
   }
   function closeClearHtmlDialog(){ refs.clearHtmlModal.classList.remove('show'); pendingClearPageId=null; }
-  function pageHasUnsavedChanges(page){ return page?.documentType!=='pdf'&&String(page?.source||'')!==String(page?.loadedSource||''); }
+  function pageHasUnsavedChanges(page){ return !['pdf','webp'].includes(page?.documentType)&&String(page?.source||'')!==String(page?.loadedSource||''); }
   function clearLoadedHtml(){
     const page=pageById(pendingClearPageId);
     if(!page){ closeClearHtmlDialog(); return; }
@@ -2583,10 +2618,10 @@
     const pane=$('.code-editor-pane');
     const empty=!page || page.isEmpty;
     pane?.classList.toggle('is-empty', empty);
-    const pdfNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:'';
-    refs.source.value=pdfNotice||(page?.source||'');
-    refs.source.readOnly=page?.documentType==='pdf';
-    refs.source.classList.toggle('read-only',page?.documentType==='pdf');
+    const binaryNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:page?.documentType==='webp'?`Animated WebP page (read-only; original animation preserved)\n${page.sourcePath||page.fileName||''}`:'';
+    refs.source.value=binaryNotice||(page?.source||'');
+    refs.source.readOnly=['pdf','webp'].includes(page?.documentType);
+    refs.source.classList.toggle('read-only',['pdf','webp'].includes(page?.documentType));
     const codeFileName=$('#codeFileName');if(codeFileName)codeFileName.textContent=page?.fileName||'No page selected';
     refs.dirty.hidden=true;
     updateLineRail();syncLineRailScroll();updateCodeSearchStatus();
@@ -2605,7 +2640,7 @@
   });
   refs.source.oninput=()=>{
     const page=pageById(state.views.codePage);if(!page)return;
-    if(page.documentType==='pdf')return;
+    if(['pdf','webp'].includes(page.documentType))return;
     pushUndo(page);page.source=refs.source.value;page.isEmpty=!(page.source||'').trim();$('.code-editor-pane')?.classList.toggle('is-empty',page.isEmpty);refs.dirty.hidden=false;updateLineRail();updateClearButtons();persist();
     updateCodeSearchStatus();
     if(state.views.codePreview===page.id)setTimeout(()=>renderFrame(refs.codePreviewFrame,page.id),220);
@@ -2708,8 +2743,8 @@
     });
   }
 
-  // ----- Explorer HTML Drag & Drop -----
-  function isHtmlFile(file){ return !!file && /\.html?$/i.test(file.name || ''); }
+  // ----- Explorer Page Drag & Drop -----
+  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|pdf|webp)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
@@ -2722,13 +2757,13 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Only .html / .htm files can be dropped');
+    if(!file) return showToast('Drop an HTML, Markdown, PDF, or Animated WebP page');
 
     withUnsavedInspectorGuard(async()=>{
       try{
-        const result=await window.electronAPI.readDroppedHtml(file);
+        const result=await window.electronAPI.readDroppedPage(file);
         const page=pageById(pageIdForSlot(slot));
-        if(page && !page.isEmpty && (page.source||'').trim()){
+        if(pageHasRenderableContent(page)){
           pendingHtmlDrop={slot,pageId:page.id,result};
           refs.replaceHtmlTarget.textContent=`${page.name || page.fileName} → ${result.fileName}`;
           refs.replaceHtmlModal.classList.add('show');
@@ -2749,10 +2784,10 @@
     if(!page) return closeReplaceHtmlDialog();
     pushUndo(page);
     page.name=pending.result.title;page.fileName=pending.result.fileName;
-    page.source=pending.result.source;page.loadedSource=pending.result.source;
-    page.baseUrl=pending.result.baseUrl;page.sourcePath=pending.result.filePath;page.isEmpty=false;
+    page.source=pending.result.source||'';page.loadedSource=pending.result.loadedSource??pending.result.source??'';
+    page.baseUrl=pending.result.baseUrl;page.sourcePath=pending.result.filePath;page.previewUrl=pending.result.previewUrl||null;page.documentType=pending.result.documentType||'html';page.isEmpty=false;
     selectedTreeNode=page.id;
-    closeReplaceHtmlDialog();clearInspector();renderAll();persist();showToast('HTML replaced');
+    closeReplaceHtmlDialog();clearInspector();renderAll();persist();showToast('Page replaced');
   };
   refs.replaceHtmlModal.addEventListener('keydown',event=>{trapDialogFocus(refs.replaceHtmlModal,event);if(event.key==='Escape')closeReplaceHtmlDialog();});
 
@@ -4910,9 +4945,10 @@
     if(!dialogOpen && modifier && !editing && SelectionManager.items().length && e.key.toLowerCase()==='c'){e.preventDefault();copySelectedElements();return;}
     if(!dialogOpen && modifier && !editing && e.key.toLowerCase()==='v'){e.preventDefault();pasteSelectedElements();return;}
     if(!dialogOpen && modifier && !editing && !e.repeat && SelectionManager.items().length && e.key.toLowerCase()==='d'){e.preventDefault();duplicateSelectedElements();return;}
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newPage();}
-    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();savePage(true);}
-    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();savePage(false);}
+    if(modifier&&e.shiftKey&&e.key.toLowerCase()==='n'){e.preventDefault();newPage();}
+    else if(modifier&&e.key.toLowerCase()==='n'){e.preventDefault();newProject();}
+    if(modifier&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();saveLeafProject(true);}
+    else if(modifier&&e.key.toLowerCase()==='s'){e.preventDefault();saveLeafProject(false);}
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();redo();}
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
   });
