@@ -3579,6 +3579,77 @@
 
     const elementCanScale=el=>!!el && !['HTML','BODY'].includes(el.tagName) && !el.dataset?.editorOverlay;
 
+    const tableOverlayToolbar=doc.createElement('div');
+    tableOverlayToolbar.dataset.editorOverlay='table-toolbar';
+    tableOverlayToolbar.setAttribute('role','toolbar');
+    tableOverlayToolbar.setAttribute('aria-label','Table editing');
+    Object.assign(tableOverlayToolbar.style,{
+      position:'absolute',zIndex:2147483647,display:'none',alignItems:'center',gap:'3px',
+      minHeight:'32px',padding:'4px',border:'1px solid rgba(15,23,42,.28)',borderRadius:'6px',
+      background:'rgba(24,27,33,.96)',color:'#f5f7fb',boxShadow:'0 5px 18px rgba(15,23,42,.3)',
+      font:'11px/1 Arial,sans-serif',whiteSpace:'nowrap',boxSizing:'border-box',pointerEvents:'auto'
+    });
+    const tableToolbarActions=[
+      ['add-row','Row +','Add row after selected row',addTableRow],
+      ['delete-row','Row −','Delete selected row',deleteTableRow],
+      ['add-column','Column +','Add column after selected column',addTableColumn],
+      ['delete-column','Column −','Delete selected column',deleteTableColumn],
+      ['merge-right','Merge →','Merge selected cell with the cell to its right',mergeCellRight],
+      ['unmerge','Split','Split the selected merged cell',unmergeCell]
+    ];
+    const tableOverlayButtons=new Map();
+    tableToolbarActions.forEach(([name,label,title,action],index)=>{
+      if(index===2||index===4){
+        const divider=doc.createElement('span');
+        divider.dataset.editorOverlay='table-toolbar';
+        Object.assign(divider.style,{width:'1px',height:'18px',margin:'0 1px',background:'rgba(255,255,255,.2)'});
+        tableOverlayToolbar.appendChild(divider);
+      }
+      const button=doc.createElement('button');
+      button.type='button';button.textContent=label;button.title=title;
+      button.dataset.editorOverlay='table-toolbar';button.dataset.tableOverlayAction=name;
+      button.setAttribute('aria-label',title);
+      Object.assign(button.style,{
+        height:'24px',padding:'0 7px',border:'1px solid rgba(255,255,255,.17)',borderRadius:'4px',
+        background:'rgba(255,255,255,.07)',color:'inherit',font:'inherit',cursor:'pointer'
+      });
+      button.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();});
+      button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(!button.disabled)action();});
+      tableOverlayToolbar.appendChild(button);tableOverlayButtons.set(name,button);
+    });
+    doc.body.appendChild(tableOverlayToolbar);
+
+    const positionTableOverlayToolbar=()=>{
+      const localSelection=selectedElementFrame===frame&&selectedElement?.ownerDocument===doc;
+      const table=localSelection?selectedTable():null;
+      if(!table){tableOverlayToolbar.style.display='none';return;}
+      const cell=selectedTableCell();
+      const anchor=cell||table;
+      const rect=anchor.getBoundingClientRect();
+      if(rect.width<1||rect.height<1){tableOverlayToolbar.style.display='none';return;}
+      const logicalColumns=tableLogicalColumnCount(table);
+      const buttonState={
+        'delete-row':table.rows.length<=1,
+        'delete-column':logicalColumns<=1,
+        'merge-right':!cell||!cell.nextElementSibling||!['TD','TH'].includes(cell.nextElementSibling.tagName),
+        unmerge:!cell||(cell.colSpan||1)<=1
+      };
+      tableOverlayButtons.forEach((button,name)=>{
+        button.disabled=!!buttonState[name];
+        button.style.opacity=button.disabled?'.38':'1';
+        button.style.cursor=button.disabled?'default':'pointer';
+      });
+      tableOverlayToolbar.style.display='flex';
+      tableOverlayToolbar.style.visibility='hidden';
+      const view=doc.defaultView,scrollX=view.scrollX,scrollY=view.scrollY;
+      const toolbarRect=tableOverlayToolbar.getBoundingClientRect();
+      const left=Math.max(scrollX+6,Math.min(scrollX+rect.left,scrollX+view.innerWidth-toolbarRect.width-6));
+      const above=scrollY+rect.top-toolbarRect.height-7;
+      const desiredTop=above>=scrollY+6?above:scrollY+rect.bottom+7;
+      const top=Math.max(scrollY+6,Math.min(desiredTop,scrollY+view.innerHeight-toolbarRect.height-6));
+      Object.assign(tableOverlayToolbar.style,{left:`${left}px`,top:`${top}px`,visibility:'visible'});
+    };
+
     const positionOverlay=(el,stateName='hover')=>{
       if(!canInspectFrame(frame) || !el || el.dataset?.editorOverlay) return;
       const r=el.getBoundingClientRect();
@@ -3617,6 +3688,7 @@
         Object.assign(marker.style,{display:'block',left:`${rect.left+doc.defaultView.scrollX}px`,top:`${rect.top+doc.defaultView.scrollY}px`,width:`${rect.width}px`,height:`${rect.height}px`});
       });
       if(!selectedInFrame.includes(selectedElement)) overlay.style.display='none';
+      positionTableOverlayToolbar();
     };
     frameSelectionRenderers.set(frame,syncSelectionOverlays);
 
@@ -3722,7 +3794,10 @@
     },true);
 
     doc.addEventListener('scroll',()=>{if(hoveredElement?.isConnected)positionHoverOverlay(hoveredElement);else hideHoverOverlay();},true);
-    doc.defaultView.addEventListener('resize',()=>{if(hoveredElement?.isConnected)positionHoverOverlay(hoveredElement);});
+    doc.defaultView.addEventListener('resize',()=>{
+      if(hoveredElement?.isConnected)positionHoverOverlay(hoveredElement);
+      if(SelectionManager.items().some(item=>item.ownerDocument===doc))syncSelectionOverlays();
+    });
 
     doc.addEventListener('pointerdown',e=>{
       if(!canInspectFrame(frame) || e.target.dataset?.editorOverlay) return;
@@ -4101,55 +4176,115 @@
     refs.tableToolbar.hidden=!table;
   }
 
+  function tableLogicalColumnCount(table){
+    return Math.max(0,...[...table.rows].map(row=>[...row.cells].reduce((total,item)=>total+Math.max(1,item.colSpan||1),0)));
+  }
+
+  function tableCellLogicalStart(cell){
+    if(!cell)return 0;
+    return [...cell.parentElement.cells].slice(0,cell.cellIndex)
+      .reduce((total,item)=>total+Math.max(1,item.colSpan||1),0);
+  }
+
+  function tableCellAtLogicalColumn(row,column){
+    let start=0;
+    for(const cell of row.cells){
+      const span=Math.max(1,cell.colSpan||1);
+      if(column>=start&&column<start+span)return{cell,start,end:start+span};
+      start+=span;
+    }
+    return null;
+  }
+
+  function createTableCell(row,text='Cell'){
+    const doc=row.ownerDocument;
+    const header=row.parentElement?.tagName==='THEAD'||(row.cells.length>0&&[...row.cells].every(cell=>cell.tagName==='TH'));
+    const cell=doc.createElement(header?'th':'td');
+    cell.textContent=header?(text==='Cell'?'Header':text):text;
+    cell.style.cssText='border:1px solid currentColor;padding:8px;text-align:left;vertical-align:middle';
+    return cell;
+  }
+
   function mutateSelectedTable(mutator,source){
     const table=selectedTable();
     const frame=selectedElementFrame;
     if(!table||!frame) return;
     const page=pageById(frameToPageId(frame));
     if(!page) return;
-    mutator(table,selectedTableCell());
-    commitDomMutation(frame,page,selectedElement||table,source);
+    const cell=selectedTableCell();
+    const result=mutator(table,cell);
+    if(result===false)return;
+    const nextSelection=result?.selection?.isConnected
+      ?result.selection
+      :(cell?.isConnected?cell:(table.querySelector('th,td')||table));
+    commitDomMutation(frame,page,nextSelection,source);
     updateStructuredToolbar();
   }
 
   function addTableRow(){
     mutateSelectedTable((table,cell)=>{
-      const columnCount=Math.max(1,...[...table.rows].map(row=>row.cells.length));
-      const row=table.insertRow(-1);
+      const columnCount=Math.max(1,tableLogicalColumnCount(table));
+      const reference=cell?.parentElement||table.rows[table.rows.length-1]||null;
+      const section=reference?.parentElement||table.tBodies[0]||table.createTBody();
+      const row=table.ownerDocument.createElement('tr');
+      if(reference?.nextSibling)section.insertBefore(row,reference.nextSibling);
+      else section.appendChild(row);
       for(let i=0;i<columnCount;i++){
-        const td=row.insertCell(-1);
-        td.textContent='Cell';
-        td.style.cssText='border:1px solid currentColor;padding:8px;text-align:left;vertical-align:middle';
+        row.appendChild(createTableCell(row));
       }
+      return{selection:row.cells[0]};
     },'table-add-row');
   }
 
   function deleteTableRow(){
     mutateSelectedTable((table,cell)=>{
       const row=cell?.parentElement || table.rows[table.rows.length-1];
-      if(row && table.rows.length>1) row.remove();
+      if(!row||table.rows.length<=1)return false;
+      const rows=[...table.rows],index=rows.indexOf(row);
+      const fallback=rows[index+1]?.cells[0]||rows[index-1]?.cells[0]||table;
+      row.remove();
+      return{selection:fallback};
     },'table-delete-row');
   }
 
   function addTableColumn(){
-    mutateSelectedTable((table)=>{
-      [...table.rows].forEach((row,rowIndex)=>{
-        const isHeader=row.parentElement?.tagName==='THEAD';
-        const cell=isHeader?document.createElement('th'):document.createElement('td');
-        cell.textContent=isHeader?'Header':'Cell';
-        cell.style.cssText='border:1px solid currentColor;padding:8px;text-align:left;vertical-align:middle';
-        row.appendChild(cell);
+    mutateSelectedTable((table,selectedCell)=>{
+      const insertAt=selectedCell
+        ?tableCellLogicalStart(selectedCell)+Math.max(1,selectedCell.colSpan||1)
+        :tableLogicalColumnCount(table);
+      let nextSelection=null;
+      [...table.rows].forEach(row=>{
+        const covering=tableCellAtLogicalColumn(row,Math.max(0,insertAt-1));
+        if(covering&&insertAt>covering.start&&insertAt<covering.end){
+          covering.cell.colSpan=Math.max(1,covering.cell.colSpan||1)+1;
+          if(row===selectedCell?.parentElement)nextSelection=covering.cell;
+          return;
+        }
+        const before=[...row.cells].find(cell=>tableCellLogicalStart(cell)>=insertAt)||null;
+        const added=createTableCell(row);
+        row.insertBefore(added,before);
+        if(row===selectedCell?.parentElement||!nextSelection)nextSelection=added;
       });
+      return{selection:nextSelection};
     },'table-add-column');
   }
 
   function deleteTableColumn(){
     mutateSelectedTable((table,cell)=>{
-      let index=cell?.cellIndex ?? -1;
-      if(index<0) index=Math.max(0,(table.rows[0]?.cells.length||1)-1);
+      const total=tableLogicalColumnCount(table);
+      if(total<=1)return false;
+      const index=cell?tableCellLogicalStart(cell):total-1;
+      let nextSelection=null;
       [...table.rows].forEach(row=>{
-        if(row.cells.length>1 && row.cells[index]) row.deleteCell(index);
+        const hit=tableCellAtLogicalColumn(row,index);
+        if(!hit)return;
+        if((hit.cell.colSpan||1)>1)hit.cell.colSpan-=1;
+        else hit.cell.remove();
+        if(row===cell?.parentElement){
+          nextSelection=tableCellAtLogicalColumn(row,Math.min(index,Math.max(0,total-2)))?.cell||row.cells[row.cells.length-1]||null;
+        }
       });
+      return{selection:nextSelection||table.querySelector('th,td')||table};
     },'table-delete-column');
   }
 
@@ -4190,26 +4325,28 @@
 
   function mergeCellRight(){
     mutateSelectedTable((table,cell)=>{
-      if(!cell) return;
+      if(!cell) return false;
       const next=cell.nextElementSibling;
-      if(!next || !['TD','TH'].includes(next.tagName)) return;
+      if(!next || !['TD','TH'].includes(next.tagName)) return false;
       cell.innerHTML=`${cell.innerHTML}<br>${next.innerHTML}`;
       cell.colSpan=(cell.colSpan||1)+(next.colSpan||1);
       next.remove();
+      return{selection:cell};
     },'table-merge-right');
   }
 
   function unmergeCell(){
     mutateSelectedTable((table,cell)=>{
-      if(!cell || cell.colSpan<=1) return;
+      if(!cell || cell.colSpan<=1) return false;
       const count=cell.colSpan-1;
       cell.colSpan=1;
       for(let i=0;i<count;i++){
-        const newCell=document.createElement(cell.tagName.toLowerCase());
+        const newCell=table.ownerDocument.createElement(cell.tagName.toLowerCase());
         newCell.textContent='Cell';
         newCell.style.cssText=cell.style.cssText;
         cell.parentElement.insertBefore(newCell,cell.nextSibling);
       }
+      return{selection:cell};
     },'table-unmerge');
   }
 
