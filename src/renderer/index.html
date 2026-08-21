@@ -16,16 +16,16 @@
       <div class="menu">
         <button class="menu-trigger">File</button>
         <div class="menu-popup">
-          <button data-action="new-document">New Document <kbd>Ctrl+N</kbd></button>
-          <button data-action="save-document">Save Document <kbd>Ctrl+S</kbd></button>
-          <button data-action="save-document-as">Save Document As <kbd>Ctrl+Shift+S</kbd></button>
-          <button data-action="new-project">New Project…</button>
+          <button data-action="new-page">New Page <kbd>Ctrl+N</kbd></button>
+          <button data-action="save-page">Save Page <kbd>Ctrl+S</kbd></button>
+          <button data-action="save-page-as">Save Page As <kbd>Ctrl+Shift+S</kbd></button>
+          <button data-action="new-document">New Document…</button>
           <div class="separator"></div>
-          <button data-action="open-leaf-document">Open Leaf Document…</button>
-          <button data-action="save-leaf-document">Save Leaf Document</button>
-          <button data-action="save-leaf-document-as">Save Leaf Document As…</button>
+          <button data-action="open-leaf-project">Open Leaf Project…</button>
+          <button data-action="save-leaf-project">Save Leaf Project</button>
+          <button data-action="save-leaf-project-as">Save Leaf Project As…</button>
           <div class="separator"></div>
-          <button data-action="import">Import Documents…</button>
+          <button data-action="import">Import Pages…</button>
           <button data-action="export">Export HTML</button>
           <div class="separator"></div>
           <button data-action="jira-export">Jira / Atlassian Export…</button>
@@ -82,7 +82,7 @@
           <button class="left-tab" data-left-tab="used">Used</button>
         </div>
         <section class="left-tab-panel active" data-left-panel="project">
-          <div class="pane-title"><span>Projects</span><button id="quickAddProject" class="tiny-btn">＋</button></div>
+          <div class="pane-title"><span>Documents</span><button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button></div>
           <div class="tree" id="tree" tabindex="0"></div>
         </section>
         <section class="left-tab-panel" data-left-panel="objects">
@@ -116,7 +116,7 @@
     </aside>
 
     <div class="sidebar-resizer splitter-handle" id="sidebarResizer"
-         role="separator" aria-orientation="vertical" aria-label="Resize project tree"></div>
+         role="separator" aria-orientation="vertical" aria-label="Resize document tree"></div>
 
     <main class="main">
       <div class="viewbar">
@@ -147,7 +147,7 @@
             </select>
               <span class="preview-runtime-badge" data-runtime-badge="single" hidden></span>
               <button class="viewport-clear-btn" type="button" data-clear-slot="single" title="Clear loaded HTML">Clear</button>
-              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="single" aria-pressed="false" title="View document without app UI">⛶</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="single" aria-pressed="false" title="View page without app UI">⛶</button>
           </div>
           <div class="preview-canvas" data-preview-canvas="single">
             <input class="viewport-zoom-indicator" data-preview-zoom="single" aria-label="Viewport zoom percentage" inputmode="numeric" value="100%" />
@@ -182,7 +182,7 @@
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="left" hidden></span>
               <button class="viewport-clear-btn" type="button" data-clear-slot="left" title="Clear loaded HTML">Clear</button>
-              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="left" aria-pressed="false" title="View document without app UI">⛶</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="left" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
             </div>
             <div class="preview-canvas" data-preview-canvas="left">
@@ -227,7 +227,7 @@
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="right" hidden></span>
               <button class="viewport-clear-btn" type="button" data-clear-slot="right" title="Clear loaded HTML">Clear</button>
-              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="right" aria-pressed="false" title="View document without app UI">⛶</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="right" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
             </div>
             <div class="preview-canvas" data-preview-canvas="right">
@@ -260,7 +260,7 @@
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="codePreview" hidden></span>
               <button class="viewport-clear-btn" type="button" data-clear-slot="codePreview" title="Clear loaded HTML">Clear</button>
-              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="codePreview" aria-pressed="false" title="View document without app UI">⛶</button>
+              <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="codePreview" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
             </div>
             <div class="preview-canvas" data-preview-canvas="codePreview">
@@ -357,7 +357,7 @@
   <button data-tree-add="group">Add Group</button>
 </div>
 
-<input type="color" id="projectColorPicker" hidden />
+<input type="color" id="documentColorPicker" hidden />
 
 <div class="modal-backdrop" id="inputModal" role="presentation">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -423,7 +423,7 @@
 <div class="modal-backdrop" id="replaceHtmlModal" role="presentation">
   <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="replaceHtmlTitle">
     <h3 id="replaceHtmlTitle">Replace loaded HTML?</h3>
-    <p>The current Viewport already contains an HTML document. Replace it with the dropped document?</p>
+    <p>The current Viewport already contains an HTML page. Replace it with the dropped page?</p>
     <div class="clear-html-target" id="replaceHtmlTarget"></div>
     <div class="modal-actions">
       <button class="btn" id="replaceHtmlCancel">Cancel</button>

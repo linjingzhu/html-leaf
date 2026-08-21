@@ -8,11 +8,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (!filePath) throw new Error('Dropped file is not backed by a local path.');
     return ipcRenderer.invoke('file:readHtmlPath', filePath);
   },
+  importPages: () => ipcRenderer.invoke('file:importPages'),
   importDocuments: () => ipcRenderer.invoke('file:importDocuments'),
   readDroppedDocument: (file) => {
     const filePath = webUtils.getPathForFile(file);
     if (!filePath) throw new Error('Dropped file is not backed by a local path.');
     return ipcRenderer.invoke('file:readDocumentPath', filePath);
+  },
+  readDroppedPage: (file) => {
+    const filePath = webUtils.getPathForFile(file);
+    if (!filePath) return Promise.reject(new Error('A valid dropped page is required.'));
+    return ipcRenderer.invoke('file:readPagePath', filePath);
   },
   exportHtml: (payload) => ipcRenderer.invoke('file:exportHtml', payload),
   saveHtmlPath: (payload) => ipcRenderer.invoke('file:saveHtmlPath', payload),

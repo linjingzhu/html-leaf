@@ -13,8 +13,8 @@ function check(name,condition){
 
 check('Inspector Preview has an explicit state transition',js.includes('function setInspectorPreviewEnabled(enabled)'));
 check('Inspector Preview applies and restores Draft DOM',js.includes('applyDraftPreview();')&&js.includes('else restoreDraftOriginalLive();'));
-check('New Project dialog closes before its action runs',js.indexOf('closeModal();\n    try{ action(value);')>0);
-check('New Project creates and selects a real page',js.includes("showToast('New project created')")&&js.includes('state.views.single=pageId'));
+check('New child-container dialog closes before its action runs',js.indexOf('closeModal();\n    try{ action(value);')>0);
+check('New child container creates and selects a real page',(js.includes("showToast('New document created')")||js.includes("showToast('New project created')"))&&js.includes('state.views.single=pageId'));
 check('Preview Split Code buttons are directly bound',js.includes("$$('#viewSeg button[data-mode]').forEach(button=>"));
 check('Mode transition updates state and rerenders',js.includes('state.mode=nextMode;')&&js.includes('renderViewMode();'));
 check('Zoom controls are installed for every preview',js.includes('function installPreviewZoomControls()')&&js.includes("['single','left','right','codePreview'].forEach(slot=>"));

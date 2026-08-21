@@ -2,7 +2,7 @@
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const ROOT = null;
-  const stateKey = 'leaf-v0-5-14-state';
+  const stateKey = 'leaf-v0-5-15-state';
 
   const refs = {
     workspace: $('#workspace'), tree: $('#tree'), inspector: $('#inspector'),
@@ -14,7 +14,7 @@
     codeSearch: $('#codeSearch'), codeSearchStatus: $('#codeSearchStatus'),
     singleFrame: $('#singleFrame'), leftFrame: $('#leftFrame'), rightFrame: $('#rightFrame'),
     codePreviewFrame: $('#codePreviewFrame'), codePageSelect: $('#codePageSelect'), toast: $('#toast'),
-    ctx: $('#treeContextMenu'), colorPicker: $('#projectColorPicker'),
+    ctx: $('#treeContextMenu'), colorPicker: $('#documentColorPicker'),
     resetInspectorBtn: $('#resetInspectorBtn'),
     viewportSizeModal: $('#viewportSizeModal'), viewportWidthInput: $('#viewportWidthInput'),
     viewportHeightInput: $('#viewportHeightInput'),
@@ -106,7 +106,7 @@
   let undoStack = [];
   let redoStack = [];
   let modalAction = null;
-  let activeProjectForColor = null;
+  let activeDocumentForColor = null;
   let sidebarWidth = state.preferences?.sidebarWidth || 260;
   let inspectorWidth = state.preferences?.inspectorWidth || 290;
   let splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -161,9 +161,9 @@
   function createDefaultState(){
     const page = uid('page');
     return {
-      version:'0.5.14',
-      documentName:'Untitled Leaf Document',
-      documentFilePath:null,
+      version:'0.5.15',
+      projectName:'Untitled Leaf Project',
+      projectFilePath:null,
       mode:'preview',
       preferences:{ language:'ko', scale:1, theme:'dark', inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
@@ -174,12 +174,12 @@
         codePreview:{preset:'responsive',width:null,height:null}
       },
       recent:[],
-      selectedProjectId:'project_default',
+      selectedDocumentId:'document_default',
       selectedTreeNode:page,
       activeSlots:{ split:'left', code:'preview' },
       views:{ single:page, left:page, right:page, codePreview:page, codePage:page },
-      projects:[{
-        id:'project_default', name:'Default Project', color:'#5873d4', filePath:null, expanded:true,
+      documents:[{
+        id:'document_default', name:'Default Document', color:'#5873d4', filePath:null, expanded:true,
         nodes:[{
           id:page,type:'page',name:'Empty Page',fileName:'untitled.html',documentType:'html',parentId:null,order:0,
           source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
@@ -192,9 +192,9 @@
   function normalizeState(input){
     const fallback=createDefaultState();
     const s=input && typeof input==='object' ? input : fallback;
-    s.version='0.5.14';
-    s.documentName=String(s.documentName||fallback.documentName);
-    s.documentFilePath=typeof s.documentFilePath==='string'?s.documentFilePath:null;
+    s.version='0.5.15';
+    s.projectName=String(s.projectName||s.documentName||fallback.projectName);
+    s.projectFilePath=typeof s.projectFilePath==='string'?s.projectFilePath:(typeof s.documentFilePath==='string'?s.documentFilePath:null);
     s.mode=['preview','split','code'].includes(s.mode) ? s.mode : 'preview';
     s.preferences={...fallback.preferences,...(s.preferences||{})};
     s.layout={
@@ -217,14 +217,15 @@
       if(!['fit','manual'].includes(s.previewZoomMode[slot])) s.previewZoomMode[slot]='fit';
     });
     s.recent=Array.isArray(s.recent)?s.recent:[];
-    s.projects=Array.isArray(s.projects)&&s.projects.length?s.projects.slice(0,100):fallback.projects;
-    s.projects=s.projects.filter(project=>project&&typeof project==='object').map((project,index)=>{
-      project.id=String(project.id||uid('project'));project.name=String(project.name||`Project ${index+1}`);project.nodes=Array.isArray(project.nodes)?project.nodes.filter(node=>node&&typeof node==='object').slice(0,10000):[];return project;
+    const legacyDocuments=Array.isArray(s.projects)?s.projects:null;
+    s.documents=Array.isArray(s.documents)&&s.documents.length?s.documents.slice(0,100):(legacyDocuments?.length?legacyDocuments.slice(0,100):fallback.documents);
+    s.documents=s.documents.filter(project=>project&&typeof project==='object').map((project,index)=>{
+      project.id=String(project.id||uid('document'));project.name=String(project.name||`Document ${index+1}`);project.nodes=Array.isArray(project.nodes)?project.nodes.filter(node=>node&&typeof node==='object').slice(0,10000):[];return project;
     });
-    if(!s.projects.length)s.projects=fallback.projects;
-    s.projects.forEach(project=>project.nodes.forEach(page=>{
+    if(!s.documents.length)s.documents=fallback.documents;
+    s.documents.forEach(project=>project.nodes.forEach(page=>{
       if(page.type==='page'){
-        page.source=String(page.source||'');page.name=String(page.name||'Untitled Document');page.fileName=String(page.fileName||'untitled.html');
+        page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
         if(!['html','markdown','pdf'].includes(page.documentType)){
           page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
@@ -237,7 +238,8 @@
       split:['left','right'].includes(s.activeSlots?.split)?s.activeSlots.split:'left',
       code:['preview','editor'].includes(s.activeSlots?.code)?s.activeSlots.code:'preview'
     };
-    if(!s.selectedProjectId || !s.projects.some(p=>p.id===s.selectedProjectId)) s.selectedProjectId=s.projects[0]?.id||null;
+    s.selectedDocumentId=s.selectedDocumentId||s.selectedProjectId||null;
+    if(!s.selectedDocumentId || !s.documents.some(p=>p.id===s.selectedDocumentId)) s.selectedDocumentId=s.documents[0]?.id||null;
     return s;
   }
 
@@ -263,16 +265,16 @@
     localStorage.setItem(stateKey, JSON.stringify(state));
   }
 
-  function projectById(id){ return state.projects.find(p=>p.id===id) || null; }
-  function activeProject(){ return projectById(state.selectedProjectId) || state.projects[0] || null; }
+  function documentById(id){ return state.documents.find(p=>p.id===id) || null; }
+  function activeDocument(){ return documentById(state.selectedDocumentId) || state.documents[0] || null; }
   function nodeById(id){
-    for(const p of state.projects){ const n=p.nodes.find(n=>n.id===id); if(n) return {project:p,node:n}; }
+    for(const p of state.documents){ const n=p.nodes.find(n=>n.id===id); if(n) return {project:p,node:n}; }
     return null;
   }
   function pageById(id){ const x=nodeById(id); return x?.node.type==='page' ? x.node : null; }
   function children(project,parentId){ return project.nodes.filter(n=>n.parentId===parentId).sort((a,b)=>(a.order??0)-(b.order??0)); }
-  function pageList(){ return state.projects.flatMap(p=>p.nodes.filter(n=>n.type==='page').map(n=>({project:p,page:n}))); }
-  function selectedContext(){ return selectedTreeNode ? nodeById(selectedTreeNode) : {project:activeProject(),node:null}; }
+  function pageList(){ return state.documents.flatMap(p=>p.nodes.filter(n=>n.type==='page').map(n=>({project:p,page:n}))); }
+  function selectedContext(){ return selectedTreeNode ? nodeById(selectedTreeNode) : {project:activeDocument(),node:null}; }
 
   function showToast(text){
     refs.toast.textContent=text; refs.toast.classList.add('show');
@@ -386,14 +388,14 @@
 
   async function handleAction(action){
     switch(action){
+      case 'new-page': return newPage();
       case 'new-document': return newDocument();
-      case 'new-project': return newProject();
-      case 'save-document': return saveDocument(false);
-      case 'save-document-as': return saveDocument(true);
-      case 'open-leaf-document': return openLeafDocument();
-      case 'save-leaf-document': return saveLeafDocument(false);
-      case 'save-leaf-document-as': return saveLeafDocument(true);
-      case 'import': return importDocuments();
+      case 'save-page': return savePage(false);
+      case 'save-page-as': return savePage(true);
+      case 'open-leaf-project': return openLeafProject();
+      case 'save-leaf-project': return saveLeafProject(false);
+      case 'save-leaf-project-as': return saveLeafProject(true);
+      case 'import': return importPages();
       case 'export': return exportHtml();
       case 'jira-export': return openJiraExportDialog('rich');
       case 'copy-jira': return copyCurrentPageForJira();
@@ -414,7 +416,7 @@
           <button type="button" data-recent="${index}" title="${esc(item.filePath||'')}">
             <span>${esc(item.name)}</span>
           </button>`).join('')
-      : `<button type="button" disabled><span>No recent Leaf documents</span></button>`;
+      : `<button type="button" disabled><span>No recent Leaf projects</span></button>`;
 
     element.querySelectorAll('[data-recent]').forEach(button=>{
       button.addEventListener('click',event=>{
@@ -426,16 +428,16 @@
 
         withUnsavedInspectorGuard(async()=>{
           try{
-            const loaded=state.projects.find(project=>project.filePath===item.filePath);
+            const loaded=state.documents.find(project=>project.filePath===item.filePath);
             if(loaded){
-              focusProject(loaded);
+              focusDocument(loaded);
               addRecent(item.filePath,loaded.name);
               renderAll(); persist();
-              showToast('Recent project selected');
+              showToast('Recent document selected');
             }else{
               const result=await window.electronAPI.readProjectPath(item.filePath);
-              loadLeafDocumentPayload(result.project,result.filePath);
-              showToast('Recent Leaf document opened');
+              loadLeafProjectPayload(result.project,result.filePath);
+              showToast('Recent Leaf project opened');
             }
           }catch(error){
             console.error('Recent project open failed',error);
@@ -451,81 +453,82 @@
     });
   }
 
-  // ----- Projects -----
-  function projectSerializable(project){
+  // ----- Project / Documents / Pages -----
+  function documentSerializable(project){
     const p=clone(project); return p;
   }
 
-  function leafDocumentSerializable(){
-    return {format:'leaf-document',version:'0.5.14',name:state.documentName||'Leaf Document',projects:clone(state.projects)};
+  function leafProjectSerializable(){
+    return {format:'leaf-project',version:'0.5.15',name:state.projectName||'Leaf Project',documents:clone(state.documents)};
   }
 
-  function loadLeafDocumentPayload(payload,filePath){
-    if(payload?.format==='leaf-document'&&Array.isArray(payload.projects)){
-      const normalized=normalizeState({...createDefaultState(),projects:clone(payload.projects),documentName:String(payload.name||'Leaf Document')});
-      state.projects=normalized.projects;state.documentName=normalized.documentName;state.documentFilePath=filePath;
-      state.selectedProjectId=state.projects[0]?.id||null;focusProject(state.projects[0]||null);repairViews();clearInspector();addRecent(filePath,state.documentName);renderAll();persist();return;
+  function loadLeafProjectPayload(payload,filePath){
+    const documents=Array.isArray(payload?.documents)?payload.documents:(Array.isArray(payload?.projects)?payload.projects:null);
+    if(documents&&(payload?.format==='leaf-project'||payload?.format==='leaf-document'||Array.isArray(payload?.documents))){
+      const normalized=normalizeState({...createDefaultState(),documents:clone(documents),projectName:String(payload.name||'Leaf Project')});
+      state.documents=normalized.documents;state.projectName=normalized.projectName;state.projectFilePath=filePath;
+      state.selectedDocumentId=state.documents[0]?.id||null;focusDocument(state.documents[0]||null);repairViews();clearInspector();addRecent(filePath,state.projectName);renderAll();persist();return;
     }
-    addLoadedProject(payload,filePath);
+    addLoadedDocument(payload,filePath);
   }
 
-  async function openLeafDocument(){
+  async function openLeafProject(){
     withUnsavedInspectorGuard(async()=>{
-      try{const result=await window.electronAPI.openProject();if(!result)return;loadLeafDocumentPayload(result.project,result.filePath);showToast('Leaf document opened');}
-      catch(error){console.error('Leaf document open failed',error);showToast(`Open failed: ${error.message}`);}
+      try{const result=await window.electronAPI.openProject();if(!result)return;loadLeafProjectPayload(result.project,result.filePath);showToast('Leaf project opened');}
+      catch(error){console.error('Leaf project open failed',error);showToast(`Open failed: ${error.message}`);}
     });
   }
 
-  async function saveLeafDocument(forceAs){
+  async function saveLeafProject(forceAs){
     try{
-      const payload=leafDocumentSerializable();
-      const filePath=forceAs||!state.documentFilePath
-        ?await window.electronAPI.saveProjectAs({suggestedName:`${exportSafeName(state.documentName||'document')}.leaf`,project:payload})
-        :await window.electronAPI.saveProject({filePath:state.documentFilePath,project:payload});
+      const payload=leafProjectSerializable();
+      const filePath=forceAs||!state.projectFilePath
+        ?await window.electronAPI.saveProjectAs({suggestedName:`${exportSafeName(state.projectName||'project')}.leaf`,project:payload})
+        :await window.electronAPI.saveProject({filePath:state.projectFilePath,project:payload});
       if(!filePath)return false;
-      state.documentFilePath=filePath;state.documentName=filePath.split(/[\\/]/).pop().replace(/\.leaf$/i,'')||state.documentName;
-      addRecent(filePath,state.documentName);renderAll();persist();showToast('Leaf document saved');return true;
-    }catch(error){console.error('Leaf document save failed',error);showToast(`Save failed: ${error.message}`);return false;}
+      state.projectFilePath=filePath;state.projectName=filePath.split(/[\\/]/).pop().replace(/\.leaf$/i,'')||state.projectName;
+      addRecent(filePath,state.projectName);renderAll();persist();showToast('Leaf project saved');return true;
+    }catch(error){console.error('Leaf project save failed',error);showToast(`Save failed: ${error.message}`);return false;}
   }
 
   function isNodeInActiveViewport(nodeId){
     return !!nodeId && nodeId===currentActivePageId();
   }
 
-  function activeDocumentSlot(){
+  function activePageSlot(){
     return state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage');
   }
 
-  function newDocument(){
+  function newPage(){
     withUnsavedInspectorGuard(()=>{
-      const project=activeProject();
-      if(!project){showToast('Create or select a project first');return;}
-      openModal('New Document','Create an empty HTML document inside the selected project.','Document name','Untitled Document',name=>{
+      const project=activeDocument();
+      if(!project){showToast('Create or select a document first');return;}
+      openModal('New Page','Create an empty HTML page inside the selected document.','Page name','Untitled Page',name=>{
         const context=selectedContext();
         const parentId=context.project?.id===project.id&&context.node?.type==='group'?context.node.id:(context.project?.id===project.id?context.node?.parentId||null:null);
         const page={
           id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
           parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
         };
-        project.nodes.push(page);project.expanded=true;state.selectedProjectId=project.id;selectedTreeNode=page.id;
-        const slot=activeDocumentSlot();state.views[slot]=page.id;
+        project.nodes.push(page);project.expanded=true;state.selectedDocumentId=project.id;selectedTreeNode=page.id;
+        const slot=activePageSlot();state.views[slot]=page.id;
         if(state.mode==='code'){state.views.codePreview=page.id;state.views.codePage=page.id;}
-        clearInspector();activateLeftTab('project');renderAll();persist();showToast('New document created');
+        clearInspector();activateLeftTab('project');renderAll();persist();showToast('New page created');
       });
     });
   }
 
-  async function newProject(){
+  async function newDocument(){
     withUnsavedInspectorGuard(()=>{
       openModal(
-        'New Project',
-        'Create a project with an Empty Page.',
-        'Project name',
-        'New Project',
+        'New Document',
+        'Create a document with an Empty Page inside the current Leaf Project.',
+        'Document name',
+        'New Document',
         name=>{
           const pageId=uid('page');
           const project={
-            id:uid('project'),
+            id:uid('document'),
             name,
             color:'#5873d4',
             filePath:null,
@@ -536,8 +539,8 @@
             }]
           };
 
-          state.projects=[...state.projects,project];
-          state.selectedProjectId=project.id;
+          state.documents=[...state.documents,project];
+          state.selectedDocumentId=project.id;
           selectedTreeNode=pageId;
           state.views.single=pageId;
           state.views.left=pageId;
@@ -551,15 +554,15 @@
           renderTree();
           renderAll();
           persist();
-          showToast('New project created');
+          showToast('New document created');
         }
       );
     });
   }
 
-  function focusProject(project){
+  function focusDocument(project){
     if(!project) return;
-    state.selectedProjectId=project.id;
+    state.selectedDocumentId=project.id;
     const firstPage=project.nodes?.find(node=>node.type==='page')||null;
     selectedTreeNode=firstPage?.id||null;
 
@@ -574,9 +577,9 @@
   }
 
   async function saveProject(forceAs){
-    const project=activeProject();
+    const project=activeDocument();
     if(!project){
-      showToast('No project selected');
+      showToast('No document selected');
       return false;
     }
 
@@ -585,25 +588,25 @@
         try{
           if(forceAs || !project.filePath){
             const filePath=await window.electronAPI.saveProjectAs({
-              suggestedName:`${project.name||'project'}.hbeproj`,
-              project:projectSerializable(project)
+              suggestedName:`${project.name||'document'}.hbeproj`,
+              project:documentSerializable(project)
             });
             if(!filePath){ resolve(false); return; }
             project.filePath=filePath;
           }else{
             await window.electronAPI.saveProject({
               filePath:project.filePath,
-              project:projectSerializable(project)
+              project:documentSerializable(project)
             });
           }
 
           addRecent(project.filePath,project.name);
           persist();
           renderAll();
-          showToast(forceAs?'Project saved as new file':'Project saved');
+          showToast(forceAs?'Document saved as new file':'Document saved');
           resolve(true);
         }catch(error){
-          console.error('Project save failed',error);
+          console.error('Document save failed',error);
           showToast(`Save failed: ${error.message}`);
           resolve(false);
         }
@@ -611,10 +614,10 @@
     });
   }
 
-  async function saveDocument(forceAs){
+  async function savePage(forceAs){
     const page=pageById(currentActivePageId());
-    if(!page){showToast('Select a document first');return false;}
-    if(page.documentType==='pdf'&&!forceAs){showToast('PDF documents are read-only. Use Save As to copy the file.');return false;}
+    if(!page){showToast('Select a page first');return false;}
+    if(page.documentType==='pdf'&&!forceAs){showToast('PDF pages are read-only. Use Save As to copy the file.');return false;}
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
@@ -623,7 +626,7 @@
             filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
           }else if(page.documentType==='markdown'){
             filePath=forceAs||!page.sourcePath
-              ?await window.electronAPI.exportText({title:'Save Markdown Document',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
+              ?await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
               :await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source});
           }else{
             filePath=forceAs||!page.sourcePath
@@ -635,8 +638,8 @@
           page.fileName=filePath.split(/[\\/]/).pop()||page.fileName;
           if(page.documentType==='pdf')page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
           else page.loadedSource=page.source;
-          renderAll();persist();showToast(forceAs?'Document saved as new file':'Document saved');resolve(true);
-        }catch(error){console.error('Document save failed',error);showToast(`Save failed: ${error.message}`);resolve(false);}
+          renderAll();persist();showToast(forceAs?'Page saved as new file':'Page saved');resolve(true);
+        }catch(error){console.error('Page save failed',error);showToast(`Save failed: ${error.message}`);resolve(false);}
       });
     });
   }
@@ -648,9 +651,9 @@
     state.recent=state.recent.slice(0,8);
   }
 
-  function addLoadedProject(project,filePath){
+  function addLoadedDocument(project,filePath){
     const loadedProject=clone(project);
-    loadedProject.id=uid('project');
+    loadedProject.id=uid('document');
     loadedProject.filePath=filePath;
 
     const remap=new Map();
@@ -664,23 +667,23 @@
       if(node.parentId) node.parentId=remap.get(node.parentId)||null;
     });
 
-    state.projects.push(loadedProject);
-    focusProject(loadedProject);
+    state.documents.push(loadedProject);
+    focusDocument(loadedProject);
     addRecent(filePath,loadedProject.name);
     renderAll();
     persist();
   }
 
-  async function addDocumentResultToProject(result, targetSlot=null, targetProject=null, targetParentId=undefined){
+  async function addPageResultToDocument(result, targetSlot=null, targetProject=null, targetParentId=undefined){
     if(!result) return null;
-    let {project,node}=selectedContext(); project=project||activeProject();
+    let {project,node}=selectedContext(); project=project||activeDocument();
     if(targetProject)project=targetProject;
     if(!project){
-      project={id:uid('project'),name:'New Project',color:'#395a88',filePath:null,expanded:true,nodes:[]};
-      state.projects.push(project); state.selectedProjectId=project.id;
+      project={id:uid('document'),name:'New Document',color:'#395a88',filePath:null,expanded:true,nodes:[]};
+      state.documents.push(project); state.selectedDocumentId=project.id;
     }
 
-    const slot=targetSlot || activeDocumentSlot();
+    const slot=targetSlot || activePageSlot();
     const slotPage=pageById(state.views[slot]);
 
     // Drag & Drop onto an Empty Page fills that placeholder instead of creating another Page.
@@ -698,9 +701,9 @@
         slotPage.documentType=result.documentType||'html';
         slotPage.initialSnapshotPath=result.initialSnapshotPath||null;
         slotPage.isEmpty=false;
-        state.selectedProjectId=project.id;
+        state.selectedDocumentId=project.id;
         selectedTreeNode=slotPage.id;
-        renderAll(); persist(); showToast('Document loaded into Empty Page');
+        renderAll(); persist(); showToast('Page loaded into Empty Page');
         return slotPage;
       }
     }
@@ -708,30 +711,30 @@
     const inferredParent=node?.type==='group' && nodeById(node.id)?.project.id===project.id ? node.id : (nodeById(node?.id)?.project.id===project.id?node?.parentId||null:null);
     const parentId=targetParentId===undefined?inferredParent:targetParentId;
     const page={id:uid('page'),type:'page',name:result.title,fileName:result.fileName,documentType:result.documentType||'html',parentId,order:children(project,parentId).length,source:result.source||'',loadedSource:result.loadedSource??result.source??'',baseUrl:result.baseUrl,sourcePath:result.filePath,previewUrl:result.previewUrl||null,initialSnapshotPath:result.initialSnapshotPath||null,isEmpty:false};
-    project.nodes.push(page); state.selectedProjectId=project.id; selectedTreeNode=page.id;
+    project.nodes.push(page); state.selectedDocumentId=project.id; selectedTreeNode=page.id;
     state.views[slot]=page.id;
     if(slot==='single') state.views.single=page.id;
-    renderAll(); persist(); showToast('Document loaded');
+    renderAll(); persist(); showToast('Page loaded');
     return page;
   }
 
-  const addHtmlResultToProject=addDocumentResultToProject;
+  const addHtmlResultToDocument=addPageResultToDocument;
 
-  async function importDocuments(){
+  async function importPages(){
     withUnsavedInspectorGuard(async()=>{
       try{
-        const results=await window.electronAPI.importDocuments();
+        const results=await window.electronAPI.importPages();
         if(!results?.length) return;
-        for(const result of results)await addDocumentResultToProject(result);
-        showToast(`${results.length} document${results.length===1?'':'s'} imported`);
+        for(const result of results)await addPageResultToDocument(result);
+        showToast(`${results.length} page${results.length===1?'':'s'} imported`);
       }catch(error){
-        console.error('Document import failed',error);
+        console.error('Page import failed',error);
         showToast(`Import failed: ${error.message}`);
       }
     });
   }
 
-  const importHtml=importDocuments;
+  const importHtml=importPages;
 
   async function exportHtml(){
     withUnsavedInspectorGuard(async()=>{
@@ -764,27 +767,27 @@
     children(project,parentId).forEach((node,index)=>{node.order=index;});
   }
 
-  function clearProjectTreeDropFeedback(){
+  function clearDocumentTreeDropFeedback(){
     $$('.tree-row').forEach(row=>row.classList.remove('drop-before','drop-after','drop-inside','tree-dragging'));
-    $$('.project-card').forEach(card=>card.classList.remove('drop-before','import-target'));
+    $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
   function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf)$/i.test(file.name||'');}
 
-  async function importDroppedDocuments(event,project,parentId=null){
+  async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, or PDF documents');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, or PDF pages');return;}
     try{
       for(const file of files){
-        const result=await window.electronAPI.readDroppedDocument(file);
-        await addDocumentResultToProject(result,null,project,parentId);
+        const result=await window.electronAPI.readDroppedPage(file);
+        await addPageResultToDocument(result,null,project,parentId);
       }
-      showToast(`${files.length} document${files.length===1?'':'s'} imported into ${project.name}`);
-    }catch(error){console.error('Project document drop failed',error);showToast(`Import failed: ${error.message}`);}
+      showToast(`${files.length} page${files.length===1?'':'s'} imported into ${project.name}`);
+    }catch(error){console.error('Document page drop failed',error);showToast(`Import failed: ${error.message}`);}
   }
 
-  function moveProjectTreeNode(payload,targetProject,targetNode,mode='inside'){
-    const sourceProject=projectById(payload?.projectId);
+  function moveDocumentTreeNode(payload,targetProject,targetNode,mode='inside'){
+    const sourceProject=documentById(payload?.documentId||payload?.projectId);
     const moving=sourceProject?.nodes.find(node=>node.id===payload?.nodeId);
     if(!sourceProject||!moving||!targetProject)return false;
     const subtreeIds=treeSubtreeIds(sourceProject,moving.id);
@@ -808,15 +811,15 @@
     }
     siblings.splice(index,0,moving);
     siblings.forEach((node,order)=>{node.order=order;});
-    state.selectedProjectId=targetProject.id;selectedTreeNode=moving.id;
+    state.selectedDocumentId=targetProject.id;selectedTreeNode=moving.id;
     renderAll();persist();showToast('Tree object moved');
     return true;
   }
 
   function openTreeAddMenu(project,node,button){
     const rect=button.getBoundingClientRect();
-    treeAddTarget={projectId:project.id,nodeId:node?.id||null};
-    state.selectedProjectId=project.id;selectedTreeNode=node?.id||null;
+    treeAddTarget={documentId:project.id,nodeId:node?.id||null};
+    state.selectedDocumentId=project.id;selectedTreeNode=node?.id||null;
     renderTree();persist();
     refs.treeAddMenu.hidden=false;
     refs.treeAddMenu.style.left=`${Math.min(window.innerWidth-190,rect.right+4)}px`;
@@ -826,22 +829,22 @@
 
   function renderTree(){
     refs.tree.innerHTML='';
-    state.projects.forEach((project)=>{
+    state.documents.forEach((project)=>{
       const card=document.createElement('div');
-      card.className='project-card';
-      card.dataset.projectId=project.id;
-      card.style.setProperty('--project-color', project.color || '#395a88');
+      card.className='document-card';
+      card.dataset.documentId=project.id;
+      card.style.setProperty('--document-color', project.color || '#395a88');
 
       const row=document.createElement('div');
-      row.className=`tree-row project ${state.selectedProjectId===project.id && !selectedTreeNode?'selected':''}`;
-      row.dataset.projectId=project.id; row.dataset.depth=0; row.draggable=true;
-      row.innerHTML=`<span class="twisty">${project.expanded!==false?'▾':'▸'}</span><span class="project-swatch" style="background:${project.color}" title="Change project color"></span><span class="label">${esc(project.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
+      row.className=`tree-row document ${state.selectedDocumentId===project.id && !selectedTreeNode?'selected':''}`;
+      row.dataset.documentId=project.id; row.dataset.depth=0; row.draggable=true;
+      row.innerHTML=`<span class="twisty">${project.expanded!==false?'▾':'▸'}</span><span class="document-swatch" style="background:${project.color}" title="Change document color"></span><span class="label">${esc(project.name)}</span><button class="tree-row-add" type="button" title="Add Page or Group">＋</button>`;
       row.onclick=e=>{
         if(e.target.closest('.tree-row-add'))return;
         refs.tree.focus({preventScroll:true});
-        if(e.target.classList.contains('project-swatch')){e.stopPropagation();activeProjectForColor=project.id;refs.colorPicker.value=project.color;refs.colorPicker.click();return;}
+        if(e.target.classList.contains('document-swatch')){e.stopPropagation();activeDocumentForColor=project.id;refs.colorPicker.value=project.color;refs.colorPicker.click();return;}
         withUnsavedInspectorGuard(()=>{
-          state.selectedProjectId=project.id;
+          state.selectedDocumentId=project.id;
           selectedTreeNode=null;
           project.expanded=project.expanded===false;
           clearInspector();
@@ -855,24 +858,24 @@
         e.preventDefault();
         refs.tree.focus({preventScroll:true});
         withUnsavedInspectorGuard(()=>{
-          state.selectedProjectId=project.id;selectedTreeNode=null;clearInspector();renderTree();openContextMenu(e.clientX,e.clientY);persist();
+          state.selectedDocumentId=project.id;selectedTreeNode=null;clearInspector();renderTree();openContextMenu(e.clientX,e.clientY);persist();
         });
       };
-      row.ondragstart=e=>{e.dataTransfer.setData('text/project-id',project.id);row.classList.add('dragging');};
-      row.ondragend=()=>{$$('.tree-row.project').forEach(x=>x.classList.remove('dragging'));$$('.project-card').forEach(x=>x.classList.remove('drop-before'));};
+      row.ondragstart=e=>{e.dataTransfer.setData('text/leaf-document-id',project.id);row.classList.add('dragging');};
+      row.ondragend=()=>{$$('.tree-row.document').forEach(x=>x.classList.remove('dragging'));$$('.document-card').forEach(x=>x.classList.remove('drop-before'));};
       card.ondragover=e=>{
         if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';card.classList.add('import-target');return;}
         if(e.dataTransfer.types.includes('application/x-hbe-tree-node')){e.preventDefault();row.classList.add('drop-inside');return;}
-        if(e.dataTransfer.types.includes('text/project-id')){e.preventDefault();card.classList.add('drop-before');}
+        if(e.dataTransfer.types.includes('text/leaf-document-id')){e.preventDefault();card.classList.add('drop-before');}
       };
       card.ondragleave=()=>card.classList.remove('drop-before','import-target');
       card.ondrop=e=>{
-        if(e.dataTransfer.files?.length){e.preventDefault();e.stopPropagation();clearProjectTreeDropFeedback();importDroppedDocuments(e,project,null);return;}
+        if(e.dataTransfer.files?.length){e.preventDefault();e.stopPropagation();clearDocumentTreeDropFeedback();importDroppedPages(e,project,null);return;}
         const treeRaw=e.dataTransfer.getData('application/x-hbe-tree-node');
-        if(treeRaw){e.preventDefault();let payload=null;try{payload=JSON.parse(treeRaw)}catch{}clearProjectTreeDropFeedback();moveProjectTreeNode(payload,project,null,'inside');return;}
-        const dragged=e.dataTransfer.getData('text/project-id'); if(!dragged||dragged===project.id)return;
-        e.preventDefault(); const from=state.projects.findIndex(p=>p.id===dragged),to=state.projects.findIndex(p=>p.id===project.id);
-        const [moved]=state.projects.splice(from,1); state.projects.splice(to,0,moved); renderTree(); persist();
+        if(treeRaw){e.preventDefault();let payload=null;try{payload=JSON.parse(treeRaw)}catch{}clearDocumentTreeDropFeedback();moveDocumentTreeNode(payload,project,null,'inside');return;}
+        const dragged=e.dataTransfer.getData('text/leaf-document-id'); if(!dragged||dragged===project.id)return;
+        e.preventDefault(); const from=state.documents.findIndex(p=>p.id===dragged),to=state.documents.findIndex(p=>p.id===project.id);
+        const [moved]=state.documents.splice(from,1); state.documents.splice(to,0,moved); renderTree(); persist();
       };
       card.appendChild(row);
       if(project.expanded!==false) walkTree(project,null,1,card);
@@ -887,7 +890,7 @@
   refs.tree.addEventListener('drop',event=>{
     if(!event.dataTransfer?.files?.length)return;
     event.preventDefault();event.stopPropagation();
-    const project=activeProject();if(project)importDroppedDocuments(event,project,null);
+    const project=activeDocument();if(project)importDroppedPages(event,project,null);
   });
 
   function walkTree(project,parentId,depth,container){
@@ -904,7 +907,7 @@
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
       const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':'◇';
-      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'document-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
+      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
         if(e.target.closest('.tree-row-add'))return;
@@ -912,7 +915,7 @@
         if(e.target.closest('.twisty')&&hasChildren){node.expanded=node.expanded===false;renderTree();persist();return;}
         if(node.type==='group'){
           withUnsavedInspectorGuard(()=>{
-            state.selectedProjectId=project.id;
+            state.selectedDocumentId=project.id;
             selectedTreeNode=node.id;
             clearInspector();
             renderAll();
@@ -927,20 +930,20 @@
         e.preventDefault();e.stopPropagation();
         refs.tree.focus({preventScroll:true});
         withUnsavedInspectorGuard(()=>{
-          state.selectedProjectId=project.id;selectedTreeNode=node.id;clearInspector();renderTree();openContextMenu(e.clientX,e.clientY);persist();
+          state.selectedDocumentId=project.id;selectedTreeNode=node.id;clearInspector();renderTree();openContextMenu(e.clientX,e.clientY);persist();
         });
       };
       row.ondragstart=e=>{
         if(e.target.closest('.tree-row-add')){e.preventDefault();return;}
         e.dataTransfer.effectAllowed='move';
-        e.dataTransfer.setData('application/x-hbe-tree-node',JSON.stringify({projectId:project.id,nodeId:node.id}));
+        e.dataTransfer.setData('application/x-hbe-tree-node',JSON.stringify({documentId:project.id,nodeId:node.id}));
         row.classList.add('tree-dragging');
       };
-      row.ondragend=clearProjectTreeDropFeedback;
+      row.ondragend=clearDocumentTreeDropFeedback;
       row.ondragover=e=>{
         if(!e.dataTransfer.types.includes('application/x-hbe-tree-node'))return;
         e.preventDefault();e.stopPropagation();
-        clearProjectTreeDropFeedback();
+        clearDocumentTreeDropFeedback();
         const rect=row.getBoundingClientRect(),local=e.clientY-rect.top;
         row.classList.add(local<rect.height*.25?'drop-before':local>rect.height*.75?'drop-after':'drop-inside');
       };
@@ -950,7 +953,7 @@
         e.preventDefault();e.stopPropagation();
         const mode=row.classList.contains('drop-before')?'before':row.classList.contains('drop-after')?'after':'inside';
         let payload=null;try{payload=JSON.parse(raw)}catch{}
-        clearProjectTreeDropFeedback();moveProjectTreeNode(payload,project,node,mode);
+        clearDocumentTreeDropFeedback();moveDocumentTreeNode(payload,project,node,mode);
       };
       container.appendChild(row);
       if(hasChildren && node.expanded!==false) walkTree(project,node.id,depth+1,container);
@@ -958,11 +961,11 @@
   }
 
   refs.colorPicker.oninput=e=>{
-    const p=projectById(activeProjectForColor);if(p){p.color=e.target.value;renderTree();persist();}
+    const p=documentById(activeDocumentForColor);if(p){p.color=e.target.value;renderTree();persist();}
   };
 
   function visibleTreeEntries(){
-    return $$('.tree-row').map(r=>({el:r,projectId:r.dataset.projectId||null,nodeId:r.dataset.nodeId||null}));
+    return $$('.tree-row').map(r=>({el:r,documentId:r.dataset.documentId||null,nodeId:r.dataset.nodeId||null}));
   }
   refs.tree.addEventListener('keydown',e=>{
     const entries=visibleTreeEntries(); if(!entries.length)return;
@@ -972,26 +975,26 @@
     if(modifier&&e.key.toLowerCase()==='v'){e.preventDefault();e.stopPropagation();handleContext('paste');return;}
     if(modifier&&!e.repeat&&e.key.toLowerCase()==='d'){e.preventDefault();e.stopPropagation();handleContext('duplicate');return;}
     if(e.key==='Delete'||e.key==='Del'){e.preventDefault();e.stopPropagation();deleteSelectedTree();return;}
-    let idx=entries.findIndex(x=>x.nodeId===selectedTreeNode || (!selectedTreeNode&&x.projectId===state.selectedProjectId)); if(idx<0)idx=0;
+    let idx=entries.findIndex(x=>x.nodeId===selectedTreeNode || (!selectedTreeNode&&x.documentId===state.selectedDocumentId)); if(idx<0)idx=0;
     if(e.key==='ArrowDown'){e.preventDefault();idx=Math.min(entries.length-1,idx+1);selectTreeEntry(entries[idx]);}
     if(e.key==='ArrowUp'){e.preventDefault();idx=Math.max(0,idx-1);selectTreeEntry(entries[idx]);}
     if(e.key==='ArrowRight'){
       const ctx=selectedContext();if(ctx.node?.type==='group'){ctx.node.expanded=true;renderTree();persist();}
-      else if(!selectedTreeNode){const p=activeProject();if(p){p.expanded=true;renderTree();persist();}}
+      else if(!selectedTreeNode){const p=activeDocument();if(p){p.expanded=true;renderTree();persist();}}
     }
     if(e.key==='ArrowLeft'){
       const ctx=selectedContext();
       if(ctx.node?.type==='group'&&ctx.node.expanded!==false){ctx.node.expanded=false;renderTree();persist();}
       else if(ctx.node?.parentId){selectedTreeNode=ctx.node.parentId;renderTree();persist();}
       else if(selectedTreeNode){selectedTreeNode=null;renderTree();persist();}
-      else {const p=activeProject();if(p){p.expanded=false;renderTree();persist();}}
+      else {const p=activeDocument();if(p){p.expanded=false;renderTree();persist();}}
     }
     if(e.key==='Enter'){const p=pageById(selectedTreeNode);if(p)selectPageFromTree(p.id);}
   });
   function selectTreeEntry(entry){
-    if(entry.projectId){
+    if(entry.documentId){
       withUnsavedInspectorGuard(()=>{
-        state.selectedProjectId=entry.projectId;
+        state.selectedDocumentId=entry.documentId;
         selectedTreeNode=null;
         clearInspector();
         renderAll();
@@ -1007,7 +1010,7 @@
         selectPageFromTree(entry.nodeId,true);
       }else if(x){
         withUnsavedInspectorGuard(()=>{
-          state.selectedProjectId=x.project.id;
+          state.selectedDocumentId=x.project.id;
           selectedTreeNode=entry.nodeId;
           clearInspector();
           renderAll();
@@ -1044,7 +1047,7 @@
   });
   refs.treeAddMenu.onclick=e=>{
     const action=e.target.closest('[data-tree-add]')?.dataset.treeAdd;if(!action||!treeAddTarget)return;
-    const project=projectById(treeAddTarget.projectId);const node=project?.nodes.find(item=>item.id===treeAddTarget.nodeId)||null;
+    const project=documentById(treeAddTarget.documentId);const node=project?.nodes.find(item=>item.id===treeAddTarget.nodeId)||null;
     refs.treeAddMenu.hidden=true;
     if(action==='page')addEmptyPage(project,node,{asChild:true});
     if(action==='group')addGroup(project,node,{asChild:true});
@@ -1085,7 +1088,7 @@
       if(n.id===rootOld)nn.parentId=parentId;else nn.parentId=map.get(n.parentId)||parentId;
       nn.name=n.id===rootOld?`${n.name} Copy`:n.name;project.nodes.push(nn);
     });
-    selectedTreeNode=map.get(rootOld);state.selectedProjectId=project.id;
+    selectedTreeNode=map.get(rootOld);state.selectedDocumentId=project.id;
     if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
     renderAll();persist();showToast('Pasted');
   }
@@ -1097,8 +1100,8 @@
     withUnsavedInspectorGuard(()=>{
       const ctx=selectedContext();if(!ctx.project)return;
       if(!ctx.node){
-        if(state.projects.length<=1)return showToast('At least one project is required');
-        state.projects=state.projects.filter(p=>p.id!==ctx.project.id);state.selectedProjectId=state.projects[0]?.id;selectedTreeNode=null;
+        if(state.documents.length<=1)return showToast('At least one document is required');
+        state.documents=state.documents.filter(p=>p.id!==ctx.project.id);state.selectedDocumentId=state.documents[0]?.id;selectedTreeNode=null;
       }else{
         const bundle=cloneSubtree(ctx.project,ctx.node.id);const ids=new Set(bundle.nodes.map(n=>n.id));
         ctx.project.nodes=ctx.project.nodes.filter(n=>!ids.has(n.id));selectedTreeNode=null;
@@ -1127,7 +1130,7 @@
     const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
     openModal('Add Group','Create a group in the selected hierarchy.','Group name','New Group',name=>{
       const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true};
-      project.nodes.push(group);selectedTreeNode=group.id;state.selectedProjectId=project.id;
+      project.nodes.push(group);selectedTreeNode=group.id;state.selectedDocumentId=project.id;
       if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
       renderAll();persist();
     });
@@ -1570,7 +1573,7 @@
     usedComponentCatalog=new Map();
     const components=extractUsedComponents();
     if(!components.length){
-      refs.usedComponentsList.innerHTML='<div class="used-component-empty">Load an HTML document to extract reusable components.</div>';
+      refs.usedComponentsList.innerHTML='<div class="used-component-empty">Load an HTML page to extract reusable components.</div>';
       selectedUsedComponentToken=null;renderUsedComponentPreview();
       return;
     }
@@ -1933,7 +1936,7 @@
   }
 
   function openAtlassianSplitPreview(page,{semantic,sourceKind,diagnostics}){
-    atlassianPreviewState={pageId:page.id,title:page.name||page.fileName||'Jira ticket',sourceLabel:`${page.fileName||page.name||'Document'} · ${sourceKind}`,semantic,diagnostics,format:'rich',loadedText:null};
+    atlassianPreviewState={pageId:page.id,title:page.name||page.fileName||'Jira ticket',sourceLabel:`${page.fileName||page.name||'Page'} · ${sourceKind}`,semantic,diagnostics,format:'rich',loadedText:null};
     setHtmlEditEnabled(false);
     state.mode='split';
     state.views.left=page.id;
@@ -2020,7 +2023,7 @@
     if(pageById(state.views.right)&&state.views.right!==leftId)return;
     const alternate=pageList().map(item=>item.page).find(page=>page.id!==leftId);
     if(alternate){state.views.right=alternate.id;return;}
-    const project=nodeById(leftId)?.project||activeProject();
+    const project=nodeById(leftId)?.project||activeDocument();
     if(!project)return;
     const page={id:uid('page'),type:'page',name:'Split Right',fileName:'untitled.html',documentType:'html',parentId:null,order:children(project,null).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
     project.nodes.push(page);state.views.right=page.id;
@@ -2123,7 +2126,7 @@
           }
           selectedTreeNode=nextPageId;
           const found=nodeById(nextPageId);
-          if(found) state.selectedProjectId=found.project.id;
+          if(found) state.selectedDocumentId=found.project.id;
 
           clearInspector();
           if(key==='codePreview'||key==='codePage'){
@@ -2159,7 +2162,7 @@
     if(pageId===currentPageId){
       selectedTreeNode=pageId;
       const found=nodeById(pageId);
-      if(found) state.selectedProjectId=found.project.id;
+      if(found) state.selectedDocumentId=found.project.id;
       if(rerender) renderAll();
       return;
     }
@@ -2175,7 +2178,7 @@
 
       selectedTreeNode=pageId;
       const found=nodeById(pageId);
-      if(found) state.selectedProjectId=found.project.id;
+      if(found) state.selectedDocumentId=found.project.id;
       clearInspector();
       if(rerender) renderAll();
     });
@@ -2195,7 +2198,7 @@
     const found=pageId ? nodeById(pageId) : null;
     if(found){
       selectedTreeNode=pageId;
-      state.selectedProjectId=found.project.id;
+      state.selectedDocumentId=found.project.id;
     }
 
     applyActiveViewOutline();
@@ -2537,8 +2540,8 @@
         return;
       }
       pendingClearPageId=pageId;
-      refs.clearHtmlTarget.textContent=page.name || page.fileName || 'Current Document';
-      $('#clearHtmlMessage').textContent='This document has unsaved changes. Save them before clearing?';
+      refs.clearHtmlTarget.textContent=page.name || page.fileName || 'Current Page';
+      $('#clearHtmlMessage').textContent='This page has unsaved changes. Save it before clearing?';
       refs.clearHtmlModal.classList.add('show');
       setTimeout(()=>$('#clearHtmlCancel').focus(),0);
     });
@@ -2552,7 +2555,7 @@
     page.source=''; page.loadedSource=''; page.baseUrl=null; page.sourcePath=null; page.previewUrl=null;page.documentType='html';page.fileName='untitled.html'; page.isEmpty=true;
     clearInspector(); closeClearHtmlDialog();
     if(state.views.codePage===page.id) loadCodePage();
-    renderViewMode(); updateClearButtons(); persist(); showToast('Loaded document cleared');
+    renderViewMode(); updateClearButtons(); persist(); showToast('Loaded page cleared');
   }
   $$('[data-clear-slot]').forEach(button=>{
     button.addEventListener('pointerdown',event=>event.stopPropagation());
@@ -2565,7 +2568,7 @@
     if(!page) return closeClearHtmlDialog();
     try{
       const filePath=page.documentType==='markdown'
-        ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:'Save Markdown Document',suggestedName:page.fileName||`${page.name}.md`,extension:'md',source:page.source}))
+        ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:'md',source:page.source}))
         :(page.sourcePath?await window.electronAPI.saveHtmlPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportHtml({suggestedName:page.fileName||`${page.name}.html`,source:page.source}));
       if(!filePath) return;
       page.sourcePath=filePath;page.loadedSource=page.source;
@@ -2580,7 +2583,7 @@
     const pane=$('.code-editor-pane');
     const empty=!page || page.isEmpty;
     pane?.classList.toggle('is-empty', empty);
-    const pdfNotice=page?.documentType==='pdf'?`PDF document (read-only)\n${page.sourcePath||page.fileName||''}`:'';
+    const pdfNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:'';
     refs.source.value=pdfNotice||(page?.source||'');
     refs.source.readOnly=page?.documentType==='pdf';
     refs.source.classList.toggle('read-only',page?.documentType==='pdf');
@@ -2731,7 +2734,7 @@
           refs.replaceHtmlModal.classList.add('show');
           setTimeout(()=>$('#replaceHtmlCancel').focus(),0);
         }else{
-          await addHtmlResultToProject(result, slot);
+          await addHtmlResultToDocument(result, slot);
         }
       }catch(err){ showToast(`Drop failed: ${err.message}`); }
     });
@@ -2854,8 +2857,8 @@
       button.classList.toggle('active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
       button.textContent=active?'◫':'⛶';
-      button.setAttribute('aria-label',active?'Show Leaf UI':'View document without app UI');
-      button.title=active?'Show Leaf UI':'View document without app UI';
+      button.setAttribute('aria-label',active?'Show Leaf UI':'View page without app UI');
+      button.title=active?'Show Leaf UI':'View page without app UI';
     });
   }
 
@@ -4116,9 +4119,9 @@
 
   async function captureRenderedObject(element,snapshot,format){
     const frame=element.ownerDocument?.defaultView?.frameElement;
-    if(!frame)throw new Error('The selected object is not inside a document View.');
+    if(!frame)throw new Error('The selected object is not inside a page View.');
     const view=element.ownerDocument.defaultView;
-    if(snapshot.width>view.innerWidth||snapshot.height>view.innerHeight)throw new Error('The object is larger than the visible document View.');
+    if(snapshot.width>view.innerWidth||snapshot.height>view.innerHeight)throw new Error('The object is larger than the visible page View.');
     const oldScroll={x:view.scrollX,y:view.scrollY};
     const overlays=[...element.ownerDocument.querySelectorAll('[data-editor-overlay]')].map(node=>({node,visibility:node.style.visibility}));
     try{
@@ -4907,9 +4910,9 @@
     if(!dialogOpen && modifier && !editing && SelectionManager.items().length && e.key.toLowerCase()==='c'){e.preventDefault();copySelectedElements();return;}
     if(!dialogOpen && modifier && !editing && e.key.toLowerCase()==='v'){e.preventDefault();pasteSelectedElements();return;}
     if(!dialogOpen && modifier && !editing && !e.repeat && SelectionManager.items().length && e.key.toLowerCase()==='d'){e.preventDefault();duplicateSelectedElements();return;}
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newDocument();}
-    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();saveDocument(true);}
-    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveDocument(false);}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newPage();}
+    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();savePage(true);}
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();savePage(false);}
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();redo();}
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
   });
@@ -4932,10 +4935,10 @@
     repairViews();
     renderViewMode();
     updateClearButtons();
-    $('#workspaceTitle').textContent=`${state.documentName||'Leaf Document'} / ${activeProject()?.name||'No Project'}`;
+    $('#workspaceTitle').textContent=`${state.projectName||'Leaf Project'} / ${activeDocument()?.name||'No Document'}`;
   }
 
-  $('#quickAddProject').onclick=newProject;
+  $('#quickAddDocument').onclick=newDocument;
   clearInspector();
   applyPreferences();
 

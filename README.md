@@ -1,4 +1,22 @@
-# Leaf v0.5.14
+# Leaf v0.5.15
+
+## v0.5.15 — Project / Document / Page Model
+
+Leaf now uses one consistent three-level content model:
+
+```text
+Leaf Project (.leaf)
+└─ Documents
+   └─ Pages (HTML / Markdown / PDF)
+```
+
+- The former Leaf Document is now a **Leaf Project**.
+- Former Projects are now **Documents**.
+- HTML, Markdown, and PDF child documents are now **Pages**.
+- `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the active Page.
+- File actions now use New Page, New Document, and Open/Save Leaf Project terminology.
+- New `.leaf` files use the `leaf-project` / `documents` schema.
+- v0.5.14 `leaf-document` / `projects` files remain readable and migrate automatically in memory.
 
 ## v0.5.14 — Leaf Document Workspace and Editing UI
 

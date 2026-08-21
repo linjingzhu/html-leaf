@@ -10,6 +10,7 @@ const initialHtmlSnapshots = new Map();
 
 app.setName('Leaf');
 if (process.platform === 'win32') app.setAppUserModelId('com.leaf.editor');
+if (process.env.LEAF_DISABLE_GPU === '1') app.disableHardwareAcceleration();
 
 async function ensureSessionTempDir() {
   if (!sessionTempDir) {
@@ -66,7 +67,7 @@ function baseUrlForFile(filePath) {
 async function readHtmlPath(filePath) {
   if (!filePath || !/\.html?$/i.test(filePath)) throw new Error('Only .html and .htm files are supported.');
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('HTML documents must be files smaller than 50 MB.');
+  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('HTML pages must be files smaller than 50 MB.');
   const source = await fs.readFile(filePath, 'utf8');
   const initialSnapshotPath = await snapshotInitialHtml(filePath, source);
   return {
@@ -91,7 +92,7 @@ function documentTypeForPath(filePath) {
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF documents are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -105,20 +106,20 @@ async function readDocumentPath(filePath) {
   };
   if (documentType === 'pdf') {
     const stat = await fs.stat(filePath);
-    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF documents must be files smaller than 500 MB.');
+    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF pages must be files smaller than 500 MB.');
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Markdown documents must be files smaller than 50 MB.');
+  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Markdown pages must be files smaller than 50 MB.');
   const source = await fs.readFile(filePath, 'utf8');
   return { ...common, source, loadedSource: source };
 }
 
 async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import Documents',
+    title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Documents', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
@@ -128,7 +129,7 @@ async function openHtmlFile() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import HTML',
     properties: ['openFile'],
-    filters: [{ name: 'HTML Documents', extensions: ['html', 'htm'] }]
+    filters: [{ name: 'HTML Pages', extensions: ['html', 'htm'] }]
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
@@ -139,7 +140,7 @@ async function exportHtml({ suggestedName, source }) {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Export HTML',
     defaultPath: suggestedName || 'page.html',
-    filters: [{ name: 'HTML Document', extensions: ['html', 'htm'] }]
+    filters: [{ name: 'HTML Page', extensions: ['html', 'htm'] }]
   });
   if (result.canceled || !result.filePath) return null;
   let filePath = result.filePath;
@@ -159,7 +160,7 @@ async function exportTextFile({ title, suggestedName, extension, source }) {
   const safeExtension = String(extension || 'txt').replace(/^\./, '');
   const result = await dialog.showSaveDialog(mainWindow, {
     title: title || 'Export',
-    defaultPath: suggestedName || `document.${safeExtension}`,
+    defaultPath: suggestedName || `page.${safeExtension}`,
     filters: [{ name: `${safeExtension.toUpperCase()} File`, extensions: [safeExtension] }]
   });
   if (result.canceled || !result.filePath) return null;
@@ -173,18 +174,18 @@ async function exportTextFile({ title, suggestedName, extension, source }) {
 
 async function saveTextPath({ filePath, source }) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
-  if (!filePath || !['.md', '.markdown', '.txt', '.json'].includes(extension)) throw new Error('A valid text document path is required.');
+  if (!filePath || !['.md', '.markdown', '.txt', '.json'].includes(extension)) throw new Error('A valid text page path is required.');
   await atomicWriteFile(filePath, String(source ?? ''), 'utf8');
   return filePath;
 }
 
 async function copyDocumentAs({ sourcePath, suggestedName }) {
-  if (!sourcePath || !DOCUMENT_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) throw new Error('A valid document source path is required.');
+  if (!sourcePath || !DOCUMENT_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) throw new Error('A valid page source path is required.');
   const extension = path.extname(sourcePath).slice(1).toLowerCase();
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save Document As',
+    title: 'Save Page As',
     defaultPath: suggestedName || path.basename(sourcePath),
-    filters: [{ name: `${extension.toUpperCase()} Document`, extensions: [extension] }]
+    filters: [{ name: `${extension.toUpperCase()} Page`, extensions: [extension] }]
   });
   if (result.canceled || !result.filePath) return null;
   let destination = result.filePath;
@@ -332,14 +333,14 @@ function writeTextClipboard(text) {
 
 async function openProjectFile() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Open Project',
+    title: 'Open Leaf Project',
     properties: ['openFile'],
-    filters: [{ name: 'Leaf Document', extensions: ['leaf', 'hbeproj', 'json'] }]
+    filters: [{ name: 'Leaf Project', extensions: ['leaf', 'hbeproj', 'json'] }]
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 100_000_000) throw new Error('Leaf documents must be files smaller than 100 MB.');
+  if (!stat.isFile() || stat.size > 100_000_000) throw new Error('Leaf projects must be files smaller than 100 MB.');
   const raw = await fs.readFile(filePath, 'utf8');
   return { filePath, project: JSON.parse(raw) };
 }
@@ -353,8 +354,8 @@ async function saveProjectFile({ filePath, project }) {
 async function saveProjectFileAs({ suggestedName, project }) {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save Project As',
-    defaultPath: suggestedName || 'document.leaf',
-    filters: [{ name: 'Leaf Document', extensions: ['leaf'] }]
+    defaultPath: suggestedName || 'project.leaf',
+    filters: [{ name: 'Leaf Project', extensions: ['leaf'] }]
   });
   if (result.canceled || !result.filePath) return null;
   let filePath = result.filePath;
@@ -365,7 +366,7 @@ async function saveProjectFileAs({ suggestedName, project }) {
 
 async function readProjectAtPath(filePath) {
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 100_000_000) throw new Error('Leaf documents must be files smaller than 100 MB.');
+  if (!stat.isFile() || stat.size > 100_000_000) throw new Error('Leaf projects must be files smaller than 100 MB.');
   const raw = await fs.readFile(filePath, 'utf8');
   return { filePath, project: JSON.parse(raw) };
 }
@@ -397,8 +398,10 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
-  ipcMain.handle('file:importDocuments', openDocumentFiles);
-  ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath));
+  ipcMain.handle('file:importPages', openDocumentFiles);
+  ipcMain.handle('file:importDocuments', openDocumentFiles); // v0.5.14 compatibility
+  ipcMain.handle('file:readPagePath', (_e, filePath) => readDocumentPath(filePath));
+  ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath)); // v0.5.14 compatibility
   ipcMain.handle('file:exportHtml', (_e, payload) => exportHtml(payload));
   ipcMain.handle('file:saveHtmlPath', (_e, payload) => saveHtmlPath(payload));
   ipcMain.handle('file:exportText', (_e, payload) => exportTextFile(payload));

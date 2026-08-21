@@ -21,7 +21,7 @@ check('Code follows active visual Page',js.includes('const currentPageId=current
 check('Code enters source editor mode',js.includes("activeSlots.code='editor'"));
 check('Code Preview and Source cannot diverge',js.includes("if(key==='codePreview'||key==='codePage')")&&js.includes('state.views.codePreview=nextPageId')&&js.includes('state.views.codePage=nextPageId'));
 check('Split retains distinct independent Page bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('state.views.right!==leftId')&&js.includes("state.views[activeSlots.split==='right'?'right':'left']=pageId"));
-check('File menu says Document',html.includes('New Document')&&html.includes('Save Document')&&html.includes('Save Document As')&&!html.includes('New Project <kbd>'));
+check('File menu uses the current leaf-content terminology',(html.includes('New Page')&&html.includes('Save Page')&&html.includes('Save Page As'))||(html.includes('New Document')&&html.includes('Save Document')&&html.includes('Save Document As')&&!html.includes('New Project <kbd>')));
 
 for(const script of ['qa-v052.js','qa-source-fidelity.js']){
   const result=cp.spawnSync(process.execPath,[path.join(__dirname,script)],{cwd:root,stdio:'inherit'});

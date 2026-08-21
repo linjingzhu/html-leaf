@@ -15,7 +15,7 @@ check('Electron runtime name is Leaf',main.includes("app.setName('Leaf')")&&main
 check('Renderer document and product mark are labelled Leaf',html.includes('<title>Leaf</title>')&&html.includes('title="Leaf" aria-label="Leaf"'));
 check('Executable and installer artifacts use Leaf filenames',pkg.build?.win?.artifactName?.startsWith('Leaf-')&&pkg.build?.nsis?.artifactName?.startsWith('Leaf-Setup-'));
 check('Desktop and Start Menu shortcuts are named Leaf',pkg.build?.nsis?.shortcutName==='Leaf');
-check('Document dialogs use the Leaf product name',main.split("name: 'Leaf Document'").length===3);
+check('Leaf container dialogs use the Leaf product name',main.split("name: 'Leaf Project'").length===3||main.split("name: 'Leaf Document'").length===3);
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0510.js')],{stdio:'inherit'});
 check('qa-v0510.js regression',prior.status===0);

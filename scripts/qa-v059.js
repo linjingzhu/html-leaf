@@ -26,7 +26,7 @@ check('Project context menu shows all requested shortcuts',html.includes('Rename
 check('Project tree keyboard executes F2, C, V, D and Delete actions',js.includes("refs.tree.addEventListener('keydown'")&&js.includes("handleContext('copy')")&&js.includes("handleContext('paste')")&&js.includes("handleContext('duplicate')"));
 check('Every rendered Project tree object owns a child add button',js.split('class="tree-row-add"').length>=3&&html.includes('id="treeAddMenu"'));
 check('Add Page and Add Group support explicit child creation',js.includes("function addEmptyPage(project,targetNode,{asChild=false}={})")&&js.includes("function addGroup(project,targetNode,{asChild=false}={})"));
-check('Project tree nodes support cycle-safe hierarchy drag moves',js.includes('application/x-hbe-tree-node')&&js.includes('function moveProjectTreeNode(')&&js.includes('subtreeIds.has(targetNode.id)'));
+check('Document tree nodes support cycle-safe hierarchy drag moves',js.includes('application/x-hbe-tree-node')&&(js.includes('function moveDocumentTreeNode(')||js.includes('function moveProjectTreeNode('))&&js.includes('subtreeIds.has(targetNode.id)'));
 check('Undo history captures and restores structural selection paths',js.includes('function captureSelectionSnapshot(')&&js.includes('selection:captureSelectionSnapshot(page.id)')&&js.includes('restorePendingSelection(frame)'));
 check('Runtime render nonce forces iframe refresh and remains sanitizer-owned',js.includes('name="hbe-render-token"')&&js.includes('data-editor-overlay="1"'));
 
