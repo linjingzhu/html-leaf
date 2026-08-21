@@ -156,6 +156,9 @@ async function main(){
   const edit=await evaluate(`(()=>{const pane=document.querySelector('#singleView'),button=document.querySelector('[data-edit-slot="single"]'),head=pane.querySelector('.view-pane-head');return{pressed:button.getAttribute('aria-pressed'),pane:pane.classList.contains('edit-active'),buttonColor:getComputedStyle(button).backgroundColor,outline:getComputedStyle(pane).outlineColor,outlineWidth:parseFloat(getComputedStyle(pane).outlineWidth),deviceScale:devicePixelRatio,headHeight:getComputedStyle(head).height}})()`);
   check('Edit activation uses a visible 3px red outline and a 20 percent taller tool row',edit.pressed==='true'&&edit.pane&&edit.buttonColor==='rgb(217, 60, 60)'&&edit.outline==='rgb(255, 63, 70)'&&edit.outlineWidth>=2.5&&parseFloat(edit.headHeight)===34,JSON.stringify(edit));
 
+  const splitterGutters=await evaluate(`(()=>{const workspace=document.querySelector('#workspace'),split=document.querySelector('#splitDivider'),horizontal=document.querySelector('#leftHorizontalSplitter');return{workspaceColumns:getComputedStyle(workspace).gridTemplateColumns,configuredWidth:getComputedStyle(document.documentElement).getPropertyValue('--splitter-hit').trim(),horizontalHeight:horizontal.getBoundingClientRect().height,splitBackground:getComputedStyle(split).backgroundColor}})()`);
+  check('Splitters keep a visible gutter between adjacent panes',splitterGutters.configuredWidth==='8px'&&splitterGutters.horizontalHeight===8&&splitterGutters.workspaceColumns.split(' ').filter(value=>value==='8px').length>=2&&splitterGutters.splitBackground!=='rgba(0, 0, 0, 0)',JSON.stringify(splitterGutters));
+
   await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),target=frame.contentDocument.querySelector('h1');target.dispatchEvent(new frame.contentWindow.MouseEvent('pointerdown',{bubbles:true,cancelable:true}));})()`);await sleep(90);
   const inspector=await evaluate(`(()=>{const body=document.querySelector('#inspectorBody'),name=body.querySelector('.node-name');return{name:name?.textContent,parents:body.querySelectorAll(':scope > details.property-group').length,nested:body.querySelectorAll('.property-group .property-subgroup').length,nameSize:parseFloat(getComputedStyle(name).fontSize),resetVisible:document.querySelector('#resetInspectorBtn').getBoundingClientRect().width}})()`);
   check('Inspector shows a large object name and two-level folds',inspector.name==='Hero Title'&&inspector.parents>=3&&inspector.nested>=5&&inspector.nameSize>=15&&inspector.resetVisible===0,JSON.stringify(inspector));
@@ -187,6 +190,6 @@ async function main(){
 
   const screenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(__dirname,'qa-evidence-v0516.png'),Buffer.from(screenshot.data,'base64'));
-  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/35 PASS`);socket.close();
+  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/36 PASS`);socket.close();
 }
 main().catch(error=>{console.error(error.stack||error);process.exit(1);});

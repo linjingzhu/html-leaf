@@ -92,6 +92,10 @@ check('Edit outline is 3px and View tool rows are 20 percent taller',
   read('src/renderer/styles.css').includes('--view-head-h:34px')&&
   read('src/renderer/styles.css').includes('outline:3px solid #ff3f46')&&
   read('src/renderer/styles.css').includes('height:var(--view-head-h);flex:0 0 var(--view-head-h)'));
+check('Splitters reserve a visible eight-pixel gutter between panes',
+  read('src/renderer/styles.css').includes('--splitter-hit:8px')&&
+  read('src/renderer/styles.css').includes('background:var(--background);cursor:col-resize')&&
+  read('src/renderer/styles.css').includes('.view-divider{background:var(--background)'));
 check('A source document has one Page identity and one Compare binding',
   js.includes('function pageDocumentKey(page)')&&js.includes('function loadedPageForPath(sourcePath)')&&
   js.includes('This document is already open. Focused the existing Page.')&&js.includes('function bindPageToSlot(slot,nextPageId)')&&
@@ -105,4 +109,4 @@ const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{std
 check('v0.5.15 complete regression chain',prior.status===0);
 const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/31 PASS`);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/32 PASS`);

@@ -25,6 +25,7 @@ Project (.prj)                       Ctrl+N
 - Hierarchy updates from the loaded DOM as it changes and shows each object's type at the right edge.
 - Holding Shift while resizing snaps the dragged edge to nearby object edges and centers within 6px.
 - Edit uses a 3px red outline, and View title/search rows are 20% taller.
+- Every vertical and horizontal splitter reserves an 8px neutral gutter, leaving clear breathing room between adjacent panes while retaining the centered drag guide.
 - A source file is represented by one Page and cannot be opened into two Compare windows; duplicate imports focus the existing Page.
 - Markdown source editing works in every visual View. PDF Edit enables the native PDF annotation, highlight, fill, sign, undo/redo, and download tools.
 

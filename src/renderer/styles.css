@@ -45,7 +45,7 @@
   --inspector-width:300px;
   --split-left:50%;
   --code-preview-width:50%;
-  --splitter-hit:5px;
+  --splitter-hit:8px;
 
   /* Elevation only for floating UI */
   --shadow-popup:0 10px 24px rgba(0,0,0,.28);
@@ -175,7 +175,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   font-size:12px;font-weight:600
 }
 .splitter-handle{
-  position:relative;z-index:8;background:transparent;cursor:col-resize;
+  position:relative;z-index:8;background:var(--background);cursor:col-resize;
   touch-action:none;user-select:none
 }
 .splitter-handle::after{
@@ -278,7 +278,7 @@ body.is-resizing .resize-shield{display:block}
 .single-view{flex-direction:column}
 .dual-view{grid-template-columns:minmax(0,var(--split-left)) var(--splitter-hit) minmax(0,1fr)}
 .code-view{grid-template-columns:minmax(0,var(--code-preview-width)) var(--splitter-hit) minmax(0,1fr)}
-.view-divider{background:transparent;min-width:var(--splitter-hit)}
+.view-divider{background:var(--background);min-width:var(--splitter-hit)}
 .view-pane,.code-editor-pane{
   min-width:0;min-height:0;max-width:100%;position:relative;display:flex;flex-direction:column;overflow:hidden;
   background:var(--canvas);border:1px solid transparent
@@ -628,7 +628,7 @@ body[data-theme="light"] .code-area textarea{background:#fbfbfc;color:#242a31}
 .left-tab-panel[data-left-panel="used"].preview-collapsed{grid-template-rows:var(--section-h) minmax(0,1fr) 0 0}
 .used-components-head{height:var(--section-h);display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--border);color:var(--muted);font-size:9px}.used-component-empty{padding:18px 10px;color:var(--muted);font-size:10px;line-height:1.5;text-align:center}.used-component-count{min-width:18px;height:18px;display:grid;place-items:center;border-radius:9px;background:var(--panel-secondary);color:var(--muted);font-size:9px}
 .used-components-head-actions{display:flex;align-items:center;gap:4px}.used-components-head-actions .tiny-btn.active{background:var(--selected);border-color:var(--focus-ring);color:var(--foreground)}
-.used-preview-splitter{min-height:var(--splitter-hit);background:transparent}
+.used-preview-splitter{min-height:var(--splitter-hit);background:var(--background)}
 .left-tab-panel[data-left-panel="used"].preview-collapsed .used-preview-splitter,
 .left-tab-panel[data-left-panel="used"].preview-collapsed .used-component-preview{display:none}
 .used-component-item.selected{background:var(--selected);outline:1px solid color-mix(in srgb,var(--focus-ring) 45%,transparent)}

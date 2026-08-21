@@ -41,10 +41,10 @@ check('Light/Dark share semantic token names',
 check('Inspector collapse removes Inspector and its splitter columns',
   css.includes('grid-template-columns:var(--sidebar-width) var(--splitter-hit) minmax(0,1fr) 0 0') &&
   css.includes('.workspace.inspector-collapsed .inspector-resizer'));
-check('All splitters use shared 5px hit area + 1px visible separator',
+check('All splitters use shared 8px gutter + 1px visible separator',
   html.includes('id="sidebarResizer"') && html.includes('id="splitDivider"') &&
   html.includes('id="codeDivider"') && html.includes('id="inspectorResizer"') &&
-  css.includes('.splitter-handle::after') && css.includes('width:1px') && css.includes('--splitter-hit:5px'));
+  css.includes('.splitter-handle::after') && css.includes('width:1px') && css.includes('--splitter-hit:8px'));
 check('Unified splitter uses Pointer Capture and rAF',
   renderer.includes('setPointerCapture(pointerId)') &&
   renderer.includes('requestAnimationFrame(flush)') &&
