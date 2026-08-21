@@ -1,4 +1,18 @@
-# Leaf v0.5.13
+# Leaf v0.5.14
+
+## v0.5.14 — Leaf Document Workspace and Editing UI
+
+- Native document fullscreen now hides the operating-system title bar. The only remaining control is a circular translucent Show UI icon.
+- `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` now create, save, and save-as the active document rather than the active project.
+- A `.leaf` document serializes the complete project collection. Each project can contain HTML, Markdown, and PDF documents.
+- HTML, Markdown, and PDF files can be dragged from Explorer directly into a Project card; multiple files are imported independently.
+- Edit activation turns both its button and owning View outline red.
+- Code View uses non-wrapping source, synchronized line numbers, and a title-bar search field focused by `Ctrl+F`.
+- Inspector uses two-level foldable groups, enlarges the selected object name, and hides Reset.
+- PNG/JPG export captures the rendered object. Multi-selection context Export writes one collision-safe file per object.
+- Compact scrollbars are applied to Leaf UI and runtime previews without leaking editor metadata into saved HTML.
+
+Release details and verification: `docs/RELEASE_v0.5.14.md`.
 
 ## v0.5.13 — Cursor Zoom and Jira Ticket Preview
 

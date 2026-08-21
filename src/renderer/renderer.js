@@ -2,7 +2,7 @@
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const ROOT = null;
-  const stateKey = 'leaf-v0-5-13-state';
+  const stateKey = 'leaf-v0-5-14-state';
 
   const refs = {
     workspace: $('#workspace'), tree: $('#tree'), inspector: $('#inspector'),
@@ -11,6 +11,7 @@
     splitDivider: $('#splitDivider'), codeDivider: $('#codeDivider'),
     resizeShield: $('#resizeShield'), source: $('#sourceEditor'),
     lineRail: $('#lineRail'), dirty: $('#dirtyMark'), crumbs: $('#crumbs'),
+    codeSearch: $('#codeSearch'), codeSearchStatus: $('#codeSearchStatus'),
     singleFrame: $('#singleFrame'), leftFrame: $('#leftFrame'), rightFrame: $('#rightFrame'),
     codePreviewFrame: $('#codePreviewFrame'), codePageSelect: $('#codePageSelect'), toast: $('#toast'),
     ctx: $('#treeContextMenu'), colorPicker: $('#projectColorPicker'),
@@ -160,7 +161,9 @@
   function createDefaultState(){
     const page = uid('page');
     return {
-      version:'0.5.13',
+      version:'0.5.14',
+      documentName:'Untitled Leaf Document',
+      documentFilePath:null,
       mode:'preview',
       preferences:{ language:'ko', scale:1, theme:'dark', inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
@@ -178,8 +181,8 @@
       projects:[{
         id:'project_default', name:'Default Project', color:'#5873d4', filePath:null, expanded:true,
         nodes:[{
-          id:page,type:'page',name:'Empty Page',fileName:'untitled.html',parentId:null,order:0,
-          source:'',loadedSource:'',baseUrl:null,sourcePath:null,isEmpty:true
+          id:page,type:'page',name:'Empty Page',fileName:'untitled.html',documentType:'html',parentId:null,order:0,
+          source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
         }]
       }]
     };
@@ -189,7 +192,9 @@
   function normalizeState(input){
     const fallback=createDefaultState();
     const s=input && typeof input==='object' ? input : fallback;
-    s.version='0.5.13';
+    s.version='0.5.14';
+    s.documentName=String(s.documentName||fallback.documentName);
+    s.documentFilePath=typeof s.documentFilePath==='string'?s.documentFilePath:null;
     s.mode=['preview','split','code'].includes(s.mode) ? s.mode : 'preview';
     s.preferences={...fallback.preferences,...(s.preferences||{})};
     s.layout={
@@ -212,9 +217,20 @@
       if(!['fit','manual'].includes(s.previewZoomMode[slot])) s.previewZoomMode[slot]='fit';
     });
     s.recent=Array.isArray(s.recent)?s.recent:[];
-    s.projects=Array.isArray(s.projects)&&s.projects.length?s.projects:fallback.projects;
-    s.projects.forEach(project=>(project.nodes||[]).forEach(page=>{
-      if(page.type==='page' && typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
+    s.projects=Array.isArray(s.projects)&&s.projects.length?s.projects.slice(0,100):fallback.projects;
+    s.projects=s.projects.filter(project=>project&&typeof project==='object').map((project,index)=>{
+      project.id=String(project.id||uid('project'));project.name=String(project.name||`Project ${index+1}`);project.nodes=Array.isArray(project.nodes)?project.nodes.filter(node=>node&&typeof node==='object').slice(0,10000):[];return project;
+    });
+    if(!s.projects.length)s.projects=fallback.projects;
+    s.projects.forEach(project=>project.nodes.forEach(page=>{
+      if(page.type==='page'){
+        page.source=String(page.source||'');page.name=String(page.name||'Untitled Document');page.fileName=String(page.fileName||'untitled.html');
+        if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
+        if(!['html','markdown','pdf'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        }
+        if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
+      }
     }));
     s.views={...fallback.views,...(s.views||{})};
     s.activeSlots={
@@ -370,10 +386,14 @@
 
   async function handleAction(action){
     switch(action){
+      case 'new-document': return newDocument();
       case 'new-project': return newProject();
-      case 'save-project': return saveProject(false);
-      case 'save-project-as': return saveProject(true);
-      case 'import': return importHtml();
+      case 'save-document': return saveDocument(false);
+      case 'save-document-as': return saveDocument(true);
+      case 'open-leaf-document': return openLeafDocument();
+      case 'save-leaf-document': return saveLeafDocument(false);
+      case 'save-leaf-document-as': return saveLeafDocument(true);
+      case 'import': return importDocuments();
       case 'export': return exportHtml();
       case 'jira-export': return openJiraExportDialog('rich');
       case 'copy-jira': return copyCurrentPageForJira();
@@ -394,7 +414,7 @@
           <button type="button" data-recent="${index}" title="${esc(item.filePath||'')}">
             <span>${esc(item.name)}</span>
           </button>`).join('')
-      : `<button type="button" disabled><span>No recent projects</span></button>`;
+      : `<button type="button" disabled><span>No recent Leaf documents</span></button>`;
 
     element.querySelectorAll('[data-recent]').forEach(button=>{
       button.addEventListener('click',event=>{
@@ -414,8 +434,8 @@
               showToast('Recent project selected');
             }else{
               const result=await window.electronAPI.readProjectPath(item.filePath);
-              addLoadedProject(result.project,result.filePath);
-              showToast('Recent project opened');
+              loadLeafDocumentPayload(result.project,result.filePath);
+              showToast('Recent Leaf document opened');
             }
           }catch(error){
             console.error('Recent project open failed',error);
@@ -436,8 +456,63 @@
     const p=clone(project); return p;
   }
 
+  function leafDocumentSerializable(){
+    return {format:'leaf-document',version:'0.5.14',name:state.documentName||'Leaf Document',projects:clone(state.projects)};
+  }
+
+  function loadLeafDocumentPayload(payload,filePath){
+    if(payload?.format==='leaf-document'&&Array.isArray(payload.projects)){
+      const normalized=normalizeState({...createDefaultState(),projects:clone(payload.projects),documentName:String(payload.name||'Leaf Document')});
+      state.projects=normalized.projects;state.documentName=normalized.documentName;state.documentFilePath=filePath;
+      state.selectedProjectId=state.projects[0]?.id||null;focusProject(state.projects[0]||null);repairViews();clearInspector();addRecent(filePath,state.documentName);renderAll();persist();return;
+    }
+    addLoadedProject(payload,filePath);
+  }
+
+  async function openLeafDocument(){
+    withUnsavedInspectorGuard(async()=>{
+      try{const result=await window.electronAPI.openProject();if(!result)return;loadLeafDocumentPayload(result.project,result.filePath);showToast('Leaf document opened');}
+      catch(error){console.error('Leaf document open failed',error);showToast(`Open failed: ${error.message}`);}
+    });
+  }
+
+  async function saveLeafDocument(forceAs){
+    try{
+      const payload=leafDocumentSerializable();
+      const filePath=forceAs||!state.documentFilePath
+        ?await window.electronAPI.saveProjectAs({suggestedName:`${exportSafeName(state.documentName||'document')}.leaf`,project:payload})
+        :await window.electronAPI.saveProject({filePath:state.documentFilePath,project:payload});
+      if(!filePath)return false;
+      state.documentFilePath=filePath;state.documentName=filePath.split(/[\\/]/).pop().replace(/\.leaf$/i,'')||state.documentName;
+      addRecent(filePath,state.documentName);renderAll();persist();showToast('Leaf document saved');return true;
+    }catch(error){console.error('Leaf document save failed',error);showToast(`Save failed: ${error.message}`);return false;}
+  }
+
   function isNodeInActiveViewport(nodeId){
     return !!nodeId && nodeId===currentActivePageId();
+  }
+
+  function activeDocumentSlot(){
+    return state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage');
+  }
+
+  function newDocument(){
+    withUnsavedInspectorGuard(()=>{
+      const project=activeProject();
+      if(!project){showToast('Create or select a project first');return;}
+      openModal('New Document','Create an empty HTML document inside the selected project.','Document name','Untitled Document',name=>{
+        const context=selectedContext();
+        const parentId=context.project?.id===project.id&&context.node?.type==='group'?context.node.id:(context.project?.id===project.id?context.node?.parentId||null:null);
+        const page={
+          id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
+          parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
+        };
+        project.nodes.push(page);project.expanded=true;state.selectedProjectId=project.id;selectedTreeNode=page.id;
+        const slot=activeDocumentSlot();state.views[slot]=page.id;
+        if(state.mode==='code'){state.views.codePreview=page.id;state.views.codePage=page.id;}
+        clearInspector();activateLeftTab('project');renderAll();persist();showToast('New document created');
+      });
+    });
   }
 
   async function newProject(){
@@ -456,8 +531,8 @@
             filePath:null,
             expanded:true,
             nodes:[{
-              id:pageId,type:'page',name:'Empty Page',fileName:'untitled.html',
-              parentId:null,order:0,source:'',loadedSource:'',baseUrl:null,sourcePath:null,isEmpty:true
+               id:pageId,type:'page',name:'Empty Page',fileName:'untitled.html',documentType:'html',
+               parentId:null,order:0,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
             }]
           };
 
@@ -536,6 +611,36 @@
     });
   }
 
+  async function saveDocument(forceAs){
+    const page=pageById(currentActivePageId());
+    if(!page){showToast('Select a document first');return false;}
+    if(page.documentType==='pdf'&&!forceAs){showToast('PDF documents are read-only. Use Save As to copy the file.');return false;}
+    return new Promise(resolve=>{
+      withUnsavedInspectorGuard(async()=>{
+        try{
+          let filePath=null;
+          if(page.documentType==='pdf'){
+            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
+          }else if(page.documentType==='markdown'){
+            filePath=forceAs||!page.sourcePath
+              ?await window.electronAPI.exportText({title:'Save Markdown Document',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
+              :await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source});
+          }else{
+            filePath=forceAs||!page.sourcePath
+              ?await window.electronAPI.exportHtml({suggestedName:page.fileName||`${page.name}.html`,source:page.source})
+              :await window.electronAPI.saveHtmlPath({filePath:page.sourcePath,source:page.source});
+          }
+          if(!filePath){resolve(false);return;}
+          page.sourcePath=filePath;
+          page.fileName=filePath.split(/[\\/]/).pop()||page.fileName;
+          if(page.documentType==='pdf')page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
+          else page.loadedSource=page.source;
+          renderAll();persist();showToast(forceAs?'Document saved as new file':'Document saved');resolve(true);
+        }catch(error){console.error('Document save failed',error);showToast(`Save failed: ${error.message}`);resolve(false);}
+      });
+    });
+  }
+
   function addRecent(filePath,name){
     state.recent=state.recent||[];
     state.recent=state.recent.filter(r=>r.filePath!==filePath);
@@ -566,15 +671,16 @@
     persist();
   }
 
-  async function addHtmlResultToProject(result, targetSlot=null){
+  async function addDocumentResultToProject(result, targetSlot=null, targetProject=null, targetParentId=undefined){
     if(!result) return null;
     let {project,node}=selectedContext(); project=project||activeProject();
+    if(targetProject)project=targetProject;
     if(!project){
       project={id:uid('project'),name:'New Project',color:'#395a88',filePath:null,expanded:true,nodes:[]};
       state.projects.push(project); state.selectedProjectId=project.id;
     }
 
-    const slot=targetSlot || (state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage'));
+    const slot=targetSlot || activeDocumentSlot();
     const slotPage=pageById(state.views[slot]);
 
     // Drag & Drop onto an Empty Page fills that placeholder instead of creating another Page.
@@ -584,41 +690,48 @@
         project=slotOwner.project;
         slotPage.name=result.title;
         slotPage.fileName=result.fileName;
-        slotPage.source=result.source;
-        slotPage.loadedSource=result.source;
+        slotPage.source=result.source||'';
+        slotPage.loadedSource=result.loadedSource??result.source??'';
         slotPage.baseUrl=result.baseUrl;
         slotPage.sourcePath=result.filePath;
+        slotPage.previewUrl=result.previewUrl||null;
+        slotPage.documentType=result.documentType||'html';
         slotPage.initialSnapshotPath=result.initialSnapshotPath||null;
         slotPage.isEmpty=false;
         state.selectedProjectId=project.id;
         selectedTreeNode=slotPage.id;
-        renderAll(); persist(); showToast('HTML loaded into Empty Page');
+        renderAll(); persist(); showToast('Document loaded into Empty Page');
         return slotPage;
       }
     }
 
-    const parentId=node?.type==='group' && nodeById(node.id)?.project.id===project.id ? node.id : (node?.parentId||null);
-    const page={id:uid('page'),type:'page',name:result.title,fileName:result.fileName,parentId,order:children(project,parentId).length,source:result.source,loadedSource:result.source,baseUrl:result.baseUrl,sourcePath:result.filePath,initialSnapshotPath:result.initialSnapshotPath||null,isEmpty:false};
+    const inferredParent=node?.type==='group' && nodeById(node.id)?.project.id===project.id ? node.id : (nodeById(node?.id)?.project.id===project.id?node?.parentId||null:null);
+    const parentId=targetParentId===undefined?inferredParent:targetParentId;
+    const page={id:uid('page'),type:'page',name:result.title,fileName:result.fileName,documentType:result.documentType||'html',parentId,order:children(project,parentId).length,source:result.source||'',loadedSource:result.loadedSource??result.source??'',baseUrl:result.baseUrl,sourcePath:result.filePath,previewUrl:result.previewUrl||null,initialSnapshotPath:result.initialSnapshotPath||null,isEmpty:false};
     project.nodes.push(page); state.selectedProjectId=project.id; selectedTreeNode=page.id;
     state.views[slot]=page.id;
     if(slot==='single') state.views.single=page.id;
-    renderAll(); persist(); showToast('HTML loaded');
+    renderAll(); persist(); showToast('Document loaded');
     return page;
   }
 
-  async function importHtml(){
+  const addHtmlResultToProject=addDocumentResultToProject;
+
+  async function importDocuments(){
     withUnsavedInspectorGuard(async()=>{
       try{
-        const result=await window.electronAPI.importHtml();
-        if(!result) return;
-        await addHtmlResultToProject(result);
-        showToast('HTML imported');
+        const results=await window.electronAPI.importDocuments();
+        if(!results?.length) return;
+        for(const result of results)await addDocumentResultToProject(result);
+        showToast(`${results.length} document${results.length===1?'':'s'} imported`);
       }catch(error){
-        console.error('HTML import failed',error);
+        console.error('Document import failed',error);
         showToast(`Import failed: ${error.message}`);
       }
     });
   }
+
+  const importHtml=importDocuments;
 
   async function exportHtml(){
     withUnsavedInspectorGuard(async()=>{
@@ -653,7 +766,21 @@
 
   function clearProjectTreeDropFeedback(){
     $$('.tree-row').forEach(row=>row.classList.remove('drop-before','drop-after','drop-inside','tree-dragging'));
-    $$('.project-card').forEach(card=>card.classList.remove('drop-before'));
+    $$('.project-card').forEach(card=>card.classList.remove('drop-before','import-target'));
+  }
+
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf)$/i.test(file.name||'');}
+
+  async function importDroppedDocuments(event,project,parentId=null){
+    const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
+    if(!files.length){showToast('Drop HTML, Markdown, or PDF documents');return;}
+    try{
+      for(const file of files){
+        const result=await window.electronAPI.readDroppedDocument(file);
+        await addDocumentResultToProject(result,null,project,parentId);
+      }
+      showToast(`${files.length} document${files.length===1?'':'s'} imported into ${project.name}`);
+    }catch(error){console.error('Project document drop failed',error);showToast(`Import failed: ${error.message}`);}
   }
 
   function moveProjectTreeNode(payload,targetProject,targetNode,mode='inside'){
@@ -734,11 +861,13 @@
       row.ondragstart=e=>{e.dataTransfer.setData('text/project-id',project.id);row.classList.add('dragging');};
       row.ondragend=()=>{$$('.tree-row.project').forEach(x=>x.classList.remove('dragging'));$$('.project-card').forEach(x=>x.classList.remove('drop-before'));};
       card.ondragover=e=>{
+        if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';card.classList.add('import-target');return;}
         if(e.dataTransfer.types.includes('application/x-hbe-tree-node')){e.preventDefault();row.classList.add('drop-inside');return;}
         if(e.dataTransfer.types.includes('text/project-id')){e.preventDefault();card.classList.add('drop-before');}
       };
-      card.ondragleave=()=>card.classList.remove('drop-before');
+      card.ondragleave=()=>card.classList.remove('drop-before','import-target');
       card.ondrop=e=>{
+        if(e.dataTransfer.files?.length){e.preventDefault();e.stopPropagation();clearProjectTreeDropFeedback();importDroppedDocuments(e,project,null);return;}
         const treeRaw=e.dataTransfer.getData('application/x-hbe-tree-node');
         if(treeRaw){e.preventDefault();let payload=null;try{payload=JSON.parse(treeRaw)}catch{}clearProjectTreeDropFeedback();moveProjectTreeNode(payload,project,null,'inside');return;}
         const dragged=e.dataTransfer.getData('text/project-id'); if(!dragged||dragged===project.id)return;
@@ -750,6 +879,16 @@
       refs.tree.appendChild(card);
     });
   }
+
+  refs.tree.addEventListener('dragover',event=>{
+    if(!event.dataTransfer?.types?.includes('Files'))return;
+    event.preventDefault();event.dataTransfer.dropEffect='copy';
+  });
+  refs.tree.addEventListener('drop',event=>{
+    if(!event.dataTransfer?.files?.length)return;
+    event.preventDefault();event.stopPropagation();
+    const project=activeProject();if(project)importDroppedDocuments(event,project,null);
+  });
 
   function walkTree(project,parentId,depth,container){
     children(project,parentId).forEach(node=>{
@@ -764,7 +903,8 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico">${node.type==='group'?'▰':'◇'}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':'◇';
+      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'document-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
         if(e.target.closest('.tree-row-add'))return;
@@ -972,7 +1112,7 @@
     withUnsavedInspectorGuard(()=>{
       const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
       openModal('Add Empty Page','Create a blank page placeholder. Drop an HTML file from Explorer to load it.','Page name','Empty Page',name=>{
-        const page={id:uid('page'),type:'page',name,fileName:null,parentId,order:children(project,parentId).length,source:'',baseUrl:null,sourcePath:null,isEmpty:true};
+        const page={id:uid('page'),type:'page',name,fileName:'untitled.html',documentType:'html',parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
         project.nodes.push(page);selectedTreeNode=page.id;
         if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
         const slot=state.mode==='preview'?'single':state.mode==='split'?activeSlots.split:(activeSlots.code==='preview'?'codePreview':'codePage');
@@ -1882,7 +2022,7 @@
     if(alternate){state.views.right=alternate.id;return;}
     const project=nodeById(leftId)?.project||activeProject();
     if(!project)return;
-    const page={id:uid('page'),type:'page',name:'Split Right',fileName:'untitled.html',parentId:null,order:children(project,null).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,isEmpty:true};
+    const page={id:uid('page'),type:'page',name:'Split Right',fileName:'untitled.html',documentType:'html',parentId:null,order:children(project,null).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
     project.nodes.push(page);state.views.right=page.id;
   }
 
@@ -1952,7 +2092,7 @@
 
   function renderPageSelects(){
     const pages=pageList();
-    const options=pages.map(x=>`<option value="${x.page.id}">${esc(x.project.name)} / ${esc(x.page.name)}</option>`).join('');
+    const options=pages.map(x=>`<option value="${x.page.id}">${esc(x.project.name)} / ${esc(x.page.name)}${x.page.documentType&&x.page.documentType!=='html'?` [${x.page.documentType.toUpperCase()}]`:''}</option>`).join('');
 
     const bindings=[
       ['#leftPageSelect','left',refs.leftFrame],
@@ -2097,7 +2237,11 @@
   }
 
   function pageRequiresScripts(page){
-    return !!page && /<script\b[^>]*>/i.test(page.source||'');
+    return !!page && page.documentType==='html' && /<script\b[^>]*>/i.test(page.source||'');
+  }
+
+  function pageHasRenderableContent(page){
+    return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
 
@@ -2150,6 +2294,10 @@
 
   function buildPreviewSource(page,{allowScripts=false,bridgeToken=''}={}){
     if(!page) return '<!doctype html><html><body></body></html>';
+    if(page.documentType==='markdown'){
+      const rich=window.JiraExport?.markdownToRichHtml?.(page.source||'')||`<pre>${esc(page.source||'')}</pre>`;
+      return `<!doctype html><html><head><base href="${esc(page.baseUrl||'')}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline'; font-src file: data: https: http:;"><style>html{color-scheme:light}body{max-width:920px;margin:0 auto;padding:42px 48px;color:#20242a;background:#fff;font:15px/1.65 system-ui,-apple-system,'Segoe UI',sans-serif}img{max-width:100%}pre{overflow:auto;padding:14px;background:#f4f5f7;border-radius:6px}code{font-family:Consolas,monospace}table{border-collapse:collapse}th,td{border:1px solid #d9dde3;padding:7px 9px}</style></head><body>${rich}</body></html>`;
+    }
     const base=page.baseUrl?`<base href="${esc(page.baseUrl)}">`:'';
     const csp=allowScripts
       ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; connect-src 'none'; object-src 'none'; frame-src 'none';">`
@@ -2162,6 +2310,14 @@
   }
 
   function configureFrameRuntime(frame,page,slot){
+    if(page?.documentType&&page.documentType!=='html'){
+      frame.closest('.view-pane')?.classList.remove('scripted-preview');
+      frame.dataset.previewRuntime='document-readonly';
+      const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
+      if(page.documentType==='markdown')frame.setAttribute('sandbox','allow-same-origin');
+      else frame.removeAttribute('sandbox');
+      return false;
+    }
     const scripted=pageRequiresScripts(page);
     frame.closest('.view-pane')?.classList.toggle('scripted-preview',scripted);
     const badge=$(`[data-runtime-badge="${slot}"]`);
@@ -2192,7 +2348,7 @@
   function renderFrame(frame,pageId){
     const page=pageById(pageId);
     const pane=frame.closest('.view-pane');
-    const empty=!page || page.isEmpty || !(page.source||'').trim();
+    const empty=!pageHasRenderableContent(page);
     if(pane) pane.classList.toggle('is-empty',empty);
     const slot=previewSlotForFrame(frame);
     if(slot) applyPreviewSize(slot);
@@ -2205,19 +2361,26 @@
     }
     const scripted=configureFrameRuntime(frame,page,slot);
     updateInspectorEditControls();
+    if(page.documentType==='pdf'){
+      frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
+      frame.removeAttribute('srcdoc');
+      frame.src=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      return;
+    }
+    frame.removeAttribute('src');
     const snapshotToken=scripted ? uid('snapshot') : '';
     frame.dataset.snapshotToken=snapshotToken;
     frame.dataset.snapshotPageId=page.id;
     renderedSnapshotCache.delete(frame);
     const nextSource=buildPreviewSource(page,{allowScripts:scripted,bridgeToken:snapshotToken});
     const renderToken=`render-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
-    const runtimeSource=nextSource.replace('</head>',`<meta data-editor-overlay="1" name="hbe-render-token" content="${renderToken}"></head>`);
+    const runtimeSource=nextSource.replace('</head>',`<meta data-editor-overlay="1" name="hbe-render-token" content="${renderToken}"><style data-editor-overlay="1">*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:rgba(112,120,132,.42);border:2px solid transparent;border-radius:8px;background-clip:padding-box}*::-webkit-scrollbar-thumb:hover{background:rgba(112,120,132,.65);border:2px solid transparent;background-clip:padding-box}</style></head>`);
     frame.srcdoc=runtimeSource;
   }
 
   function onPreviewFrameLoad(frame){
     const slot=previewSlotForFrame(frame);
-    if(frame.dataset.previewRuntime==='interactive-isolated'){
+    if(frame.dataset.previewRuntime==='interactive-isolated'||frame.dataset.previewRuntime==='document-readonly'){
       if(htmlEditEnabled && frameForEditSlot(editOwnerSlot)===frame) setHtmlEditEnabled(false);
       updateInspectorEditControls();
       return;
@@ -2360,13 +2523,13 @@
   function updateClearButtons(){
     $$('[data-clear-slot]').forEach(button=>{
       const page=pageById(pageIdForSlot(button.dataset.clearSlot));
-      button.disabled=!page || page.isEmpty || !(page.source||'').trim();
+      button.disabled=!pageHasRenderableContent(page);
     });
   }
   function openClearHtmlDialog(slot){
     const pageId=pageIdForSlot(slot);
     const page=pageById(pageId);
-    if(!page || page.isEmpty || !(page.source||'').trim()) return showToast('Nothing to clear');
+    if(!pageHasRenderableContent(page)) return showToast('Nothing to clear');
     withUnsavedInspectorGuard(()=>{
       if(!pageHasUnsavedChanges(page)){
         pendingClearPageId=pageId;
@@ -2374,22 +2537,22 @@
         return;
       }
       pendingClearPageId=pageId;
-      refs.clearHtmlTarget.textContent=page.name || page.fileName || 'Current HTML';
-      $('#clearHtmlMessage').textContent='This HTML has unsaved changes. Save them before clearing?';
+      refs.clearHtmlTarget.textContent=page.name || page.fileName || 'Current Document';
+      $('#clearHtmlMessage').textContent='This document has unsaved changes. Save them before clearing?';
       refs.clearHtmlModal.classList.add('show');
       setTimeout(()=>$('#clearHtmlCancel').focus(),0);
     });
   }
   function closeClearHtmlDialog(){ refs.clearHtmlModal.classList.remove('show'); pendingClearPageId=null; }
-  function pageHasUnsavedChanges(page){ return String(page?.source||'')!==String(page?.loadedSource||''); }
+  function pageHasUnsavedChanges(page){ return page?.documentType!=='pdf'&&String(page?.source||'')!==String(page?.loadedSource||''); }
   function clearLoadedHtml(){
     const page=pageById(pendingClearPageId);
     if(!page){ closeClearHtmlDialog(); return; }
     pushUndo(page);
-    page.source=''; page.loadedSource=''; page.baseUrl=null; page.sourcePath=null; page.isEmpty=true;
+    page.source=''; page.loadedSource=''; page.baseUrl=null; page.sourcePath=null; page.previewUrl=null;page.documentType='html';page.fileName='untitled.html'; page.isEmpty=true;
     clearInspector(); closeClearHtmlDialog();
     if(state.views.codePage===page.id) loadCodePage();
-    renderViewMode(); updateClearButtons(); persist(); showToast('Loaded HTML cleared');
+    renderViewMode(); updateClearButtons(); persist(); showToast('Loaded document cleared');
   }
   $$('[data-clear-slot]').forEach(button=>{
     button.addEventListener('pointerdown',event=>event.stopPropagation());
@@ -2401,9 +2564,9 @@
     const page=pageById(pendingClearPageId);
     if(!page) return closeClearHtmlDialog();
     try{
-      const filePath=page.sourcePath
-        ? await window.electronAPI.saveHtmlPath({filePath:page.sourcePath,source:page.source})
-        : await window.electronAPI.exportHtml({suggestedName:page.fileName||`${page.name}.html`,source:page.source});
+      const filePath=page.documentType==='markdown'
+        ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:'Save Markdown Document',suggestedName:page.fileName||`${page.name}.md`,extension:'md',source:page.source}))
+        :(page.sourcePath?await window.electronAPI.saveHtmlPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportHtml({suggestedName:page.fileName||`${page.name}.html`,source:page.source}));
       if(!filePath) return;
       page.sourcePath=filePath;page.loadedSource=page.source;
       clearLoadedHtml();
@@ -2415,12 +2578,15 @@
   function loadCodePage(){
     const page=pageById(state.views.codePage);
     const pane=$('.code-editor-pane');
-    const empty=!page || page.isEmpty || !(page.source||'').trim();
+    const empty=!page || page.isEmpty;
     pane?.classList.toggle('is-empty', empty);
-    refs.source.value=page?.source||'';
+    const pdfNotice=page?.documentType==='pdf'?`PDF document (read-only)\n${page.sourcePath||page.fileName||''}`:'';
+    refs.source.value=pdfNotice||(page?.source||'');
+    refs.source.readOnly=page?.documentType==='pdf';
+    refs.source.classList.toggle('read-only',page?.documentType==='pdf');
     const codeFileName=$('#codeFileName');if(codeFileName)codeFileName.textContent=page?.fileName||'No page selected';
     refs.dirty.hidden=true;
-    updateLineRail();
+    updateLineRail();syncLineRailScroll();updateCodeSearchStatus();
     updateClearButtons();
   }
   refs.source.addEventListener('focus',()=>{
@@ -2436,14 +2602,41 @@
   });
   refs.source.oninput=()=>{
     const page=pageById(state.views.codePage);if(!page)return;
-    pushUndo(page);page.source=refs.source.value;page.isEmpty=!(page.source||'').trim();refs.dirty.hidden=false;updateLineRail();persist();
+    if(page.documentType==='pdf')return;
+    pushUndo(page);page.source=refs.source.value;page.isEmpty=!(page.source||'').trim();$('.code-editor-pane')?.classList.toggle('is-empty',page.isEmpty);refs.dirty.hidden=false;updateLineRail();updateClearButtons();persist();
+    updateCodeSearchStatus();
     if(state.views.codePreview===page.id)setTimeout(()=>renderFrame(refs.codePreviewFrame,page.id),220);
     if(state.views.single===page.id)renderFrame(refs.singleFrame,page.id);
     if(state.views.left===page.id)renderFrame(refs.leftFrame,page.id);
     if(state.views.right===page.id)renderFrame(refs.rightFrame,page.id);
   };
-  refs.source.onkeydown=e=>{if(e.key==='Tab'){e.preventDefault();const s=refs.source.selectionStart,en=refs.source.selectionEnd;refs.source.value=refs.source.value.slice(0,s)+'  '+refs.source.value.slice(en);refs.source.selectionStart=refs.source.selectionEnd=s+2;refs.source.dispatchEvent(new Event('input'));}};
-  function updateLineRail(){refs.lineRail.innerHTML=Array.from({length:refs.source.value.split('\n').length},(_,i)=>`<span>${i+1}</span>`).join('');}
+  refs.source.onkeydown=e=>{if(e.key==='Tab'&&!refs.source.readOnly){e.preventDefault();const s=refs.source.selectionStart,en=refs.source.selectionEnd;refs.source.value=refs.source.value.slice(0,s)+'  '+refs.source.value.slice(en);refs.source.selectionStart=refs.source.selectionEnd=s+2;refs.source.dispatchEvent(new Event('input'));}};
+  function updateLineRail(){refs.lineRail.innerHTML=`<div class="line-rail-lines">${Array.from({length:refs.source.value.split('\n').length},(_,i)=>`<span>${i+1}</span>`).join('')}</div>`;syncLineRailScroll();}
+  function syncLineRailScroll(){const lines=refs.lineRail.querySelector('.line-rail-lines');if(lines)lines.style.transform=`translateY(${-refs.source.scrollTop}px)`;}
+  refs.source.addEventListener('scroll',syncLineRailScroll,{passive:true});
+
+  function codeSearchMatches(query){
+    if(!query)return[];
+    const source=refs.source.value.toLocaleLowerCase();const needle=query.toLocaleLowerCase();const matches=[];
+    let from=0;while(from<=source.length-needle.length){const index=source.indexOf(needle,from);if(index<0)break;matches.push(index);from=index+Math.max(1,needle.length);}
+    return matches;
+  }
+  function updateCodeSearchStatus(){
+    if(!refs.codeSearch||!refs.codeSearchStatus)return;
+    const matches=codeSearchMatches(refs.codeSearch.value);refs.codeSearchStatus.textContent=refs.codeSearch.value?`${matches.length}`:'';
+  }
+  function findCodeMatch({backward=false,retainSearchFocus=false}={}){
+    const query=refs.codeSearch?.value||'';const matches=codeSearchMatches(query);updateCodeSearchStatus();if(!matches.length)return false;
+    const cursor=backward?refs.source.selectionStart:refs.source.selectionEnd;
+    let index=backward?[...matches].reverse().find(value=>value<cursor):matches.find(value=>value>=cursor);
+    if(index===undefined)index=backward?matches.at(-1):matches[0];
+    refs.source.focus();refs.source.setSelectionRange(index,index+query.length);if(retainSearchFocus)refs.codeSearch.focus();return true;
+  }
+  refs.codeSearch?.addEventListener('input',()=>{updateCodeSearchStatus();findCodeMatch({retainSearchFocus:true});});
+  refs.codeSearch?.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){event.preventDefault();findCodeMatch({backward:event.shiftKey});}
+    if(event.key==='Escape'){event.preventDefault();refs.codeSearch.value='';updateCodeSearchStatus();refs.source.focus();}
+  });
   function selectionPathForElement(element){
     if(!element?.isConnected||['HTML','BODY'].includes(element.tagName))return null;
     const path=[];let current=element;
@@ -2629,9 +2822,10 @@
       const slot=button.dataset.editSlot;
       const frame=frameForEditSlot(slot);
       const page=pageById(pageIdForSlot(slot));
-      const unavailable=!page || page.isEmpty || !(page.source||'').trim() || frame?.dataset.previewRuntime==='interactive-isolated';
+      const unavailable=!pageHasRenderableContent(page) || page?.documentType!=='html' || frame?.dataset.previewRuntime==='interactive-isolated';
       const active=htmlEditEnabled && editOwnerSlot===slot;
       button.classList.toggle('active',active);
+      button.closest('.view-pane')?.classList.toggle('edit-active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
       button.disabled=unavailable;
       button.textContent='Edit';
@@ -2659,12 +2853,13 @@
       const active=documentFullscreenSlot===button.dataset.documentFullscreen;
       button.classList.toggle('active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
-      button.textContent=active?'Show UI':'⛶';
+      button.textContent=active?'◫':'⛶';
+      button.setAttribute('aria-label',active?'Show Leaf UI':'View document without app UI');
       button.title=active?'Show Leaf UI':'View document without app UI';
     });
   }
 
-  function setDocumentFullscreen(slot){
+  function setDocumentFullscreen(slot,{skipNative=false}={}){
     const previous=documentFullscreenSlot;
     const next=slot&&documentFullscreenSlot!==slot?slot:null;
     if(next&&!previous){
@@ -2677,11 +2872,18 @@
     $$('.document-fullscreen-target').forEach(pane=>pane.classList.remove('document-fullscreen-target'));
     paneForDocumentFullscreen(next)?.classList.add('document-fullscreen-target');
     updateDocumentFullscreenControls();
+    if(!skipNative)window.electronAPI.setDocumentFullscreen(!!next).catch(error=>{
+      console.error('Native fullscreen failed',error);showToast(`Fullscreen failed: ${error.message}`);
+    });
     if(!next){
       const restoreSlot=documentFullscreenRestoreEditSlot;documentFullscreenRestoreEditSlot=null;
       if(restoreSlot)setHtmlEditEnabled(true,restoreSlot);
     }
   }
+
+  window.electronAPI.onDocumentFullscreenChanged?.(enabled=>{
+    if(!enabled&&documentFullscreenSlot)setDocumentFullscreen(null,{skipNative:true});
+  });
 
   $$('[data-document-fullscreen]').forEach(button=>button.addEventListener('click',event=>{
     event.preventDefault();event.stopPropagation();
@@ -3155,6 +3357,10 @@
       </div>`;
   }
 
+  function inspectorSubgroup(path,title,content,open=true){
+    return `<details class="property-subgroup" data-inspector-group="${esc(path)}" ${inspectorGroupIsOpen(path,open)?'open':''}><summary class="property-subgroup-title"><span class="fold-chevron"></span><span>${esc(title)}</span><span class="group-error-count" hidden></span></summary><div class="property-subgroup-content">${content}</div></details>`;
+  }
+
 
   // ----- Structured selection helpers -----
   function selectedTableCell(){
@@ -3195,9 +3401,9 @@
     return group;
   }
 
-  function inspectorGroupIsOpen(title){
+  function inspectorGroupIsOpen(title,defaultOpen=null){
     const saved=state.preferences?.inspectorFolds?.[title];
-    return typeof saved==='boolean'?saved:!['Alignment','Table','Advanced'].includes(title);
+    return typeof saved==='boolean'?saved:(typeof defaultOpen==='boolean'?defaultOpen:!['Alignment','Table','Advanced'].includes(title));
   }
 
   function bindInspectorFolds(){
@@ -3423,38 +3629,34 @@
         <div class="mini">${Math.round(el.getBoundingClientRect().width)} × ${Math.round(el.getBoundingClientRect().height)} px</div>
       </div>
 
-      <details class="property-group" data-inspector-group="Content" ${inspectorGroupIsOpen('Content')?'open':''}>
-        <summary class="property-group-title"><span class="fold-chevron"></span><span>Content</span><span class="group-error-count" hidden></span></summary>
-        <div class="property-group-content">
-          ${propertyRow('objectName','Object Name',inspectorDraft.values.objectName)}
-          ${propertyRow('text','Text',inspectorDraft.values.text,{type:'textarea'})}
+      <details class="property-group" data-inspector-group="General" ${inspectorGroupIsOpen('General')?'open':''}>
+        <summary class="property-group-title"><span class="fold-chevron"></span><span>General</span><span class="group-error-count" hidden></span></summary>
+        <div class="property-group-content nested-groups">
+          ${inspectorSubgroup('General/Identity','Identity',propertyRow('objectName','Object Name',inspectorDraft.values.objectName))}
+          ${inspectorSubgroup('General/Content','Content',propertyRow('text','Text',inspectorDraft.values.text,{type:'textarea'}))}
         </div>
       </details>
 
-      <details class="property-group" data-inspector-group="Typography" ${inspectorGroupIsOpen('Typography')?'open':''}>
-        <summary class="property-group-title"><span class="fold-chevron"></span><span>Typography</span><span class="group-error-count" hidden></span></summary>
-        <div class="property-group-content">
-          ${propertyRow('fontFamily','Font Family',inspectorDraft.values.fontFamily)}
-          ${propertyRow('fontSize','Font Size',inspectorDraft.values.fontSize,{unit:'px',type:'number'})}
-          ${propertyRow('fontWeight','Font Weight',inspectorDraft.values.fontWeight)}
-          ${propertyRow('fontStyle','Font Style',inspectorDraft.values.fontStyle,{options:['normal','italic','oblique']})}
+      <details class="property-group" data-inspector-group="Appearance" ${inspectorGroupIsOpen('Appearance')?'open':''}>
+        <summary class="property-group-title"><span class="fold-chevron"></span><span>Appearance</span><span class="group-error-count" hidden></span></summary>
+        <div class="property-group-content nested-groups">
+          ${inspectorSubgroup('Appearance/Typography','Typography',`
+            ${propertyRow('fontFamily','Font Family',inspectorDraft.values.fontFamily)}
+            ${propertyRow('fontSize','Font Size',inspectorDraft.values.fontSize,{unit:'px',type:'number'})}
+            ${propertyRow('fontWeight','Font Weight',inspectorDraft.values.fontWeight)}
+            ${propertyRow('fontStyle','Font Style',inspectorDraft.values.fontStyle,{options:['normal','italic','oblique']})}`)}
+          ${inspectorSubgroup('Appearance/Text CSS','Text CSS',TEXT_CSS_FIELDS.map(field=>propertyRow(field.key,field.label,inspectorDraft.values[field.key],{options:field.options||null})).join(''),false)}
         </div>
       </details>
 
-      <details class="property-group" data-inspector-group="Text CSS" ${inspectorGroupIsOpen('Text CSS')?'open':''}>
-        <summary class="property-group-title"><span class="fold-chevron"></span><span>Text CSS</span><span class="group-error-count" hidden></span></summary>
-        <div class="property-group-content">
-          ${TEXT_CSS_FIELDS.map(field=>propertyRow(field.key,field.label,inspectorDraft.values[field.key],{options:field.options||null})).join('')}
-        </div>
-      </details>
-
-      <details class="property-group" data-inspector-group="Spacing" ${inspectorGroupIsOpen('Spacing')?'open':''}>
-        <summary class="property-group-title"><span class="fold-chevron"></span><span>Spacing</span><span class="group-error-count" hidden></span></summary>
-        <div class="property-group-content">
-          ${propertyRow('marginTop','Margin Top',inspectorDraft.values.marginTop,{unit:'px',type:'number'})}
-          ${propertyRow('marginRight','Margin Right',inspectorDraft.values.marginRight,{unit:'px',type:'number'})}
-          ${propertyRow('marginBottom','Margin Bottom',inspectorDraft.values.marginBottom,{unit:'px',type:'number'})}
-          ${propertyRow('marginLeft','Margin Left',inspectorDraft.values.marginLeft,{unit:'px',type:'number'})}
+      <details class="property-group" data-inspector-group="Layout" ${inspectorGroupIsOpen('Layout')?'open':''}>
+        <summary class="property-group-title"><span class="fold-chevron"></span><span>Layout</span><span class="group-error-count" hidden></span></summary>
+        <div class="property-group-content nested-groups">
+          ${inspectorSubgroup('Layout/Spacing','Spacing',`
+            ${propertyRow('marginTop','Margin Top',inspectorDraft.values.marginTop,{unit:'px',type:'number'})}
+            ${propertyRow('marginRight','Margin Right',inspectorDraft.values.marginRight,{unit:'px',type:'number'})}
+            ${propertyRow('marginBottom','Margin Bottom',inspectorDraft.values.marginBottom,{unit:'px',type:'number'})}
+            ${propertyRow('marginLeft','Margin Left',inspectorDraft.values.marginLeft,{unit:'px',type:'number'})}`)}
         </div>
       </details>
     `;
@@ -3854,7 +4056,32 @@
     return clone;
   }
 
-  function createObjectSvgSnapshot(element,scale=1){
+  async function exportAssetDataUrl(url){
+    if(!url||/^data:/i.test(url))return url;
+    if(/^file:/i.test(url))return window.electronAPI.readLocalAssetDataUrl(url);
+    if(/^blob:/i.test(url)||/^https?:/i.test(url)){
+      const response=await fetch(url,{credentials:'omit'});if(!response.ok)throw new Error(`Asset request failed (${response.status})`);
+      const blob=await response.blob();return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+    }
+    return url;
+  }
+
+  async function inlineExportAssets(element,clone){
+    const sourceElements=[element,...element.querySelectorAll('*')];
+    const cloneElements=[clone,...clone.querySelectorAll('*')];
+    await Promise.all(sourceElements.map(async(source,index)=>{
+      const target=cloneElements[index];if(!target)return;
+      if(source.tagName==='IMG'){
+        const url=source.currentSrc||source.src;try{if(url)target.src=await exportAssetDataUrl(url);}catch(error){console.warn('Image export asset could not be embedded',url,error);}
+      }
+      if(source.tagName==='IMAGE'){
+        const url=source.href?.baseVal||source.getAttribute('href')||source.getAttribute('xlink:href');
+        try{if(url){const data=await exportAssetDataUrl(new URL(url,source.baseURI).href);target.setAttribute('href',data);target.removeAttribute('xlink:href');}}catch(error){console.warn('SVG image export asset could not be embedded',url,error);}
+      }
+    }));
+  }
+
+  async function createObjectSvgSnapshot(element,scale=1){
     if(!element?.isConnected)throw new Error('The selected object is no longer available.');
     const rect=element.getBoundingClientRect();
     const width=Math.max(1,Math.ceil(rect.width));
@@ -3864,6 +4091,7 @@
     const outputHeight=Math.max(1,Math.ceil(height*normalizedScale));
     if(outputWidth>16384||outputHeight>16384||outputWidth*outputHeight>80_000_000)throw new Error('Export dimensions are too large. Choose a smaller scale.');
     const clone=exportCloneWithComputedStyles(element);
+    await inlineExportAssets(element,clone);
     clone.style.width=`${width}px`;clone.style.height=`${height}px`;clone.style.boxSizing='border-box';
     const serialized=new XMLSerializer().serializeToString(clone);
     const source=`<svg xmlns="http://www.w3.org/2000/svg" width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">${serialized}</div></foreignObject></svg>`;
@@ -3886,18 +4114,43 @@
     }finally{URL.revokeObjectURL(url);}
   }
 
+  async function captureRenderedObject(element,snapshot,format){
+    const frame=element.ownerDocument?.defaultView?.frameElement;
+    if(!frame)throw new Error('The selected object is not inside a document View.');
+    const view=element.ownerDocument.defaultView;
+    if(snapshot.width>view.innerWidth||snapshot.height>view.innerHeight)throw new Error('The object is larger than the visible document View.');
+    const oldScroll={x:view.scrollX,y:view.scrollY};
+    const overlays=[...element.ownerDocument.querySelectorAll('[data-editor-overlay]')].map(node=>({node,visibility:node.style.visibility}));
+    try{
+      element.scrollIntoView({block:'center',inline:'center'});
+      overlays.forEach(item=>{item.node.style.visibility='hidden';});
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const rect=element.getBoundingClientRect();const frameRect=frame.getBoundingClientRect();
+      const scaleX=frameRect.width/Math.max(1,frame.clientWidth);const scaleY=frameRect.height/Math.max(1,frame.clientHeight);
+      const captureRect={x:frameRect.left+(rect.left*scaleX),y:frameRect.top+(rect.top*scaleY),width:rect.width*scaleX,height:rect.height*scaleY};
+      const outputScale=snapshot.outputWidth/Math.max(1,captureRect.width);
+      return await window.electronAPI.captureRegion({rect:captureRect,scale:outputScale,format});
+    }finally{
+      overlays.forEach(item=>{item.node.style.visibility=item.visibility;});
+      view.scrollTo(oldScroll.x,oldScroll.y);
+      frameSelectionRenderers.get(frame)?.();
+    }
+  }
+
   function updateObjectExportSummary(){
-    const element=objectExportTarget;
-    if(!element?.isConnected){refs.objectExportSummary.textContent='No object selected.';return;}
-    const rect=element.getBoundingClientRect();
+    const elements=(Array.isArray(objectExportTarget)?objectExportTarget:[objectExportTarget]).filter(element=>element?.isConnected);
+    if(!elements.length){refs.objectExportSummary.textContent='No object selected.';return;}
+    const rect=elements[0].getBoundingClientRect();
     const scale=Number(refs.objectExportScale.value)||1;
     const width=Math.max(1,Math.ceil(rect.width*scale)),height=Math.max(1,Math.ceil(rect.height*scale));
-    refs.objectExportSummary.textContent=`${objectDisplayName(element)} · ${Math.ceil(rect.width)} × ${Math.ceil(rect.height)} px · Output ${width} × ${height} px`;
+    refs.objectExportSummary.textContent=elements.length>1?`${elements.length} objects · each object will be exported as a separate file`:`${objectDisplayName(elements[0])} · ${Math.ceil(rect.width)} × ${Math.ceil(rect.height)} px · Output ${width} × ${height} px`;
   }
 
   function openObjectExportDialog(element=selectedElement){
-    if(!element?.isConnected||['HTML','BODY'].includes(element.tagName)){showToast('Select an object to export');return false;}
-    objectExportTarget=element;
+    const selection=SelectionManager.items().filter(item=>item?.isConnected&&!['HTML','BODY'].includes(item.tagName));
+    const targets=selection.length?(element&&selection.includes(element)?selection:selection):(element?.isConnected?[element]:[]);
+    if(!targets.length){showToast('Select an object to export');return false;}
+    objectExportTarget=targets;
     refs.objectExportFormat.value='png';refs.objectExportScale.value='1';
     updateObjectExportSummary();refs.objectExportModal.classList.add('show');
     setTimeout(()=>refs.objectExportFormat.focus(),0);return true;
@@ -3906,17 +4159,27 @@
   function closeObjectExportDialog(){refs.objectExportModal.classList.remove('show');objectExportTarget=null;}
 
   async function confirmObjectExport(){
-    const element=objectExportTarget;
-    if(!element?.isConnected)return closeObjectExportDialog();
+    const elements=(Array.isArray(objectExportTarget)?objectExportTarget:[objectExportTarget]).filter(element=>element?.isConnected);
+    if(!elements.length)return closeObjectExportDialog();
     const format=refs.objectExportFormat.value;
     const scale=Number(refs.objectExportScale.value)||1;
     const confirm=$('#objectExportConfirm');confirm.disabled=true;
     try{
-      const snapshot=createObjectSvgSnapshot(element,scale);
-      const source=format==='svg'?snapshot.source:await rasterizeObjectSnapshot(snapshot,format);
       const suffix=scale===1?'':`@${scale}x`;
-      const filePath=await window.electronAPI.exportObjectAsset({format,suggestedName:`${exportSafeName(objectDisplayName(element))}${suffix}.${format}`,source});
-      if(filePath){closeObjectExportDialog();showToast(`${format.toUpperCase()} exported`);}
+      const items=[];
+      for(const element of elements){
+        const snapshot=await createObjectSvgSnapshot(element,scale);
+        let source=snapshot.source;
+        if(format!=='svg'){
+          try{source=await captureRenderedObject(element,snapshot,format);}
+          catch(captureError){console.warn('Rendered capture fallback to SVG rasterization',captureError);source=await rasterizeObjectSnapshot(snapshot,format);}
+        }
+        items.push({suggestedName:`${exportSafeName(objectDisplayName(element))}${suffix}.${format}`,source});
+      }
+      const result=items.length>1
+        ?await window.electronAPI.exportObjectAssets({format,items})
+        :await window.electronAPI.exportObjectAsset({format,...items[0]});
+      if(result&&(Array.isArray(result)?result.length:true)){closeObjectExportDialog();showToast(`${items.length} ${format.toUpperCase()} file${items.length===1?'':'s'} exported`);}
     }catch(error){console.error('Object export failed',error);showToast(`Export failed: ${error.message}`);}
     finally{confirm.disabled=false;}
   }
@@ -4632,6 +4895,9 @@
     const editing=e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName);
     const dialogOpen=!!document.querySelector('.modal-backdrop.show');
     const modifier=e.ctrlKey||e.metaKey;
+    if(!dialogOpen&&modifier&&e.key.toLowerCase()==='f'&&state.mode==='code'){
+      e.preventDefault();refs.codeSearch?.focus();refs.codeSearch?.select();return;
+    }
     if(!dialogOpen && e.key==='Escape' && inlineTextEditSession){e.preventDefault();endInlineTextEdit({commit:false});return;}
     if(!dialogOpen && e.key==='Escape' && SelectionManager.items().length){e.preventDefault();clearInspector();return;}
     if(!dialogOpen && (e.key==='Delete'||e.key==='Del') && !editing && SelectionManager.items().length){e.preventDefault();deleteSelectedElements();return;}
@@ -4641,9 +4907,9 @@
     if(!dialogOpen && modifier && !editing && SelectionManager.items().length && e.key.toLowerCase()==='c'){e.preventDefault();copySelectedElements();return;}
     if(!dialogOpen && modifier && !editing && e.key.toLowerCase()==='v'){e.preventDefault();pasteSelectedElements();return;}
     if(!dialogOpen && modifier && !editing && !e.repeat && SelectionManager.items().length && e.key.toLowerCase()==='d'){e.preventDefault();duplicateSelectedElements();return;}
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newProject();}
-    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();saveProject(true);}
-    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveProject(false);}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newDocument();}
+    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();saveDocument(true);}
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveDocument(false);}
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();redo();}
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
   });
@@ -4666,7 +4932,7 @@
     repairViews();
     renderViewMode();
     updateClearButtons();
-    $('#workspaceTitle').textContent=activeProject()?.name||'Workspace';
+    $('#workspaceTitle').textContent=`${state.documentName||'Leaf Document'} / ${activeProject()?.name||'No Project'}`;
   }
 
   $('#quickAddProject').onclick=newProject;

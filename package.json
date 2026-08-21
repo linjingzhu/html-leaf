@@ -1,13 +1,13 @@
 {
   "name": "leaf",
-  "version": "0.5.13",
+  "version": "0.5.14",
   "private": true,
-  "description": "Trust-foundation release for the visual HTML editor: atomic save, source-fidelity guards, leakage prevention, and minimal text patch PoC.",
+  "description": "Leaf visual document editor with project workspaces, source-fidelity guards, structured HTML editing, and HTML/Markdown/PDF document support.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "qa": "node scripts/qa-v0513.js",
+    "qa": "node scripts/qa-v0514.js",
     "qa:fidelity": "node scripts/qa-source-fidelity.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
     "dist:win": "electron-builder --win nsis zip --x64 --publish never"
@@ -21,7 +21,7 @@
     "productName": "Leaf",
     "asar": true,
     "directories": {
-      "output": "release-v0.5.13",
+      "output": "release-v0.5.14",
       "buildResources": "build"
     },
     "files": [

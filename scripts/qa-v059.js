@@ -14,7 +14,7 @@ check('Inline commit strips every temporary caret marker',js.includes("node.data
 check('Inspector text newlines materialize as BR elements',js.includes('function replaceDirectTextWithBreaks(')&&js.includes("split('\\n')"));
 check('Hierarchy defaults to editable Name mode',js.includes('hierarchyNameMode:true')&&html.includes('aria-pressed="true"')&&html.includes('>Name</button>'));
 check('Root is excluded by SelectionManager and Hierarchy handlers',js.includes("['HTML','BODY'].includes(element.tagName)")&&js.includes("if(node.depth===0)return")&&html.includes('id="hierarchyTree"'));
-check('Text CSS exposes at least 34 direct style properties',js.match(/key:'[^']+',label:'[^']+',property:'[^']+'/g)?.length>=34&&js.includes("data-inspector-group=\"Text CSS\""));
+check('Text CSS exposes at least 34 direct style properties',js.match(/key:'[^']+',label:'[^']+',property:'[^']+'/g)?.length>=34&&(js.includes("data-inspector-group=\"Text CSS\"")||js.includes("'Appearance/Text CSS'")));
 check('Text CSS values are read and applied through a shared property map',js.includes('TEXT_CSS_FIELDS.forEach(field=>{values[field.key]')&&js.includes("el.style[field.property]="));
 check('Split guarantees distinct left and right document bindings',js.includes('function ensureDistinctSplitBindings(')&&js.includes('state.views.right!==leftId')&&js.includes("state.views.right=alternate.id"));
 check('Split selector collision swaps the opposite binding',js.includes("key==='left'&&nextPageId===state.views.right")&&js.includes("key==='right'&&nextPageId===state.views.left"));

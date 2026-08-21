@@ -21,7 +21,7 @@ check('Used Preview owns a visible toggle and horizontal splitter',html.includes
 check('Used Preview size and visibility persist in layout state',js.includes('usedPreviewVisible:true')&&js.includes('usedPreviewRatio:0.42')&&js.includes('state.layout.usedPreviewRatio=value'));
 check('Viewport Edit remains a stable pressed-state toggle',js.includes("button.textContent='Edit'")&&js.includes("button.setAttribute('aria-pressed',active?'true':'false')"));
 check('Every document View owns a UI-free fullscreen control',html.split('data-document-fullscreen=').length===5&&js.includes('function setDocumentFullscreen(')&&js.includes('dataset.documentFullscreenSlot')&&css.includes('body.document-view-only'));
-check('Fullscreen control becomes Show UI in the same location',js.includes("button.textContent=active?'Show UI':'⛶'")&&css.includes('>.document-fullscreen-toggle'));
+check('Fullscreen control becomes an accessible Show UI control in the same location',(js.includes("button.textContent=active?'Show UI':'⛶'")||js.includes("button.setAttribute('aria-label',active?'Show Leaf UI'"))&&css.includes('>.document-fullscreen-toggle'));
 check('Enter starts selected text editing',js.includes("event.key==='Enter' && !editing && !modifier")&&js.includes('editSelectedText()'));
 check('Escape cancels inline text edits and restores original HTML',js.includes("endInlineTextEdit({commit:false})")&&js.includes('if(!commit && changed) element.innerHTML=session.originalHtml'));
 check('Outside pointer completion commits while selection is restored',js.includes("if(inlineTextEditSession)endInlineTextEdit({commit:true})")&&js.includes("SelectionManager.select(element,frame,'inline-text')"));
