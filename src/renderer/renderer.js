@@ -3082,6 +3082,136 @@
     });
     doc.body.appendChild(overlay);
 
+    // Hover inspection is intentionally separate from the persistent
+    // selection overlay. Moving the pointer can therefore inspect another
+    // object without clearing or visually replacing the current selection.
+    const hoverOverlay=doc.createElement('div');
+    hoverOverlay.dataset.editorOverlay='hover-highlight';
+    Object.assign(hoverOverlay.style,{
+      position:'absolute',zIndex:2147483644,pointerEvents:'none',
+      border:'1px solid rgba(67,132,222,.95)',
+      background:'rgba(75,145,222,.26)',
+      boxShadow:'inset 0 0 0 1px rgba(255,255,255,.16)',
+      display:'none',boxSizing:'border-box'
+    });
+    doc.body.appendChild(hoverOverlay);
+
+    const hoverTooltip=doc.createElement('div');
+    hoverTooltip.dataset.editorOverlay='hover-tooltip';
+    hoverTooltip.setAttribute('role','tooltip');
+    Object.assign(hoverTooltip.style,{
+      position:'absolute',zIndex:2147483647,pointerEvents:'none',
+      minWidth:'210px',maxWidth:'320px',padding:'10px 12px',
+      border:'1px solid rgba(15,23,42,.16)',borderRadius:'5px',
+      background:'rgba(255,255,255,.98)',color:'#202124',
+      boxShadow:'0 5px 18px rgba(15,23,42,.24)',
+      font:'12px/1.35 Arial,sans-serif',display:'none',boxSizing:'border-box'
+    });
+    const hoverTooltipArrow=doc.createElement('span');
+    Object.assign(hoverTooltipArrow.style,{
+      position:'absolute',width:'0',height:'0',borderLeft:'7px solid transparent',
+      borderRight:'7px solid transparent'
+    });
+    const hoverTooltipHeader=doc.createElement('div');
+    Object.assign(hoverTooltipHeader.style,{display:'flex',alignItems:'baseline',gap:'8px',whiteSpace:'nowrap'});
+    const hoverTooltipIcon=doc.createElement('span');
+    hoverTooltipIcon.textContent='▦';
+    Object.assign(hoverTooltipIcon.style,{color:'#5688de',fontSize:'16px',lineHeight:'1'});
+    const hoverTooltipTag=doc.createElement('strong');
+    Object.assign(hoverTooltipTag.style,{minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',color:'#7b246f',fontSize:'13px'});
+    const hoverTooltipSize=doc.createElement('span');
+    Object.assign(hoverTooltipSize.style,{marginLeft:'auto',color:'#30343b',fontVariantNumeric:'tabular-nums'});
+    hoverTooltipHeader.append(hoverTooltipIcon,hoverTooltipTag,hoverTooltipSize);
+    const hoverTooltipSection=doc.createElement('div');
+    hoverTooltipSection.textContent='PROPERTIES';
+    Object.assign(hoverTooltipSection.style,{display:'flex',alignItems:'center',gap:'8px',margin:'10px 0 6px',color:'#667085',fontSize:'9px',letterSpacing:'.45px'});
+    const hoverTooltipRule=doc.createElement('span');
+    Object.assign(hoverTooltipRule.style,{height:'1px',flex:'1',background:'#d8dce3'});
+    hoverTooltipSection.appendChild(hoverTooltipRule);
+    const hoverTooltipRows=doc.createElement('div');
+    Object.assign(hoverTooltipRows.style,{display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',gap:'3px 10px'});
+    hoverTooltip.append(hoverTooltipArrow,hoverTooltipHeader,hoverTooltipSection,hoverTooltipRows);
+    doc.body.appendChild(hoverTooltip);
+
+    const implicitRole=el=>{
+      const explicit=el.getAttribute('role')?.trim();
+      if(explicit)return explicit;
+      if(/^H[1-6]$/.test(el.tagName))return 'heading';
+      const roles={A:'link',BUTTON:'button',IMG:'img',INPUT:'textbox',TEXTAREA:'textbox',SELECT:'combobox',NAV:'navigation',MAIN:'main',ASIDE:'complementary',ARTICLE:'article',SECTION:'region',UL:'list',OL:'list',LI:'listitem',TABLE:'table',TH:'columnheader',TD:'cell',FORM:'form'};
+      return roles[el.tagName]||'generic';
+    };
+    const isKeyboardFocusable=el=>{
+      if(el.matches?.(':disabled,[inert]'))return false;
+      const tabIndex=el.getAttribute('tabindex');
+      if(tabIndex!==null)return Number(tabIndex)>=0;
+      if(el.tagName==='A')return el.hasAttribute('href');
+      return ['BUTTON','INPUT','SELECT','TEXTAREA','SUMMARY'].includes(el.tagName)||el.isContentEditable;
+    };
+    const hoverSelectorLabel=el=>{
+      const tag=el.tagName.toLowerCase();
+      const id=el.id?`#${el.id}`:'';
+      const classes=[...el.classList].filter(name=>!['table-cell-selected','viewport-object-drop-target','hbe-inline-editing'].includes(name)).slice(0,2);
+      return `${tag}${id}${classes.length?`.${classes.join('.')}`:''}`;
+    };
+    const setHoverTooltipRows=rows=>{
+      hoverTooltipRows.replaceChildren();
+      rows.forEach(([label,value])=>{
+        const key=doc.createElement('span');key.textContent=label;key.style.color='#6b7280';
+        const field=doc.createElement('span');field.textContent=value;Object.assign(field.style,{minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',textAlign:'right',color:'#30343b'});
+        hoverTooltipRows.append(key,field);
+      });
+    };
+    let hoveredElement=null;
+    const hideHoverOverlay=()=>{
+      hoveredElement=null;
+      hoverOverlay.style.display='none';
+      hoverTooltip.style.display='none';
+    };
+    const elementCanHover=el=>!!el && el.nodeType===1 && !['HTML','BODY'].includes(el.tagName) && !el.dataset?.editorOverlay;
+    const positionHoverOverlay=el=>{
+      if(!canInspectFrame(frame)||!elementCanHover(el)){hideHoverOverlay();return;}
+      hoveredElement=el;
+      const rect=el.getBoundingClientRect();
+      if(rect.width<.5||rect.height<.5){hideHoverOverlay();return;}
+      const view=doc.defaultView;
+      const scrollX=view.scrollX,scrollY=view.scrollY;
+      Object.assign(hoverOverlay.style,{
+        display:'block',left:`${rect.left+scrollX}px`,top:`${rect.top+scrollY}px`,
+        width:`${rect.width}px`,height:`${rect.height}px`
+      });
+      const computed=view.getComputedStyle(el);
+      hoverTooltipTag.textContent=hoverSelectorLabel(el);
+      hoverTooltipSize.textContent=`${Math.round(rect.width*100)/100} × ${Math.round(rect.height*100)/100}`;
+      setHoverTooltipRows([
+        ['Name',objectDisplayName(el)],
+        ['Role',implicitRole(el)],
+        ['Display',computed.display||'—'],
+        ['Focusable',isKeyboardFocusable(el)?'Yes':'No']
+      ]);
+      hoverTooltip.style.display='block';
+      const tooltipRect=hoverTooltip.getBoundingClientRect();
+      const gap=10;
+      const placeAbove=rect.top>=tooltipRect.height+gap+8;
+      const viewportLeft=scrollX+8;
+      const viewportRight=scrollX+view.innerWidth-tooltipRect.width-8;
+      const desiredLeft=scrollX+rect.left;
+      const left=Math.max(viewportLeft,Math.min(desiredLeft,Math.max(viewportLeft,viewportRight)));
+      const desiredTop=placeAbove
+        ? scrollY+rect.top-tooltipRect.height-gap
+        : scrollY+rect.bottom+gap;
+      const viewportTop=scrollY+8;
+      const viewportBottom=scrollY+view.innerHeight-tooltipRect.height-8;
+      const top=Math.max(viewportTop,Math.min(desiredTop,Math.max(viewportTop,viewportBottom)));
+      Object.assign(hoverTooltip.style,{left:`${left}px`,top:`${top}px`});
+      const anchorX=Math.max(14,Math.min(tooltipRect.width-14,scrollX+rect.left+Math.min(rect.width/2,28)-left));
+      Object.assign(hoverTooltipArrow.style,{left:`${anchorX-7}px`,borderTop:'',borderBottom:''});
+      if(placeAbove){
+        Object.assign(hoverTooltipArrow.style,{bottom:'-7px',top:'auto',borderTop:'7px solid rgba(255,255,255,.98)'});
+      }else{
+        Object.assign(hoverTooltipArrow.style,{top:'-7px',bottom:'auto',borderBottom:'7px solid rgba(255,255,255,.98)'});
+      }
+    };
+
     const sizeLabel=doc.createElement('div');
     sizeLabel.dataset.editorOverlay='1';
     Object.assign(sizeLabel.style,{
@@ -3227,23 +3357,30 @@
     }));
 
     doc.addEventListener('mouseover',e=>{
-      if(!canInspectFrame(frame) || e.target.dataset?.editorOverlay) return;
+      if(!canInspectFrame(frame) || e.target.dataset?.editorOverlay){hideHoverOverlay();return;}
+      positionHoverOverlay(e.target);
       if(SelectionManager.items().some(item=>item.ownerDocument===doc)) syncSelectionOverlays();
-      else positionOverlay(e.target,'hover');
     },true);
 
-    doc.addEventListener('mouseout',()=>{
+    doc.addEventListener('mouseout',event=>{
       if(!canInspectFrame(frame)){
+        hideHoverOverlay();
         overlay.style.display='none';
         return;
       }
+      if(elementCanHover(event.relatedTarget))positionHoverOverlay(event.relatedTarget);
+      else hideHoverOverlay();
       if(SelectionManager.items().some(item=>item.ownerDocument===doc)) syncSelectionOverlays();
       else overlay.style.display='none';
     },true);
 
+    doc.addEventListener('scroll',()=>{if(hoveredElement?.isConnected)positionHoverOverlay(hoveredElement);else hideHoverOverlay();},true);
+    doc.defaultView.addEventListener('resize',()=>{if(hoveredElement?.isConnected)positionHoverOverlay(hoveredElement);});
+
     doc.addEventListener('pointerdown',e=>{
       if(!canInspectFrame(frame) || e.target.dataset?.editorOverlay) return;
       if(inlineTextEditSession?.element?.contains(e.target)) return;
+      hideHoverOverlay();
       e.preventDefault();
       e.stopPropagation();
 

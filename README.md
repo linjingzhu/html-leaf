@@ -17,6 +17,7 @@ Project (.prj)                       Ctrl+N
 - Supported Page formats are HTML, Markdown, JSON, and PDF. Markdown and JSON can be edited directly in Preview with the View's Edit toggle.
 - Document View modes are labelled `Preview`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
 - The application menu now starts at the left edge without an embedded product icon; executable, installer, Desktop, and Start Menu icons remain branded.
+- Hovering an object in HTML Edit shows a DevTools-style highlight and a property tooltip with its selector, editable name, rendered size, role, display mode, and keyboard-focusability. The current selection remains active while another object is inspected.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 

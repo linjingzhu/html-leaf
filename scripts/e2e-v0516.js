@@ -121,6 +121,13 @@ async function main(){
   const inspector=await evaluate(`(()=>{const body=document.querySelector('#inspectorBody'),name=body.querySelector('.node-name');return{name:name?.textContent,parents:body.querySelectorAll(':scope > details.property-group').length,nested:body.querySelectorAll('.property-group .property-subgroup').length,nameSize:parseFloat(getComputedStyle(name).fontSize),resetVisible:document.querySelector('#resetInspectorBtn').getBoundingClientRect().width}})()`);
   check('Inspector shows a large object name and two-level folds',inspector.name==='Hero Title'&&inspector.parents>=3&&inspector.nested>=5&&inspector.nameSize>=15&&inspector.resetVisible===0,JSON.stringify(inspector));
 
+  await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),doc=frame.contentDocument,target=doc.querySelector('p'),previous=doc.querySelector('h1');target.dispatchEvent(new frame.contentWindow.MouseEvent('mouseover',{bubbles:true,cancelable:true,relatedTarget:previous}))})()`);await sleep(60);
+  const hoverInspection=await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),doc=frame.contentDocument,highlight=doc.querySelector('[data-editor-overlay="hover-highlight"]'),tip=doc.querySelector('[data-editor-overlay="hover-tooltip"]'),selected=[...doc.querySelectorAll('[data-editor-overlay="1"]')].find(node=>node.querySelector('[data-scale-handle]'));return{highlight:highlight?.style.display,highlightWidth:parseFloat(highlight?.style.width),tooltip:tip?.style.display,text:tip?.textContent,tooltipLeft:parseFloat(tip?.style.left),tooltipTop:parseFloat(tip?.style.top),selection:selected?.style.display,hierarchySelected:document.querySelectorAll('#hierarchyTree .hierarchy-row.selected').length,inspectorName:document.querySelector('#inspectorBody .node-name')?.textContent}})()`);
+  check('Object hover shows an overlay and property tooltip',hoverInspection.highlight==='block'&&hoverInspection.highlightWidth>0&&hoverInspection.tooltip==='block'&&hoverInspection.text.includes('p')&&hoverInspection.text.includes('NameText')&&hoverInspection.text.includes('Rolegeneric')&&hoverInspection.text.includes('Displayblock')&&hoverInspection.text.includes('FocusableNo')&&Number.isFinite(hoverInspection.tooltipLeft)&&Number.isFinite(hoverInspection.tooltipTop),JSON.stringify(hoverInspection));
+  check('Hovering another object preserves the selected object',hoverInspection.selection==='block'&&hoverInspection.hierarchySelected===1&&hoverInspection.inspectorName==='Hero Title',JSON.stringify(hoverInspection));
+  const hoverScreenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  fs.writeFileSync(path.join(__dirname,'qa-evidence-hover-v0516.png'),Buffer.from(hoverScreenshot.data,'base64'));
+
   await evaluate(`(()=>{const frame=document.querySelector('#singleFrame'),p=frame.contentDocument.querySelector('p');p.dispatchEvent(new frame.contentWindow.MouseEvent('pointerdown',{bubbles:true,cancelable:true,ctrlKey:true}));document.querySelector('#objectContextMenu [data-object-context="export"]').click()})()`);await sleep(80);
   const multiple=await evaluate(`({open:document.querySelector('#objectExportModal').classList.contains('show'),summary:document.querySelector('#objectExportSummary').textContent})`);
   check('Multi-selection context Export prepares separate object files',multiple.open&&multiple.summary.includes('2 objects'),JSON.stringify(multiple));
@@ -133,6 +140,6 @@ async function main(){
 
   const screenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(__dirname,'qa-evidence-v0516.png'),Buffer.from(screenshot.data,'base64'));
-  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/23 PASS`);socket.close();
+  console.log(`Leaf v0.5.16 functional and adversarial QA: ${passed}/25 PASS`);socket.close();
 }
 main().catch(error=>{console.error(error.stack||error);process.exit(1);});

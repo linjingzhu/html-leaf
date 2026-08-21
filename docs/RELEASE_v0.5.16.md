@@ -26,6 +26,8 @@ The Document View mode labels are `Preview`, `Compare`, and `Code`. Internally t
 
 The embedded Leaf icon has been removed from the left side of the application menu. The File menu now begins at the left edge, while Windows executable, installer, Desktop shortcut, and Start Menu branding remain unchanged.
 
+When HTML Edit is active, hovering a rendered object now shows a translucent blue object highlight and a viewport-clamped property tooltip. The tooltip reports the selector, object name, rendered dimensions, semantic role, computed display mode, and keyboard-focusability. Hover inspection is separate from persistent selection, so inspecting another object does not clear the selected widget or Inspector state.
+
 ## Supported Page formats
 
 - HTML / HTM
@@ -43,8 +45,8 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 hierarchy, `.prj`, View labels, Preview source-edit, and menu-bar QA: 18/18
+- v0.5.16 hierarchy, hover inspection, Preview source-edit, and menu-bar QA: 20/20
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional and adversarial QA: 23/23
+- Source Electron functional and adversarial QA: 25/25
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS
