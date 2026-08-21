@@ -6,6 +6,7 @@
 
   const refs = {
     workspace: $('#workspace'), tree: $('#tree'), inspector: $('#inspector'),
+    sidebarToggleTop: $('#sidebarToggleTop'), inspectorToggleTop: $('#inspectorToggleTop'),
     inspectorBody: $('#inspectorBody'), inspectorActions: $('#inspectorActions'),
     sidebarResizer: $('#sidebarResizer'), inspectorResizer: $('#inspectorResizer'),
     splitDivider: $('#splitDivider'), codeDivider: $('#codeDivider'),
@@ -170,7 +171,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ language:'ko', scale:1, theme:'dark', inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
+      preferences:{ language:'ko', scale:1, theme:'dark', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -342,6 +343,19 @@
       refs.workspace.classList.add('inspector-collapsed');
     }else{
       refs.workspace.classList.remove('inspector-collapsed');
+    }
+    refs.workspace.classList.toggle('sidebar-collapsed',!!state.preferences.sidebarCollapsed);
+    refs.sidebarToggleTop?.classList.toggle('is-collapsed',!!state.preferences.sidebarCollapsed);
+    refs.sidebarToggleTop?.setAttribute('aria-expanded',String(!state.preferences.sidebarCollapsed));
+    if(refs.sidebarToggleTop){
+      refs.sidebarToggleTop.title=state.preferences.sidebarCollapsed?'Show left panel':'Hide left panel';
+      refs.sidebarToggleTop.setAttribute('aria-label',refs.sidebarToggleTop.title);
+    }
+    refs.inspectorToggleTop?.classList.toggle('is-collapsed',!!state.preferences.inspectorCollapsed);
+    refs.inspectorToggleTop?.setAttribute('aria-expanded',String(!state.preferences.inspectorCollapsed));
+    if(refs.inspectorToggleTop){
+      refs.inspectorToggleTop.title=state.preferences.inspectorCollapsed?'Show Inspector':'Hide Inspector';
+      refs.inspectorToggleTop.setAttribute('aria-label',refs.inspectorToggleTop.title);
     }
   }
 
@@ -4923,7 +4937,8 @@
 
   function dynamicInspectorMax(){
     const rect=refs.workspace.getBoundingClientRect();
-    return Math.max(MIN_INSPECTOR_WIDTH,Math.min(MAX_INSPECTOR_WIDTH,rect.width-sidebarWidth-MIN_MAIN_WIDTH-(SPLITTER_HANDLE_PX*2)));
+    const sidebarSpace=state.preferences.sidebarCollapsed?0:(sidebarWidth+SPLITTER_HANDLE_PX);
+    return Math.max(MIN_INSPECTOR_WIDTH,Math.min(MAX_INSPECTOR_WIDTH,rect.width-sidebarSpace-MIN_MAIN_WIDTH-SPLITTER_HANDLE_PX));
   }
 
   function ratioBounds(container,minFirst,minSecond){
@@ -5032,6 +5047,7 @@
   }
 
   refs.sidebarResizer.addEventListener('pointerdown',event=>{
+    if(state.preferences.sidebarCollapsed) return;
     const rect=refs.workspace.getBoundingClientRect();
     beginResizeSession({
       event,
@@ -5190,6 +5206,7 @@
       const dir=e.key==='ArrowLeft'?-1:1;
 
       if(type==='sidebar'){
+        if(state.preferences.sidebarCollapsed) return;
         sidebarWidth=e.key==='Home'?260:clamp(sidebarWidth+(dir*10),MIN_SIDEBAR_WIDTH,dynamicSidebarMax());
         state.preferences.sidebarWidth=Math.round(sidebarWidth);
       }else if(type==='inspector'){
@@ -5216,12 +5233,24 @@
     updateWorkspaceColumns();
     persist();
   }
+  function toggleSidebar(){
+    state.preferences.sidebarCollapsed=!state.preferences.sidebarCollapsed;
+    if(!state.preferences.sidebarCollapsed){
+      sidebarWidth=clamp(sidebarWidth,MIN_SIDEBAR_WIDTH,dynamicSidebarMax());
+      state.preferences.sidebarWidth=Math.round(sidebarWidth);
+    }
+    updateWorkspaceColumns();
+    persist();
+  }
   $('#collapseInspector').onclick=toggleInspector;
   $('#inspectorToggleTop').onclick=toggleInspector;
+  $('#sidebarToggleTop').onclick=toggleSidebar;
 
 
   window.addEventListener('resize',()=>{
-    sidebarWidth=clamp(sidebarWidth,MIN_SIDEBAR_WIDTH,dynamicSidebarMax());
+    if(!state.preferences.sidebarCollapsed){
+      sidebarWidth=clamp(sidebarWidth,MIN_SIDEBAR_WIDTH,dynamicSidebarMax());
+    }
     if(!state.preferences.inspectorCollapsed){
       inspectorWidth=clamp(inspectorWidth,MIN_INSPECTOR_WIDTH,dynamicInspectorMax());
     }
