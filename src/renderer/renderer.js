@@ -1,4 +1,5 @@
 (() => {
+  performance.mark('leaf-renderer-start');
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const ROOT = null;
@@ -20,7 +21,8 @@
     viewportSizeModal: $('#viewportSizeModal'), viewportWidthInput: $('#viewportWidthInput'),
     viewportHeightInput: $('#viewportHeightInput'),
     clearHtmlModal: $('#clearHtmlModal'), clearHtmlTarget: $('#clearHtmlTarget'),
-    replaceHtmlModal: $('#replaceHtmlModal'), replaceHtmlTarget: $('#replaceHtmlTarget'),
+    replaceHtmlModal: $('#replaceHtmlModal'), replaceHtmlTarget: $('#replaceHtmlTarget'), replaceHtmlMessage: $('#replaceHtmlMessage'),
+    replaceHtmlOpenNew: $('#replaceHtmlOpenNew'),
     jiraExportModal: $('#jiraExportModal'), jiraExportSource: $('#jiraExportSource'),
     jiraExportRuntime: $('#jiraExportRuntime'), jiraExportStats: $('#jiraExportStats'),
     jiraExportWarnings: $('#jiraExportWarnings'), jiraRichPreview: $('#jiraRichPreview'),
@@ -55,7 +57,7 @@
     has(element){ return selectedElements.has(element); },
     select(element,frame,source='unknown',{toggle=false}={}){
       if(!element || ['HTML','BODY'].includes(element.tagName)) return selectedElement;
-      if(inlineTextEditSession && inlineTextEditSession.element!==element) endInlineTextEdit();
+      if(inlineTextEditSession && inlineTextEditSession.element!==element) endInlineTextEdit({commit:true,restoreSelection:false});
       const previousFrames=new Set([...selectedElements].map(item=>item?.ownerDocument?.defaultView?.frameElement).filter(Boolean));
       const sameFrame=selectedElementFrame===frame || !selectedElementFrame;
 
@@ -1337,6 +1339,29 @@
     ['single','left','right','codePreview'].forEach(updatePreviewZoomIndicator);
   }
 
+  function updateViewportFloatingInsets(slot){
+    const canvas=$(`[data-preview-canvas="${slot}"]`);
+    const frame=frameForEditSlot(slot);
+    const pane=canvas?.closest('.view-pane');
+    if(!canvas||!pane)return;
+    const outerInline=Math.max(0,canvas.offsetWidth-canvas.clientWidth);
+    const outerBlock=Math.max(0,canvas.offsetHeight-canvas.clientHeight);
+    let innerInline=0,innerBlock=0;
+    try{
+      const view=frame?.contentWindow,root=frame?.contentDocument?.scrollingElement;
+      const visual=Math.max(0,Number(frame?.dataset?.scrollbarVisualSize)||PREVIEW_SCROLLBAR_VISUAL_SIZE);
+      if(root&&view){
+        if(root.scrollHeight>view.innerHeight+1)innerInline=visual;
+        if(root.scrollWidth>view.innerWidth+1)innerBlock=visual;
+      }
+    }catch{}
+    const inline=Math.ceil(Math.max(outerInline,innerInline));
+    const block=Math.ceil(Math.max(outerBlock,innerBlock));
+    pane.style.setProperty('--viewport-scrollbar-inline',`${inline}px`);
+    pane.style.setProperty('--viewport-scrollbar-block',`${block}px`);
+    pane.dataset.floatingScrollbarInset=`${inline}x${block}`;
+  }
+
   function applyPreviewZoom(slot){
     const surface=$(`[data-preview-surface="${slot}"]`);
     const canvas=$(`[data-preview-canvas="${slot}"]`);
@@ -1347,6 +1372,7 @@
     canvas.classList.toggle('is-zoomed',zoom!==100);
     canvas.classList.toggle('is-fit',state.previewZoomMode?.[slot]==='fit');
     updatePreviewZoomIndicator(slot);
+    requestAnimationFrame(()=>updateViewportFloatingInsets(slot));
     return true;
   }
 
@@ -1421,9 +1447,15 @@
       inside.type='button';inside.textContent='+';inside.dataset.zoomIn=slot;inside.title='Zoom in';
       const fit=document.createElement('button');
       fit.type='button';fit.textContent='Fit';fit.className='viewport-zoom-fit';fit.dataset.zoomFit=slot;fit.title='Fit preview to Window';
+      const canvas=$(`[data-preview-canvas="${slot}"]`);
+      const pane=canvas?.closest('.view-pane');
+      const layer=document.createElement('div');
+      layer.className='viewport-floating-controls';layer.dataset.floatingControls=slot;
+      layer.setAttribute('aria-label','Viewport floating controls');
       indicator.replaceWith(control);
       control.append(out,inputIndicator,inside);
       control.insertAdjacentElement('afterend',fit);
+      layer.append(control,fit);pane?.appendChild(layer);
       out.addEventListener('click',e=>{e.stopPropagation();setPreviewZoom(slot,previewZoomForSlot(slot)-PREVIEW_ZOOM_STEP);});
       inside.addEventListener('click',e=>{e.stopPropagation();setPreviewZoom(slot,previewZoomForSlot(slot)+PREVIEW_ZOOM_STEP);});
       fit.addEventListener('click',e=>{e.stopPropagation();fitPreviewZoom(slot);});
@@ -1436,7 +1468,6 @@
       inputIndicator.addEventListener('change',applyTypedZoom);
       inputIndicator.addEventListener('blur',applyTypedZoom);
       inputIndicator.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();applyTypedZoom();inputIndicator.blur();}});
-      const canvas=$(`[data-preview-canvas="${slot}"]`);
       canvas?.addEventListener('wheel',event=>{
         if(!event.ctrlKey) return;
         event.preventDefault();
@@ -1444,6 +1475,8 @@
         const direction=event.deltaY<0?1:-1;
         setPreviewZoom(slot,previewZoomForSlot(slot)+(direction*PREVIEW_ZOOM_STEP),{anchor:{clientX:event.clientX,clientY:event.clientY}});
       },{passive:false});
+      canvas?.addEventListener('scroll',()=>updateViewportFloatingInsets(slot),{passive:true});
+      updateViewportFloatingInsets(slot);
     });
     updateAllPreviewZoomIndicators();
 
@@ -1451,6 +1484,7 @@
       const observer=new ResizeObserver(entries=>{
         entries.forEach(entry=>{
           const slot=entry.target.dataset.previewCanvas;
+          if(slot)updateViewportFloatingInsets(slot);
           if(slot && state.previewZoomMode?.[slot]==='fit') fitPreviewZoom(slot,{save:false});
         });
       });
@@ -1845,6 +1879,7 @@
     queueMicrotask(()=>{
       hierarchyRefreshFrames.delete(frame);
       if(activeStaticFrame()===frame)renderHierarchy();
+      const slot=previewSlotForFrame(frame);if(slot)updateViewportFloatingInsets(slot);
     });
   }
 
@@ -2475,6 +2510,24 @@
     return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
+  function installLocalAnchorNavigation(frame){
+    let doc=null;try{doc=frame?.contentDocument}catch{}
+    if(!doc||doc.__leafLocalAnchorNavigation)return false;
+    doc.__leafLocalAnchorNavigation=true;
+    doc.addEventListener('click',event=>{
+      if(canInspectFrame(frame))return;
+      const anchor=event.target?.closest?.('a[href]');
+      const raw=anchor?.getAttribute('href')?.trim()||'';
+      if(!raw.startsWith('#'))return;
+      event.preventDefault();event.stopPropagation();
+      let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
+      if(!fragment){doc.scrollingElement?.scrollTo({top:0,behavior:'auto'});return;}
+      const target=doc.getElementById(fragment)||[...doc.getElementsByName(fragment)][0];
+      target?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+    },true);
+    return true;
+  }
+
 
   function snapshotBridgeScript(token){
     const safeToken=JSON.stringify(String(token||''));
@@ -2512,6 +2565,16 @@
         });
         addEventListener('pointerdown', () => {
           parent.postMessage({__hbeViewportInput:true,token:TOKEN,kind:'activate'}, '*');
+        }, true);
+        addEventListener('click', event => {
+          const anchor=event.target&&event.target.closest&&event.target.closest('a[href]');
+          const raw=anchor&&String(anchor.getAttribute('href')||'').trim();
+          if(!raw||raw[0]!=='#')return;
+          event.preventDefault();event.stopPropagation();
+          let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
+          if(!fragment){scrollTo({top:0,behavior:'auto'});return;}
+          const target=document.getElementById(fragment)||document.getElementsByName(fragment)[0];
+          if(target)target.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
         }, true);
         addEventListener('wheel', event => {
           if(!event.ctrlKey) return;
@@ -2633,7 +2696,7 @@
     if(empty){
       configureFrameRuntime(frame,null,slot);
       updateInspectorEditControls();
-      frame.srcdoc='<!doctype html><html><body></body></html>';
+      frame.srcdoc='<!doctype html><html style="background:#020304;color-scheme:dark"><body></body></html>';
       return;
     }
     const scripted=configureFrameRuntime(frame,page,slot);
@@ -2671,6 +2734,8 @@
   function onPreviewFrameLoad(frame){
     const slot=previewSlotForFrame(frame);
     if(slot)applyPreviewScrollbarCompensation(slot);
+    if(slot)requestAnimationFrame(()=>updateViewportFloatingInsets(slot));
+    installLocalAnchorNavigation(frame);
     if(frame.dataset.previewRuntime==='direct-source-editor'){
       disconnectHierarchyObserver(frame);
       updateInspectorEditControls();
@@ -3182,6 +3247,9 @@
         if(pageHasRenderableContent(page)){
           pendingHtmlDrop={slot,pageId:page.id,result};
           refs.replaceHtmlTarget.textContent=`${page.name || page.fileName} → ${result.fileName}`;
+          if(refs.replaceHtmlMessage)refs.replaceHtmlMessage.textContent=page.source!==page.loadedSource
+            ?'The current Page has unsaved changes. Open the dropped file as a new Page to keep them, or replace the current Page.'
+            :'Open the dropped file as a new Page or replace the current Page.';
           refs.replaceHtmlModal.classList.add('show');
           setTimeout(()=>$('#replaceHtmlCancel').focus(),0);
         }else{
@@ -3193,6 +3261,13 @@
 
   function closeReplaceHtmlDialog(){refs.replaceHtmlModal.classList.remove('show');pendingHtmlDrop=null;}
   $('#replaceHtmlCancel').onclick=closeReplaceHtmlDialog;
+  refs.replaceHtmlOpenNew.onclick=async()=>{
+    const pending=pendingHtmlDrop;
+    if(!pending)return closeReplaceHtmlDialog();
+    closeReplaceHtmlDialog();
+    await addHtmlResultToDocument(pending.result,pending.slot);
+    showToast('Dropped file opened as a new Page');
+  };
   $('#replaceHtmlConfirm').onclick=()=>{
     const pending=pendingHtmlDrop;
     if(!pending) return closeReplaceHtmlDialog();
@@ -3201,7 +3276,7 @@
     pushUndo(page);
     page.name=pending.result.title;page.fileName=pending.result.fileName;
     page.source=pending.result.source||'';page.loadedSource=pending.result.loadedSource??pending.result.source??'';
-    page.baseUrl=pending.result.baseUrl;page.sourcePath=pending.result.filePath;page.previewUrl=pending.result.previewUrl||null;page.documentType=pending.result.documentType||'html';page.isEmpty=false;
+    page.baseUrl=pending.result.baseUrl;page.sourcePath=pending.result.filePath;page.previewUrl=pending.result.previewUrl||null;page.documentType=pending.result.documentType||'html';page.initialSnapshotPath=pending.result.initialSnapshotPath||null;page.isEmpty=false;
     selectedTreeNode=page.id;
     closeReplaceHtmlDialog();clearInspector();renderAll();persist();showToast('Page replaced');
   };
@@ -3258,7 +3333,7 @@
     {key:'webkitTextStrokeWidth',label:'Text Stroke Width',property:'webkitTextStrokeWidth'}
   ];
   const INSPECTOR_KEYS=[
-    'objectName','text','fontFamily','fontSize','fontWeight','fontStyle',
+    'objectName','text','linkHref','linkTarget','fontFamily','fontSize','fontWeight','fontStyle',
     ...TEXT_CSS_FIELDS.map(field=>field.key),
     'marginTop','marginRight','marginBottom','marginLeft'
   ];
@@ -3952,7 +4027,7 @@
     return true;
   }
 
-  function endInlineTextEdit({commit=true}={}){
+  function endInlineTextEdit({commit=true,restoreSelection=true}={}){
     const session=inlineTextEditSession;
     if(!session) return;
     const {element,frame,page,listeners}=session;
@@ -3974,7 +4049,7 @@
       syncFrameToPage(frame,page,{mutationKind:'inline-text-edit'});
       renderVisibleFramesForPage(page.id,frame);markJiraCheckStale();persist();renderHierarchy();
     }
-    if(element.isConnected){
+    if(restoreSelection&&element.isConnected){
       SelectionManager.select(element,frame,'inline-text');
       if(!commit)setTimeout(()=>{
         if(element.isConnected&&!inlineTextEditSession)SelectionManager.select(element,frame,'inline-text-cancel');
@@ -4002,11 +4077,58 @@
     el.insertBefore(fragment,before);editable.forEach(node=>node.remove());
   }
 
+  function hyperlinkAnchorForElement(el){
+    if(!el)return null;
+    if(el.tagName==='A')return el;
+    const parent=el.parentElement;
+    return parent?.tagName==='A'&&parent.children.length===1?parent:null;
+  }
+
+  function setOptionalAttribute(element,name,value){
+    if(value===null||value===undefined||value==='')element.removeAttribute(name);
+    else element.setAttribute(name,String(value));
+  }
+
+  function restoreDraftHyperlink(draft){
+    const el=draft?.element;if(!el?.isConnected)return;
+    const current=hyperlinkAnchorForElement(el);
+    const original=draft.originalLinkAnchor;
+    if(current&&current!==el&&current!==original&&current.children.length===1)current.replaceWith(el);
+    if(original?.isConnected){
+      setOptionalAttribute(original,'href',draft.originalLinkHref);
+      setOptionalAttribute(original,'target',draft.originalLinkTarget);
+      setOptionalAttribute(original,'rel',draft.originalLinkRel);
+    }
+  }
+
+  function applyDraftHyperlink(draft,rawHref,rawTarget){
+    const el=draft?.element;if(!el?.isConnected)return false;
+    const href=String(rawHref||'').trim();
+    let anchor=hyperlinkAnchorForElement(el);
+    if(!href){
+      if(anchor&&anchor!==el&&anchor.children.length===1)anchor.replaceWith(el);
+      else if(anchor){anchor.removeAttribute('href');anchor.removeAttribute('target');anchor.removeAttribute('rel');}
+      return true;
+    }
+    if(!anchor){
+      anchor=el.ownerDocument.createElement('a');
+      el.parentNode?.insertBefore(anchor,el);anchor.appendChild(el);
+    }
+    const target=rawTarget==='_blank'?'_blank':'_self';
+    anchor.setAttribute('href',href);anchor.setAttribute('target',target);
+    if(target==='_blank')anchor.setAttribute('rel','noopener noreferrer');
+    else anchor.removeAttribute('rel');
+    return true;
+  }
+
   function getInspectorValues(el,frame){
     const cs=frame.contentWindow.getComputedStyle(el);
+    const link=hyperlinkAnchorForElement(el);
     const values={
       objectName:objectDisplayName(el),
       text:directText(el),
+      linkHref:link?.getAttribute('href')||'',
+      linkTarget:link?.getAttribute('target')||'_self',
       fontFamily:cs.fontFamily.split(',')[0].replace(/["']/g,'').trim(),
       fontSize:String(parseFloat(cs.fontSize)||0),
       fontWeight:String(cs.fontWeight||'400'),
@@ -4022,6 +4144,7 @@
 
   function createInspectorDraft(el,frame){
     const savedValues=getInspectorValues(el,frame);
+    const link=hyperlinkAnchorForElement(el);
     return {
       selectedElementId:ensureInspectorElementId(el),
       pageId:frameToPageId(frame),
@@ -4036,6 +4159,10 @@
       originalStyleAttr:el.getAttribute('style'),
       originalDirectText:directText(el),
       originalObjectNameAttr:el.getAttribute('data-hbe-name'),
+      originalLinkAnchor:link,
+      originalLinkHref:link?.getAttribute('href')??null,
+      originalLinkTarget:link?.getAttribute('target')??null,
+      originalLinkRel:link?.getAttribute('rel')??null,
       transactionStarted:false
     };
   }
@@ -4397,6 +4524,9 @@
         <div class="property-group-content nested-groups">
           ${inspectorSubgroup('General/Identity','Identity',propertyRow('objectName','Object Name',inspectorDraft.values.objectName))}
           ${inspectorSubgroup('General/Content','Content',propertyRow('text','Text',inspectorDraft.values.text,{type:'textarea'}))}
+          ${inspectorSubgroup('General/Hyperlink','Hyperlink',`
+            ${propertyRow('linkHref','Link URL',inspectorDraft.values.linkHref)}
+            ${propertyRow('linkTarget','Open In',inspectorDraft.values.linkTarget,{options:['_self','_blank']})}`,false)}
         </div>
       </details>
 
@@ -4462,6 +4592,27 @@
     });
   }
 
+  function handleInspectorNumberWheel(event){
+    const control=event.target?.closest?.('input');
+    if(!control||control.disabled||control.readOnly)return;
+    if(control.type!=='number'&&control.inputMode!=='decimal')return;
+    const current=Number.parseFloat(control.value);
+    if(!Number.isFinite(current))return;
+    event.preventDefault();event.stopPropagation();
+    const declared=Number.parseFloat(control.step);
+    const baseStep=Number.isFinite(declared)&&declared>0?declared:1;
+    const step=event.altKey?baseStep/10:event.shiftKey?baseStep*10:baseStep;
+    const min=Number.parseFloat(control.min),max=Number.parseFloat(control.max);
+    let next=current+(event.deltaY<0?step:-step);
+    if(Number.isFinite(min))next=Math.max(min,next);
+    if(Number.isFinite(max))next=Math.min(max,next);
+    const precision=step<1?Math.min(4,String(step).split('.')[1]?.length||1):0;
+    control.value=String(Number(next.toFixed(precision)));
+    control.dispatchEvent(new Event(control.dataset.draftKey?'input':'change',{bubbles:true}));
+  }
+
+  refs.inspectorBody.addEventListener('wheel',handleInspectorNumberWheel,{passive:false});
+
   function updateDirtyFields(){
     if(!inspectorDraft) return;
     inspectorDraft.dirtyFields=INSPECTOR_KEYS.filter(
@@ -4485,6 +4636,18 @@
     const errors={};
 
     if(!String(v.objectName??'').trim()) errors.objectName='Object Name is required.';
+
+    const href=String(v.linkHref??'').trim();
+    if(href){
+      if(/[\u0000-\u001f\u007f]/.test(href))errors.linkHref='Link contains unsupported control characters.';
+      else{
+        try{
+          const url=new URL(href,'https://leaf.invalid/');
+          if(!['http:','https:','mailto:','tel:'].includes(url.protocol))errors.linkHref='Use a relative, #anchor, HTTP(S), mailto, or tel link.';
+        }catch{errors.linkHref='Enter a valid link.';}
+      }
+    }
+    if(!['_self','_blank'].includes(String(v.linkTarget||'_self')))errors.linkTarget='Choose Same View or New Window.';
 
     if(!String(v.fontFamily??'').trim()) errors.fontFamily='Font Family is required.';
 
@@ -4547,6 +4710,8 @@
     if(draft.originalObjectNameAttr===null) el.removeAttribute('data-hbe-name');
     else el.setAttribute('data-hbe-name',draft.originalObjectNameAttr);
 
+    restoreDraftHyperlink(draft);
+
     replaceDirectTextWithBreaks(el,draft.originalDirectText,draft.frame.contentDocument);
   }
 
@@ -4562,6 +4727,10 @@
 
     if(String(v.text)!==String(s.text)){
       replaceDirectTextWithBreaks(el,v.text,draft.frame.contentDocument);
+    }
+
+    if(String(v.linkHref)!==String(s.linkHref)||String(v.linkTarget)!==String(s.linkTarget)){
+      applyDraftHyperlink(draft,v.linkHref,v.linkTarget);
     }
 
     if(String(v.fontFamily)!==String(s.fontFamily)) el.style.fontFamily=v.fontFamily.trim();
@@ -4671,6 +4840,11 @@
     inspectorDraft.originalStyleAttr=inspectorDraft.element.getAttribute('style');
     inspectorDraft.originalDirectText=directText(inspectorDraft.element);
     inspectorDraft.originalObjectNameAttr=inspectorDraft.element.getAttribute('data-hbe-name');
+    const link=hyperlinkAnchorForElement(inspectorDraft.element);
+    inspectorDraft.originalLinkAnchor=link;
+    inspectorDraft.originalLinkHref=link?.getAttribute('href')??null;
+    inspectorDraft.originalLinkTarget=link?.getAttribute('target')??null;
+    inspectorDraft.originalLinkRel=link?.getAttribute('rel')??null;
     updateDirtyFields();
     inspectorDraft.validationErrors={};
 
@@ -5756,4 +5930,11 @@
   updateAllPreviewZoomIndicators();
   requestAnimationFrame(()=>{renderAllPreviewSizes();updateAllPreviewZoomIndicators();renderHierarchy();});
   persist();
+  performance.mark('leaf-renderer-ready');
+  performance.measure('leaf-renderer-bootstrap','leaf-renderer-start','leaf-renderer-ready');
+  setTimeout(()=>{
+    document.documentElement.dataset.leafReady='true';
+    const startup=$('#appStartup');startup?.classList.add('is-complete');
+    setTimeout(()=>startup?.remove(),220);
+  },0);
 })();

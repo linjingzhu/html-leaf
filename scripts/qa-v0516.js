@@ -1,12 +1,19 @@
 const fs=require('fs');
 const path=require('path');
+const vm=require('vm');
 const {spawnSync}=require('child_process');
 const root=path.join(__dirname,'..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const html=read('src/renderer/index.html');
 const js=read('src/renderer/renderer.js');
+const css=read('src/renderer/styles.css');
 const main=read('src/main.js');
 const pkg=JSON.parse(read('package.json'));
+const registryContext={window:{},crypto:{randomUUID:()=>''}};
+vm.runInNewContext(read('src/renderer/widget-registry.js'),registryContext);
+const widgetDefinitions=registryContext.window.WidgetRegistry.all();
+const widgetTypes=new Set(widgetDefinitions.map(item=>item.type));
+const widgetCategories=new Set(widgetDefinitions.map(item=>item.category));
 let passed=0;
 function check(name,condition){if(!condition){console.error(`FAIL ${name}`);process.exit(1);}passed++;console.log(`PASS ${name}`);}
 
@@ -108,10 +115,28 @@ check('Markdown and PDF Edit controls are enabled in their visual Views',
   js.includes("const pdfAvailable=page?.documentType==='pdf'&&!!frame")&&js.includes("frame.dataset.previewRuntime=isPdfNativeEdit(page,slot)?'pdf-native-editor':'document-readonly'")&&
   js.includes('Use the native PDF toolbar to highlight, draw, annotate, fill, sign'));
 
+check('Startup status is present before the editor initializes',html.includes('id="appStartup"')&&html.includes('Starting Leaf')&&html.includes('Preparing the editor and document views'));
+check('Renderer loading is deferred until the startup screen can paint',html.includes('setTimeout(loadRenderer, 80)')&&html.includes("script.src = './renderer.js'"));
+check('Startup status closes deterministically after bootstrap',js.includes("performance.measure('leaf-renderer-bootstrap'")&&js.includes("document.documentElement.dataset.leafReady='true'")&&js.includes("startup?.classList.add('is-complete')"));
+check('Preview fallback surfaces use the darkest background',css.includes('iframe{width:100%;height:100%;border:0;background:#020304;color-scheme:dark')&&css.includes('position:relative;flex:none;background:#020304')&&js.includes('<html style="background:#020304;color-scheme:dark">'));
+check('Objects palette contains forty practical components',widgetDefinitions.length===40&&['Document','Media','Actions & Navigation','Forms','Data Display','Layout'].every(category=>widgetCategories.has(category)));
+check('Objects palette covers common navigation and form controls',['button','link','breadcrumb','navigation','tabs','pagination','form','textInput','textArea','select','checkbox','radioGroup','switch','search'].every(type=>widgetTypes.has(type)));
+check('Objects palette covers common content, data, and layout controls',['bulletedList','numberedList','taskList','descriptionList','video','progress','meter','stat','card','section','columns','spacer','hero'].every(type=>widgetTypes.has(type)));
+check('Zoom controls live outside the scrolling canvas',js.includes("layer.className='viewport-floating-controls'")&&js.includes('layer.append(control,fit);pane?.appendChild(layer)')&&css.includes('.viewport-floating-controls{'));
+check('Floating controls reserve outer and document scrollbar insets',js.includes('function updateViewportFloatingInsets(slot)')&&js.includes('root.scrollHeight>view.innerHeight+1')&&css.includes('var(--viewport-scrollbar-inline,0px)')&&css.includes('var(--viewport-scrollbar-block,0px)'));
+check('Inspector mouse wheel adjusts numeric values live',js.includes('function handleInspectorNumberWheel(event)')&&js.includes("control.dispatchEvent(new Event(control.dataset.draftKey?'input':'change'"));
+check('Inspector exposes safe hyperlink URL and target properties',js.includes("propertyRow('linkHref','Link URL'")&&js.includes("propertyRow('linkTarget','Open In'")&&js.includes("['http:','https:','mailto:','tel:'].includes(url.protocol)")&&js.includes("anchor.setAttribute('rel','noopener noreferrer')"));
+check('Non-anchor objects can be wrapped and unwrapped as real links',js.includes('function applyDraftHyperlink(')&&js.includes("anchor=el.ownerDocument.createElement('a')")&&js.includes('anchor.replaceWith(el)'));
+check('Local contents links scroll without navigating the iframe',js.includes('function installLocalAnchorNavigation(frame)')&&js.includes("if(!raw.startsWith('#'))return")&&js.includes("target?.scrollIntoView({block:'start'"));
+check('Script-isolated previews receive local-anchor protection',js.includes("raw[0]!=='#'")&&js.includes('document.getElementById(fragment)||document.getElementsByName(fragment)[0]'));
+check('Occupied View drop offers Cancel, Open as New, and Replace',html.includes('id="replaceHtmlCancel"')&&html.includes('id="replaceHtmlOpenNew"')&&html.includes('id="replaceHtmlConfirm"'));
+check('Drop choices route to separate new-Page and replace transactions',js.includes('refs.replaceHtmlOpenNew.onclick=async')&&js.includes('await addHtmlResultToDocument(pending.result,pending.slot)')&&js.includes("showToast('Page replaced')"));
+check('Selecting another object commits text without reselecting the old object',js.includes('endInlineTextEdit({commit:true,restoreSelection:false})')&&js.includes('function endInlineTextEdit({commit=true,restoreSelection=true}={})'));
+
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
 const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export-v0516.js')],{stdio:'inherit'});
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
 const zoomScrollbar=spawnSync(process.execPath,[path.join(__dirname,'qa-zoom-scrollbar-v0516.js')],{stdio:'inherit'});
 check('zoom-independent document scrollbar regression QA',zoomScrollbar.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/34 PASS`);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/51 PASS`);

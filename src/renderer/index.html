@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+<div class="app-startup" id="appStartup" role="status" aria-live="polite">
+  <div class="app-startup-mark" aria-hidden="true">L</div>
+  <div class="app-startup-copy">
+    <strong>Starting Leaf</strong>
+    <span id="appStartupMessage">Preparing the editor and document views…</span>
+  </div>
+  <div class="app-startup-progress" aria-hidden="true"><i></i></div>
+</div>
 <div class="app" id="appRoot">
   <header class="menubar">
     <nav class="main-menu" id="mainMenu" aria-label="Application menu">
@@ -471,12 +479,13 @@
 
 <div class="modal-backdrop" id="replaceHtmlModal" role="presentation">
   <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="replaceHtmlTitle">
-    <h3 id="replaceHtmlTitle">Replace loaded Page?</h3>
-    <p>The current Viewport already contains a page. Replace it with the dropped page?</p>
+    <h3 id="replaceHtmlTitle">Open dropped Page</h3>
+    <p id="replaceHtmlMessage">The current View already contains a Page. Open the dropped file as a new Page or replace the current Page.</p>
     <div class="clear-html-target" id="replaceHtmlTarget"></div>
     <div class="modal-actions">
       <button class="btn" id="replaceHtmlCancel">Cancel</button>
-      <button class="btn primary" id="replaceHtmlConfirm">Replace</button>
+      <button class="btn" id="replaceHtmlOpenNew">Open as New Page</button>
+      <button class="btn danger" id="replaceHtmlConfirm">Replace Current</button>
     </div>
   </div>
 </div>
@@ -541,6 +550,21 @@
 <script src="./jira-compat.js"></script>
 <script src="./semantic-document.js"></script>
 <script src="./jira-export.js"></script>
-<script src="./renderer.js"></script>
+<script>
+  (() => {
+    const loadRenderer = () => {
+      const script = document.createElement('script');
+      script.src = './renderer.js';
+      script.async = true;
+      script.onerror = () => {
+        const message = document.querySelector('#appStartupMessage');
+        if (message) message.textContent = 'Leaf could not start. Restart the application.';
+        document.querySelector('#appStartup')?.classList.add('startup-error');
+      };
+      document.body.appendChild(script);
+    };
+    setTimeout(loadRenderer, 80);
+  })();
+</script>
 </body>
 </html>
