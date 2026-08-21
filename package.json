@@ -2,7 +2,7 @@
   "name": "leaf",
   "version": "0.5.16",
   "private": true,
-  "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/PDF/Animated WebP page support.",
+  "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/PDF page support.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",

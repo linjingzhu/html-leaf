@@ -80,20 +80,19 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf', '.webp']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf']);
 
 function documentTypeForPath(filePath) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
   if (extension === '.html' || extension === '.htm') return 'html';
   if (extension === '.md' || extension === '.markdown') return 'markdown';
   if (extension === '.pdf') return 'pdf';
-  if (extension === '.webp') return 'webp';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, PDF, and Animated WebP pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -102,12 +101,12 @@ async function readDocumentPath(filePath) {
     title: path.basename(filePath, path.extname(filePath)),
     documentType,
     baseUrl: baseUrlForFile(filePath),
-    previewUrl: documentType === 'pdf' || documentType === 'webp' ? pathToFileURL(filePath).href : null,
+    previewUrl: documentType === 'pdf' ? pathToFileURL(filePath).href : null,
     initialSnapshotPath: null
   };
-  if (documentType === 'pdf' || documentType === 'webp') {
+  if (documentType === 'pdf') {
     const stat = await fs.stat(filePath);
-    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF and WebP pages must be files smaller than 500 MB.');
+    if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF pages must be files smaller than 500 MB.');
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
@@ -120,7 +119,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf', 'webp'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));

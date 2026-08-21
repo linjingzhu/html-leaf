@@ -40,16 +40,11 @@ check('Legacy leaf paths migrate through Save As prj',
 check('Trust Foundation remains active',
   main.includes('contextIsolation: true')&&main.includes('sandbox: true')&&main.includes('webSecurity: true')&&
   read('src/renderer/source-fidelity.js').includes('stripEditorArtifactsFromDocument'));
-check('Animated WebP is accepted as a binary Page format',
-  main.includes("'.webp'")&&main.includes("return 'webp'")&&main.includes("'pdf', 'webp'")&&
-  main.includes("'pdf', 'webp']")&&js.includes("['html','markdown','pdf','webp']"));
-check('Animated WebP preview preserves the original animation',
-  js.includes("if(page.documentType==='webp')")&&js.includes('img-src file: data: blob:')&&
-  js.includes('<img src="${esc(imageUrl)}"')&&js.includes('original animation preserved'));
-check('Animated WebP supports drag-drop and binary Save As',
-  js.includes("/\\.(html?|md|markdown|pdf|webp)$/i")&&js.includes('window.electronAPI.readDroppedPage(file)')&&
-  js.includes("['pdf','webp'].includes(page.documentType)")&&js.includes('copyDocumentAs'));
+check('Supported Page formats remain HTML, Markdown, and PDF',
+  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.pdf'])")&&
+  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'pdf']")&&
+  !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy, .prj, and Animated WebP QA: ${passed}/16 PASS`);
+console.log(`Leaf v0.5.16 hierarchy and .prj QA: ${passed}/14 PASS`);

@@ -228,10 +228,10 @@
       if(page.type==='page'){
         page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
-        if(!['html','markdown','pdf','webp'].includes(page.documentType)){
-          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.webp$/i.test(page.fileName||'')?'webp':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        if(!['html','markdown','pdf'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
         }
-        if(['pdf','webp'].includes(page.documentType)&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
+        if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
       }
     }));
     s.views={...fallback.views,...(s.views||{})};
@@ -642,13 +642,13 @@
   async function savePage(forceAs){
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
-    if(['pdf','webp'].includes(page.documentType)&&!forceAs){showToast(`${page.documentType==='webp'?'Animated WebP':'PDF'} pages are read-only. Use Save As to copy the file.`);return false;}
+    if(page.documentType==='pdf'&&!forceAs){showToast('PDF pages are read-only. Use Save As to copy the file.');return false;}
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
           let filePath=null;
-          if(['pdf','webp'].includes(page.documentType)){
-            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.${page.documentType}`});
+          if(page.documentType==='pdf'){
+            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
           }else if(page.documentType==='markdown'){
             filePath=forceAs||!page.sourcePath
               ?await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
@@ -661,7 +661,7 @@
           if(!filePath){resolve(false);return;}
           page.sourcePath=filePath;
           page.fileName=filePath.split(/[\\/]/).pop()||page.fileName;
-          if(['pdf','webp'].includes(page.documentType))page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
+          if(page.documentType==='pdf')page.previewUrl=`file:///${String(filePath).replace(/\\/g,'/')}`;
           else page.loadedSource=page.source;
           renderAll();persist();showToast(forceAs?'Page saved as new file':'Page saved');resolve(true);
         }catch(error){console.error('Page save failed',error);showToast(`Save failed: ${error.message}`);resolve(false);}
@@ -797,11 +797,11 @@
     $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
-  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf|webp)$/i.test(file.name||'');}
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf)$/i.test(file.name||'');}
 
   async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, PDF, or Animated WebP pages');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, or PDF pages');return;}
     try{
       for(const file of files){
         const result=await window.electronAPI.readDroppedPage(file);
@@ -931,7 +931,7 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='webp'?'WP':node.documentType==='markdown'?'MD':'◇';
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':'◇';
       row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
@@ -2269,7 +2269,7 @@
   }
 
   function pageHasRenderableContent(page){
-    return !!page && !page.isEmpty && (['pdf','webp'].includes(page.documentType)?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
+    return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
 
@@ -2322,10 +2322,6 @@
 
   function buildPreviewSource(page,{allowScripts=false,bridgeToken=''}={}){
     if(!page) return '<!doctype html><html><body></body></html>';
-    if(page.documentType==='webp'){
-      const imageUrl=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
-      return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob:; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;background:#111;overflow:auto}body{display:flex;align-items:center;justify-content:center}img{display:block;max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img src="${esc(imageUrl)}" alt="${esc(page.name||page.fileName||'Animated WebP')}"></body></html>`;
-    }
     if(page.documentType==='markdown'){
       const rich=window.JiraExport?.markdownToRichHtml?.(page.source||'')||`<pre>${esc(page.source||'')}</pre>`;
       return `<!doctype html><html><head><base href="${esc(page.baseUrl||'')}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline'; font-src file: data: https: http:;"><style>html{color-scheme:light}body{max-width:920px;margin:0 auto;padding:42px 48px;color:#20242a;background:#fff;font:15px/1.65 system-ui,-apple-system,'Segoe UI',sans-serif}img{max-width:100%}pre{overflow:auto;padding:14px;background:#f4f5f7;border-radius:6px}code{font-family:Consolas,monospace}table{border-collapse:collapse}th,td{border:1px solid #d9dde3;padding:7px 9px}</style></head><body>${rich}</body></html>`;
@@ -2346,7 +2342,7 @@
       frame.closest('.view-pane')?.classList.remove('scripted-preview');
       frame.dataset.previewRuntime='document-readonly';
       const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
-      if(page.documentType==='markdown'||page.documentType==='webp')frame.setAttribute('sandbox','allow-same-origin');
+      if(page.documentType==='markdown')frame.setAttribute('sandbox','allow-same-origin');
       else frame.removeAttribute('sandbox');
       return false;
     }
@@ -2397,12 +2393,6 @@
       frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
       frame.removeAttribute('srcdoc');
       frame.src=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
-      return;
-    }
-    if(page.documentType==='webp'){
-      frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
-      frame.removeAttribute('src');
-      frame.srcdoc=buildPreviewSource(page);
       return;
     }
     frame.removeAttribute('src');
@@ -2582,7 +2572,7 @@
     });
   }
   function closeClearHtmlDialog(){ refs.clearHtmlModal.classList.remove('show'); pendingClearPageId=null; }
-  function pageHasUnsavedChanges(page){ return !['pdf','webp'].includes(page?.documentType)&&String(page?.source||'')!==String(page?.loadedSource||''); }
+  function pageHasUnsavedChanges(page){ return page?.documentType!=='pdf'&&String(page?.source||'')!==String(page?.loadedSource||''); }
   function clearLoadedHtml(){
     const page=pageById(pendingClearPageId);
     if(!page){ closeClearHtmlDialog(); return; }
@@ -2618,10 +2608,10 @@
     const pane=$('.code-editor-pane');
     const empty=!page || page.isEmpty;
     pane?.classList.toggle('is-empty', empty);
-    const binaryNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:page?.documentType==='webp'?`Animated WebP page (read-only; original animation preserved)\n${page.sourcePath||page.fileName||''}`:'';
-    refs.source.value=binaryNotice||(page?.source||'');
-    refs.source.readOnly=['pdf','webp'].includes(page?.documentType);
-    refs.source.classList.toggle('read-only',['pdf','webp'].includes(page?.documentType));
+    const pdfNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:'';
+    refs.source.value=pdfNotice||(page?.source||'');
+    refs.source.readOnly=page?.documentType==='pdf';
+    refs.source.classList.toggle('read-only',page?.documentType==='pdf');
     const codeFileName=$('#codeFileName');if(codeFileName)codeFileName.textContent=page?.fileName||'No page selected';
     refs.dirty.hidden=true;
     updateLineRail();syncLineRailScroll();updateCodeSearchStatus();
@@ -2640,7 +2630,7 @@
   });
   refs.source.oninput=()=>{
     const page=pageById(state.views.codePage);if(!page)return;
-    if(['pdf','webp'].includes(page.documentType))return;
+    if(page.documentType==='pdf')return;
     pushUndo(page);page.source=refs.source.value;page.isEmpty=!(page.source||'').trim();$('.code-editor-pane')?.classList.toggle('is-empty',page.isEmpty);refs.dirty.hidden=false;updateLineRail();updateClearButtons();persist();
     updateCodeSearchStatus();
     if(state.views.codePreview===page.id)setTimeout(()=>renderFrame(refs.codePreviewFrame,page.id),220);
@@ -2744,7 +2734,7 @@
   }
 
   // ----- Explorer Page Drag & Drop -----
-  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|pdf|webp)$/i.test(file.name || ''); }
+  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|pdf)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
@@ -2757,7 +2747,7 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Drop an HTML, Markdown, PDF, or Animated WebP page');
+    if(!file) return showToast('Drop an HTML, Markdown, or PDF page');
 
     withUnsavedInspectorGuard(async()=>{
       try{

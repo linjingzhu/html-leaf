@@ -1,6 +1,6 @@
 # Leaf v0.5.16
 
-## v0.5.16 — Project File Hierarchy and Animated WebP
+## v0.5.16 — Project File Hierarchy
 
 Leaf now uses the final workspace hierarchy and shortcut ownership:
 
@@ -14,9 +14,7 @@ Project (.prj)                       Ctrl+N
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the Project.
 - `Ctrl+Shift+N` creates a Page under the currently selected object in the active Document.
 - New Projects save as `.prj`; legacy `.leaf`, `.hbeproj`, and JSON projects remain openable and migrate through Save As.
-- Animated `.webp` files can be imported, dragged into Projects or Viewports, previewed, cleared, and copied with Save Page As.
-- WebP animation is preserved by rendering the original local binary through Chromium rather than re-encoding it.
-- PDF and WebP Pages are read-only in Code View; their original files remain unchanged.
+- Supported Page formats remain HTML, Markdown, and PDF.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
