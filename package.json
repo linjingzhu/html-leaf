@@ -10,6 +10,8 @@
     "qa": "node scripts/qa-v0516.js",
     "qa:fidelity": "node scripts/qa-source-fidelity.js",
     "qa:zoom-scrollbar": "node scripts/qa-zoom-scrollbar-v0516.js",
+    "qa:theme-codex": "node scripts/qa-theme-codex-v0516.js",
+    "qa:e2e-theme-codex": "node scripts/e2e-theme-codex-v0516.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
     "dist:win": "electron-builder --win nsis zip --x64 --publish never"
   },

@@ -98,9 +98,9 @@ check('Hierarchy observes Page load and author DOM changes immediately',
 check('Shift resize snaps dragged edges to nearby object alignment guides',
   js.includes('const snapAdjustment=(position,guides)=>')&&js.includes("if(moveEvent.shiftKey&&(direction.includes('e')||direction.includes('w')))")&&
   js.includes("if(moveEvent.shiftKey&&(direction.includes('n')||direction.includes('s')))"));
-check('Edit outline is 3px and View tool rows are 20 percent taller',
+check('Edit outline is 2px and View tool rows are 20 percent taller',
   read('src/renderer/styles.css').includes('--view-head-h:34px')&&
-  read('src/renderer/styles.css').includes('outline:3px solid #ff3f46')&&
+  read('src/renderer/styles.css').includes('outline:2px solid #ff3f46')&&
   read('src/renderer/styles.css').includes('height:var(--view-head-h);flex:0 0 var(--view-head-h)'));
 check('Splitters reserve a visible eight-pixel gutter between panes',
   read('src/renderer/styles.css').includes('--splitter-hit:8px')&&
@@ -118,7 +118,7 @@ check('Markdown and PDF Edit controls are enabled in their visual Views',
 check('Startup status is present before the editor initializes',html.includes('id="appStartup"')&&html.includes('Starting Leaf')&&html.includes('Preparing the editor and document views'));
 check('Renderer loading is deferred until the startup screen can paint',html.includes('setTimeout(loadRenderer, 80)')&&html.includes("script.src = './renderer.js'"));
 check('Startup status closes deterministically after bootstrap',js.includes("performance.measure('leaf-renderer-bootstrap'")&&js.includes("document.documentElement.dataset.leafReady='true'")&&js.includes("startup?.classList.add('is-complete')"));
-check('Preview fallback surfaces use the darkest background',css.includes('iframe{width:100%;height:100%;border:0;background:#020304;color-scheme:dark')&&css.includes('position:relative;flex:none;background:#020304')&&js.includes('<html style="background:#020304;color-scheme:dark">'));
+check('Preview fallback surfaces follow the harmonious canvas token',css.includes('iframe{width:100%;height:100%;border:0;background:var(--canvas);color-scheme:dark')&&css.includes('position:relative;flex:none;background:var(--canvas)')&&js.includes('<html style="background:transparent;color-scheme:dark">'));
 check('Objects palette contains forty practical components',widgetDefinitions.length===40&&['Document','Media','Actions & Navigation','Forms','Data Display','Layout'].every(category=>widgetCategories.has(category)));
 check('Objects palette covers common navigation and form controls',['button','link','breadcrumb','navigation','tabs','pagination','form','textInput','textArea','select','checkbox','radioGroup','switch','search'].every(type=>widgetTypes.has(type)));
 check('Objects palette covers common content, data, and layout controls',['bulletedList','numberedList','taskList','descriptionList','video','progress','meter','stat','card','section','columns','spacer','hero'].every(type=>widgetTypes.has(type)));
@@ -152,4 +152,6 @@ const pageExport=spawnSync(process.execPath,[path.join(__dirname,'qa-main-export
 check('main-process HTML, Markdown, JSON, and PDF Page export QA',pageExport.status===0);
 const zoomScrollbar=spawnSync(process.execPath,[path.join(__dirname,'qa-zoom-scrollbar-v0516.js')],{stdio:'inherit'});
 check('zoom-independent document scrollbar regression QA',zoomScrollbar.status===0);
-console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/64 PASS`);
+const codexTheme=spawnSync(process.execPath,[path.join(__dirname,'qa-theme-codex-v0516.js')],{stdio:'inherit'});
+check('Codex application theme regression QA',codexTheme.status===0);
+console.log(`Leaf v0.5.16 Page lifecycle, editing, and layout QA: ${passed}/65 PASS`);
