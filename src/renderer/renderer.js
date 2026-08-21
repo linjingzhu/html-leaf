@@ -178,7 +178,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ language:'ko', scale:1, theme:'dark', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
+      preferences:{ language:'ko', scale:1, theme:'codex', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -320,13 +320,14 @@
   }
 
   function applyPreferences(){
-    document.body.dataset.theme = state.preferences.theme || 'dark';
+    document.body.dataset.theme = state.preferences.theme || 'codex';
     document.documentElement.style.setProperty('--ui-scale', state.preferences.scale || 1);
     $$('.lang-ko').forEach(e=>e.textContent=state.preferences.language==='ko'?'✓':'');
     $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
     $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
+    $$('.theme-codex').forEach(e=>e.textContent=state.preferences.theme==='codex'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -2844,7 +2845,7 @@
     if(empty){
       configureFrameRuntime(frame,null,slot);
       updateInspectorEditControls();
-      frame.srcdoc='<!doctype html><html style="background:#020304;color-scheme:dark"><body></body></html>';
+      frame.srcdoc='<!doctype html><html style="background:transparent;color-scheme:dark"><body></body></html>';
       return;
     }
     const scripted=configureFrameRuntime(frame,page,slot);
