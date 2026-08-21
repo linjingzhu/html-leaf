@@ -50,6 +50,8 @@ Preference now includes a third `Carbon` theme beside Dark and Light. Carbon use
 
 The application bar now includes an accessible left-panel toggle. Collapsing it removes the Project/Object/Used area, Hierarchy area, and left splitter from layout so the active document View receives the recovered width. The left panel and Inspector can be hidden or restored independently, including when both are collapsed.
 
+HTML tables now expose a floating toolbar directly above the selected cell in Edit mode. The toolbar adds or deletes the selected row and logical column, merges the selected cell with its right neighbor, and splits a cell with `colspan`. Disabled states prevent destructive last-row/last-column operations and invalid merge/split actions. Row and column changes keep a usable cell selected, run through the shared Undo/Redo transaction path, and strip the entire toolbar and selection marker before source serialization.
+
 Leaf now assigns one identity to each source path. Importing the same source file focuses the existing Page, and selecting an already-visible Compare document swaps the opposite binding rather than duplicating it.
 
 Markdown and JSON direct-source Edit is available from every visual View. PDF Edit enables the bundled Chromium PDF viewer's native annotation surface for highlighting, drawing, form filling, signatures, undo/redo, and downloading the edited PDF; Leaf does not decode the PDF binary into application source.
@@ -80,5 +82,7 @@ Animated WebP is not registered as an independent Page format.
 - Carbon theme functional and persistence QA: 4/4
 - Left-panel toggle static regression QA: 10/10
 - Left-panel toggle functional and independent-panel QA: 5/5
+- In-document table editing static regression QA: 12/12
+- In-document table editing functional and adversarial QA: 10/10
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS
