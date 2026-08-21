@@ -1,0 +1,25 @@
+const fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'src/renderer/index.html'),'utf8');
+const js=fs.readFileSync(path.join(root,'src/renderer/renderer.js'),'utf8');
+const css=fs.readFileSync(path.join(root,'src/renderer/styles.css'),'utf8');
+const reg=fs.readFileSync(path.join(root,'src/renderer/widget-registry.js'),'utf8');
+let p=0,f=0;function c(n,v){if(v){console.log('PASS ',n);p++;}else{console.error('FAIL ',n);f++;}}
+c('Table toolbar exists',html.includes('id="tableToolbar"')&&html.includes('id="tableAddRow"'));
+c('Table structured metadata exists',reg.includes("structured:true")&&reg.includes("properties:{alignment:['horizontal'],table:true}"));
+c('Table cells are directly editable',js.includes("['TD','TH'].includes(selectedElement.tagName)"));
+c('Horizontal alignment inspector exists',js.includes('data-align-horizontal'));
+c('Vertical alignment inspector exists',js.includes('data-align-vertical'));
+c('Table alignment exists',js.includes('data-table-align'));
+c('Add row exists',js.includes('function addTableRow()'));
+c('Add column exists',js.includes('function addTableColumn()'));
+c('Delete row exists',js.includes('function deleteTableRow()'));
+c('Delete column exists',js.includes('function deleteTableColumn()'));
+c('Header row toggle exists',js.includes('function toggleTableHeaderRow()'));
+c('Merge right exists',js.includes('function mergeCellRight()'));
+c('Unmerge exists',js.includes('function unmergeCell()'));
+c('Cell rowspan exists',js.includes('data-cell-rowspan'));
+c('Cell colspan exists',js.includes('data-cell-colspan'));
+c('Cell padding exists',js.includes('data-cell-padding'));
+c('Selected cell marker exists',css.includes('.table-cell-selected'));
+console.log(`\n${p}/${p+f} checks passed.`);process.exit(f?1:0);
