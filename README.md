@@ -14,7 +14,7 @@ Project (.prj)                       Ctrl+N
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the Project.
 - `Ctrl+Shift+N` creates a Page under the currently selected object in the active Document.
 - New Projects save as `.prj`; legacy `.leaf`, `.hbeproj`, and JSON projects remain openable and migrate through Save As.
-- Supported Page formats remain HTML, Markdown, and PDF.
+- Supported Page formats are HTML, Markdown, JSON, and PDF. Markdown and JSON can be edited directly in Focus with the View's Edit toggle.
 - Document View modes are labelled `Focus`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
@@ -26,12 +26,12 @@ Leaf now uses one consistent three-level content model:
 ```text
 Leaf Project (.leaf)
 └─ Documents
-   └─ Pages (HTML / Markdown / PDF)
+   └─ Pages (HTML / Markdown / JSON / PDF)
 ```
 
 - The former Leaf Document is now a **Leaf Project**.
 - Former Projects are now **Documents**.
-- HTML, Markdown, and PDF child documents are now **Pages**.
+- HTML, Markdown, JSON, and PDF child documents are now **Pages**.
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` create, save, and save-as the active Page.
 - File actions now use New Page, New Document, and Open/Save Leaf Project terminology.
 - New `.leaf` files use the `leaf-project` / `documents` schema.
@@ -41,8 +41,8 @@ Leaf Project (.leaf)
 
 - Native document fullscreen now hides the operating-system title bar. The only remaining control is a circular translucent Show UI icon.
 - `Ctrl+N`, `Ctrl+S`, and `Ctrl+Shift+S` now create, save, and save-as the active document rather than the active project.
-- A `.leaf` document serializes the complete project collection. Each project can contain HTML, Markdown, and PDF documents.
-- HTML, Markdown, and PDF files can be dragged from Explorer directly into a Project card; multiple files are imported independently.
+- A `.leaf` document serializes the complete project collection. Each project can contain HTML, Markdown, JSON, and PDF documents.
+- HTML, Markdown, JSON, and PDF files can be dragged from Explorer directly into a Project card; multiple files are imported independently.
 - Edit activation turns both its button and owning View outline red.
 - Code View uses non-wrapping source, synchronized line numbers, and a title-bar search field focused by `Ctrl+F`.
 - Inspector uses two-level foldable groups, enlarges the selected object name, and hides Reset.

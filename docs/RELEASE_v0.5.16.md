@@ -28,7 +28,10 @@ The Document View mode labels are `Focus`, `Compare`, and `Code`. Internally the
 
 - HTML / HTM
 - Markdown / MD
+- JSON
 - PDF
+
+Markdown and JSON Pages can be edited directly inside Focus by enabling the View's `Edit` toggle. Source changes update the Page immediately, participate in Undo/Redo, and retain the existing atomic-save and source-metadata protections. Disabling Edit restores the rendered Markdown preview or the formatted JSON preview. Invalid JSON remains editable and is shown with a validation diagnostic instead of being discarded.
 
 Animated WebP is not registered as an independent Page format.
 
@@ -38,8 +41,8 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 hierarchy, `.prj`, and View labels QA: 15/15
+- v0.5.16 hierarchy, `.prj`, View labels, and Focus source-edit QA: 17/17
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional QA: 15/15
+- Source Electron functional and adversarial QA: 22/22
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS

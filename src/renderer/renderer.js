@@ -132,6 +132,7 @@
   let objectExportTarget=null;
   const renderedSnapshotCache = new WeakMap();
   const snapshotWaiters = new Map();
+  const directSourceUndoTokens = new Set();
 
   // HTML Inspector editing session.
   // Editing is intentionally opt-in for every app launch.
@@ -228,8 +229,8 @@
       if(page.type==='page'){
         page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
-        if(!['html','markdown','pdf'].includes(page.documentType)){
-          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        if(!['html','markdown','json','pdf'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.json$/i.test(page.fileName||'')?'json':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
         }
         if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
       }
@@ -468,6 +469,7 @@
   }
 
   function loadLeafProjectPayload(payload,filePath){
+    setHtmlEditEnabled(false);
     const documents=Array.isArray(payload?.documents)?payload.documents:(Array.isArray(payload?.projects)?payload.projects:null);
     if(documents&&(payload?.format==='leaf-project'||payload?.format==='leaf-document'||Array.isArray(payload?.documents))){
       const normalized=normalizeState({...createDefaultState(),documents:clone(documents),projectName:String(payload.name||'Leaf Project')});
@@ -508,6 +510,7 @@
   function newProject(){
     withUnsavedInspectorGuard(()=>{
       openModal('New Project','Create a new Project saved as a .prj file.','Project name','Untitled Project',name=>{
+        setHtmlEditEnabled(false);
         const fresh=createDefaultState();
         state.projectName=name;
         state.projectFilePath=null;
@@ -649,9 +652,10 @@
           let filePath=null;
           if(page.documentType==='pdf'){
             filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
-          }else if(page.documentType==='markdown'){
+          }else if(page.documentType==='markdown'||page.documentType==='json'){
+            const isJson=page.documentType==='json';
             filePath=forceAs||!page.sourcePath
-              ?await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
+              ?await window.electronAPI.exportText({title:isJson?'Save JSON Page':'Save Markdown Page',suggestedName:page.fileName||`${page.name}.${isJson?'json':'md'}`,extension:isJson?'json':/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
               :await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source});
           }else{
             filePath=forceAs||!page.sourcePath
@@ -797,11 +801,11 @@
     $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
-  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|pdf)$/i.test(file.name||'');}
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|json|pdf)$/i.test(file.name||'');}
 
   async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, or PDF pages');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, JSON, or PDF pages');return;}
     try{
       for(const file of files){
         const result=await window.electronAPI.readDroppedPage(file);
@@ -931,7 +935,7 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':'◇';
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':'◇';
       row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
@@ -2326,6 +2330,12 @@
       const rich=window.JiraExport?.markdownToRichHtml?.(page.source||'')||`<pre>${esc(page.source||'')}</pre>`;
       return `<!doctype html><html><head><base href="${esc(page.baseUrl||'')}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline'; font-src file: data: https: http:;"><style>html{color-scheme:light}body{max-width:920px;margin:0 auto;padding:42px 48px;color:#20242a;background:#fff;font:15px/1.65 system-ui,-apple-system,'Segoe UI',sans-serif}img{max-width:100%}pre{overflow:auto;padding:14px;background:#f4f5f7;border-radius:6px}code{font-family:Consolas,monospace}table{border-collapse:collapse}th,td{border:1px solid #d9dde3;padding:7px 9px}</style></head><body>${rich}</body></html>`;
     }
+    if(page.documentType==='json'){
+      let formatted=String(page.source||''),error='';
+      try{formatted=JSON.stringify(JSON.parse(formatted),null,2);}catch(parseError){error=parseError.message||'Invalid JSON';}
+      const diagnostic=error?`<div class="json-error"><strong>JSON validation error</strong>${esc(error)}</div>`:'<div class="json-valid">Valid JSON</div>';
+      return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>html{color-scheme:light}body{margin:0;padding:30px 36px;color:#20242a;background:#fff;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.json-valid,.json-error{position:sticky;top:0;margin:0 0 14px;padding:9px 12px;border-radius:6px}.json-valid{color:#176b3a;background:#e7f6ed}.json-error{display:flex;gap:10px;color:#9b2525;background:#fdecec}pre{margin:0;padding:18px;overflow:auto;border:1px solid #d9dde3;border-radius:7px;background:#f7f8fa;color:#172033;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Consolas,'SFMono-Regular',monospace}</style></head><body>${diagnostic}<pre>${esc(formatted)}</pre></body></html>`;
+    }
     const base=page.baseUrl?`<base href="${esc(page.baseUrl)}">`:'';
     const csp=allowScripts
       ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; connect-src 'none'; object-src 'none'; frame-src 'none';">`
@@ -2337,12 +2347,28 @@
     return `<!doctype html><html><head>${base}${csp}${bridge}</head><body>${source}</body></html>`;
   }
 
+  function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}
+  function isDirectSourceEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&state.mode==='preview'&&slot==='single'&&isDirectSourceType(page);}
+
+  function buildDirectSourceEditor(page,token){
+    const initial=JSON.stringify(String(page.source||'')).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+    const label=page.documentType==='json'?'JSON':'Markdown';
+    return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;color-scheme:dark}body{display:grid;grid-template-rows:38px 1fr 26px;background:#12161d;color:#d8dee9;font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif}.source-head,.source-foot{display:flex;align-items:center;gap:9px;padding:0 12px;background:#181e27;color:#9ba8ba}.source-head{border-bottom:1px solid #2b3442}.source-head strong{color:#f2f5f9}.source-foot{justify-content:space-between;border-top:1px solid #2b3442}.status.valid{color:#78d39a}.status.invalid{color:#ff8b8b}textarea{box-sizing:border-box;width:100%;height:100%;resize:none;border:0;outline:0;padding:18px 20px;background:#0f1319;color:#e4e9f0;tab-size:2;white-space:pre;overflow:auto;font:13px/1.58 Consolas,'SFMono-Regular',monospace;caret-color:#8ab4ff}textarea::selection{background:#315b96}*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:#3a4657;border:2px solid transparent;border-radius:8px;background-clip:padding-box}</style></head><body><div class="source-head"><strong>${label} Source</strong><span>Edit is applied immediately</span></div><textarea id="source" spellcheck="false" aria-label="${label} source editor"></textarea><div class="source-foot"><span id="status" class="status"></span><span>Tab: indent · Esc: finish</span></div><script>(()=>{const TOKEN=${JSON.stringify(token)};const INITIAL=${initial};const TYPE=${JSON.stringify(page.documentType)};const editor=document.getElementById('source');const status=document.getElementById('status');const send=(kind,extra={})=>parent.postMessage({__leafDirectSourceEdit:true,token:TOKEN,kind,...extra},'*');const validate=()=>{if(TYPE!=='json'){status.className='status';status.textContent=editor.value.split('\\n').length+' lines';return true}try{JSON.parse(editor.value);status.className='status valid';status.textContent='Valid JSON';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Invalid JSON';return false}};editor.value=INITIAL;validate();editor.addEventListener('pointerdown',()=>send('activate'),true);editor.addEventListener('input',()=>{validate();send('input',{source:editor.value})});editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();const start=editor.selectionStart,end=editor.selectionEnd;editor.setRangeText('  ',start,end,'end');editor.dispatchEvent(new Event('input'))}else if(event.key==='Escape'){event.preventDefault();send('exit')}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();send('save')}});addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();event.stopPropagation();send('zoom',{direction:event.deltaY<0?1:-1,clientX:event.clientX,clientY:event.clientY})},{capture:true,passive:false});addEventListener('message',event=>{const data=event.data;if(!data||data.__leafDirectSourceReply!==true||data.token!==TOKEN)return;editor.value=String(data.source||'');validate();if(data.message){status.className='status invalid';status.textContent=data.message}});setTimeout(()=>{editor.focus();send('activate');send('ready')},0)})();<\/script></body></html>`;
+  }
+
   function configureFrameRuntime(frame,page,slot){
+    if(isDirectSourceEdit(page,slot)){
+      frame.closest('.view-pane')?.classList.remove('scripted-preview');
+      frame.dataset.previewRuntime='direct-source-editor';
+      const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
+      frame.setAttribute('sandbox','allow-scripts');
+      return false;
+    }
     if(page?.documentType&&page.documentType!=='html'){
       frame.closest('.view-pane')?.classList.remove('scripted-preview');
       frame.dataset.previewRuntime='document-readonly';
       const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
-      if(page.documentType==='markdown')frame.setAttribute('sandbox','allow-same-origin');
+      if(page.documentType==='markdown'||page.documentType==='json')frame.setAttribute('sandbox','allow-same-origin');
       else frame.removeAttribute('sandbox');
       return false;
     }
@@ -2396,6 +2422,19 @@
       return;
     }
     frame.removeAttribute('src');
+    if(isDirectSourceEdit(page,slot)){
+      const directToken=uid('direct-source');
+      frame.dataset.directSourceToken=directToken;
+      frame.dataset.directSourcePageId=page.id;
+      frame.dataset.directSourceReady='false';
+      frame.dataset.snapshotToken='';
+      frame.dataset.snapshotPageId=page.id;
+      renderedSnapshotCache.delete(frame);
+      frame.srcdoc=buildDirectSourceEditor(page,directToken);
+      return;
+    }
+    frame.dataset.directSourceToken='';
+    frame.dataset.directSourcePageId='';
     const snapshotToken=scripted ? uid('snapshot') : '';
     frame.dataset.snapshotToken=snapshotToken;
     frame.dataset.snapshotPageId=page.id;
@@ -2408,6 +2447,10 @@
 
   function onPreviewFrameLoad(frame){
     const slot=previewSlotForFrame(frame);
+    if(frame.dataset.previewRuntime==='direct-source-editor'){
+      updateInspectorEditControls();
+      return;
+    }
     if(frame.dataset.previewRuntime==='interactive-isolated'||frame.dataset.previewRuntime==='document-readonly'){
       if(htmlEditEnabled && frameForEditSlot(editOwnerSlot)===frame) setHtmlEditEnabled(false);
       updateInspectorEditControls();
@@ -2439,6 +2482,37 @@
       .find(candidate => candidate.contentWindow===event.source);
     const data=event.data;
     if(!frame || !data) return;
+    if(data.__leafDirectSourceEdit===true){
+      if(!data.token||data.token!==frame.dataset.directSourceToken)return;
+      const page=pageById(frame.dataset.directSourcePageId);
+      const slot=previewSlotForFrame(frame);
+      if(!page||!isDirectSourceEdit(page,slot))return;
+      if(data.kind==='ready')frame.dataset.directSourceReady='true';
+      if(data.kind==='activate')activateViewportSlot(slot);
+      if(data.kind==='zoom'&&(data.direction===1||data.direction===-1)){
+        const anchor=Number.isFinite(data.clientX)&&Number.isFinite(data.clientY)?outerPointForFrameEvent(frame,{clientX:data.clientX,clientY:data.clientY}):null;
+        setPreviewZoom(slot,previewZoomForSlot(slot)+(data.direction*PREVIEW_ZOOM_STEP),{anchor});
+      }
+      if(data.kind==='exit')setHtmlEditEnabled(false,slot);
+      if(data.kind==='save')saveLeafProject(false);
+      if(data.kind==='input'&&typeof data.source==='string'){
+        if(data.source.length>50_000_000){
+          frame.contentWindow.postMessage({__leafDirectSourceReply:true,token:data.token,source:page.source,message:'Source exceeds the 50 MB limit'},'*');
+          return;
+        }
+        const leakage=window.SourceFidelity?.editorArtifactReport?.(data.source)||[];
+        if(leakage.length){
+          frame.contentWindow.postMessage({__leafDirectSourceReply:true,token:data.token,source:page.source,message:'Editor metadata is not allowed in Page source'},'*');
+          return;
+        }
+        if(!directSourceUndoTokens.has(data.token)){pushUndo(page);directSourceUndoTokens.add(data.token);}
+        page.source=data.source;
+        page.isEmpty=!data.source.trim();
+        if(state.views.codePage===page.id){refs.source.value=page.source;updateLineRail();updateCodeSearchStatus();}
+        updateClearButtons();markJiraCheckStale();persist();renderVisibleFramesForPage(page.id,frame);
+      }
+      return;
+    }
     if(data.__hbeViewportInput===true){
       if(!data.token || data.token!==frame.dataset.snapshotToken) return;
       const slot=previewSlotForFrame(frame);
@@ -2592,8 +2666,10 @@
     const page=pageById(pendingClearPageId);
     if(!page) return closeClearHtmlDialog();
     try{
-      const filePath=page.documentType==='markdown'
-        ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:'Save Markdown Page',suggestedName:page.fileName||`${page.name}.md`,extension:'md',source:page.source}))
+      const isTextPage=page.documentType==='markdown'||page.documentType==='json';
+      const isJson=page.documentType==='json';
+      const filePath=isTextPage
+        ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:isJson?'Save JSON Page':'Save Markdown Page',suggestedName:page.fileName||`${page.name}.${isJson?'json':'md'}`,extension:isJson?'json':'md',source:page.source}))
         :(page.sourcePath?await window.electronAPI.saveHtmlPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportHtml({suggestedName:page.fileName||`${page.name}.html`,source:page.source}));
       if(!filePath) return;
       page.sourcePath=filePath;page.loadedSource=page.source;
@@ -2734,7 +2810,7 @@
   }
 
   // ----- Explorer Page Drag & Drop -----
-  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|pdf)$/i.test(file.name || ''); }
+  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|pdf)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
@@ -2747,7 +2823,7 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Drop an HTML, Markdown, or PDF page');
+    if(!file) return showToast('Drop an HTML, Markdown, JSON, or PDF page');
 
     withUnsavedInspectorGuard(async()=>{
       try{
@@ -2842,7 +2918,8 @@
   }
 
   function canInspectFrame(frame){
-    return !!htmlEditEnabled && !!editOwnerSlot && frameForEditSlot(editOwnerSlot)===frame;
+    const page=pageById(frameToPageId(frame));
+    return !!htmlEditEnabled && page?.documentType==='html' && !!editOwnerSlot && frameForEditSlot(editOwnerSlot)===frame;
   }
 
   function updateInspectorEditControls(){
@@ -2850,16 +2927,19 @@
       const slot=button.dataset.editSlot;
       const frame=frameForEditSlot(slot);
       const page=pageById(pageIdForSlot(slot));
-      const unavailable=!pageHasRenderableContent(page) || page?.documentType!=='html' || frame?.dataset.previewRuntime==='interactive-isolated';
       const active=htmlEditEnabled && editOwnerSlot===slot;
+      const directAvailable=isDirectSourceType(page)&&state.mode==='preview'&&slot==='single';
+      const htmlAvailable=page?.documentType==='html'&&frame?.dataset.previewRuntime!=='interactive-isolated';
+      const unavailable=(!pageHasRenderableContent(page)&&!(active&&isDirectSourceType(page)))||!(htmlAvailable||directAvailable);
       button.classList.toggle('active',active);
       button.closest('.view-pane')?.classList.toggle('edit-active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
       button.disabled=unavailable;
       button.textContent='Edit';
+      const standardEditTitle=active?'Disable Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
-        ?'Edit is unavailable for an empty or interactive preview'
-        :active?'Disable Edit for this Window':'Enable Edit for this Window';
+        ?'Edit is unavailable for this Page in the current View'
+        :directAvailable&&!active?`Edit ${page.documentType==='json'?'JSON':'Markdown'} source directly in Focus`:standardEditTitle;
     });
 
     if(refs.resetInspectorBtn){
@@ -2927,6 +3007,11 @@
   }
 
   function setHtmlEditEnabled(enabled,slot=editOwnerSlot){
+    const affectedSlot=slot||editOwnerSlot;
+    const affectedFrame=frameForEditSlot(affectedSlot);
+    const affectedPage=pageById(pageIdForSlot(affectedSlot));
+    const rerenderDirect=isDirectSourceType(affectedPage)&&affectedSlot==='single'&&state.mode==='preview';
+    if(!enabled&&affectedFrame?.dataset.directSourceToken)directSourceUndoTokens.delete(affectedFrame.dataset.directSourceToken);
     htmlEditEnabled=!!enabled;
     editOwnerSlot=htmlEditEnabled?slot:null;
     if(!htmlEditEnabled){
@@ -2940,7 +3025,8 @@
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>Interactive Preview</strong>This page uses JavaScript to render its content. It runs in an isolated sandbox, so direct DOM HTML Edit is disabled for this page.</div>';
       }
     }
-    updateInspectorEditControls();
+    if(rerenderDirect&&affectedFrame)renderFrame(affectedFrame,affectedPage.id);
+    else updateInspectorEditControls();
   }
 
   $$('[data-edit-slot]').forEach(button=>button.addEventListener('click',event=>{

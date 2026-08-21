@@ -44,11 +44,18 @@ check('Legacy leaf paths migrate through Save As prj',
 check('Trust Foundation remains active',
   main.includes('contextIsolation: true')&&main.includes('sandbox: true')&&main.includes('webSecurity: true')&&
   read('src/renderer/source-fidelity.js').includes('stripEditorArtifactsFromDocument'));
-check('Supported Page formats remain HTML, Markdown, and PDF',
-  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.pdf'])")&&
-  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'pdf']")&&
+check('Supported Page formats include HTML, Markdown, JSON, and PDF',
+  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])")&&
+  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']")&&
   !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
+check('Focus Edit provides an isolated direct source editor for Markdown and JSON',
+  js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}")&&
+  js.includes("frame.dataset.previewRuntime='direct-source-editor'")&&js.includes("frame.setAttribute('sandbox','allow-scripts')")&&
+  js.includes('__leafDirectSourceEdit:true'));
+check('Direct source input is immediate, undoable, bounded, and metadata guarded',
+  js.includes("if(!directSourceUndoTokens.has(data.token)){pushUndo(page)")&&js.includes('page.source=data.source')&&
+  js.includes('data.source.length>50_000_000')&&js.includes('editorArtifactReport?.(data.source)'));
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy and .prj QA: ${passed}/15 PASS`);
+console.log(`Leaf v0.5.16 hierarchy, .prj, and Focus source-edit QA: ${passed}/17 PASS`);

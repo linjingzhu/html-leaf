@@ -80,19 +80,20 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.pdf']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf']);
 
 function documentTypeForPath(filePath) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
   if (extension === '.html' || extension === '.htm') return 'html';
   if (extension === '.md' || extension === '.markdown') return 'markdown';
+  if (extension === '.json') return 'json';
   if (extension === '.pdf') return 'pdf';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, and PDF pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, and PDF pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -110,7 +111,7 @@ async function readDocumentPath(filePath) {
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Markdown pages must be files smaller than 50 MB.');
+  if (!stat.isFile() || stat.size > 50_000_000) throw new Error('Text pages must be files smaller than 50 MB.');
   const source = await fs.readFile(filePath, 'utf8');
   return { ...common, source, loadedSource: source };
 }
@@ -119,7 +120,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
