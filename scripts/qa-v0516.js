@@ -18,6 +18,9 @@ check('Document View mode labels are Preview and Compare',
   html.includes('data-mode="preview" class="active" aria-label="Preview view">Preview</button>')&&
   html.includes('data-mode="split" aria-label="Compare view">Compare</button>')&&
   html.includes('data-mode="code">Code</button>'));
+check('Main menu starts at the left edge without a product icon',
+  !html.includes('class="product-mark"')&&!html.includes('./assets/product-icon.png')&&
+  !read('src/renderer/styles.css').includes('.product-mark{'));
 check('Project save commands own Ctrl+S shortcuts',
   html.includes('Save Project <kbd>Ctrl+S</kbd>')&&html.includes('Save Project As <kbd>Ctrl+Shift+S</kbd>')&&
   js.includes('saveLeafProject(true)')&&js.includes('saveLeafProject(false)'));
@@ -58,4 +61,4 @@ check('Direct source input is immediate, undoable, bounded, and metadata guarded
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy, .prj, and Preview source-edit QA: ${passed}/17 PASS`);
+console.log(`Leaf v0.5.16 hierarchy, .prj, Preview source-edit, and menu-bar QA: ${passed}/18 PASS`);

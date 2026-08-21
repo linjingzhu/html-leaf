@@ -106,14 +106,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   height:34px;display:flex;align-items:center;padding-right:8px;
   background:var(--panel);border-bottom:1px solid var(--border);position:relative;z-index:50;
 }
-.product-mark{
-  width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;
-  border-right:1px solid var(--border-subtle);background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);
-}
-.product-mark img{
-  width:25px;height:25px;display:block;object-fit:contain;
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.36));
-}
 .brand-mini{
   height:100%;min-width:190px;display:flex;align-items:center;gap:8px;padding:0 10px;
   border-right:1px solid var(--border);font-size:12px;

@@ -16,6 +16,7 @@ Project (.prj)                       Ctrl+N
 - New Projects save as `.prj`; legacy `.leaf`, `.hbeproj`, and JSON projects remain openable and migrate through Save As.
 - Supported Page formats are HTML, Markdown, JSON, and PDF. Markdown and JSON can be edited directly in Preview with the View's Edit toggle.
 - Document View modes are labelled `Preview`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
+- The application menu now starts at the left edge without an embedded product icon; executable, installer, Desktop, and Start Menu icons remain branded.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
@@ -76,7 +77,7 @@ Release details and verification: `docs/RELEASE_v0.5.14.md`.
 - Added the supplied leaf artwork as the Windows executable and taskbar icon.
 - Added a branded NSIS installer with matching installer and uninstall icons.
 - Added matching Desktop and Start Menu shortcut icons.
-- Added the product icon to the upper-left application bar.
+- The supplied product artwork remains the Windows executable, installer, Desktop, and Start Menu icon. The former menu-bar icon was removed in v0.5.16.
 
 ## v0.5.9 — Document Hierarchy and Text Fidelity
 

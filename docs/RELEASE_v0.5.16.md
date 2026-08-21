@@ -24,6 +24,8 @@ Legacy Project files are normalized in memory. Saving an opened legacy extension
 
 The Document View mode labels are `Preview`, `Compare`, and `Code`. Internally the existing `preview`, `split`, and `code` state keys remain unchanged for project and preference compatibility.
 
+The embedded Leaf icon has been removed from the left side of the application menu. The File menu now begins at the left edge, while Windows executable, installer, Desktop shortcut, and Start Menu branding remain unchanged.
+
 ## Supported Page formats
 
 - HTML / HTM
@@ -41,8 +43,8 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 hierarchy, `.prj`, View labels, and Preview source-edit QA: 17/17
+- v0.5.16 hierarchy, `.prj`, View labels, Preview source-edit, and menu-bar QA: 18/18
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional and adversarial QA: 22/22
+- Source Electron functional and adversarial QA: 23/23
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS
