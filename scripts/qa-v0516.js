@@ -14,6 +14,10 @@ check('Release is v0.5.16',pkg.version==='0.5.16'&&pkg.build.directories.output=
 check('Canonical hierarchy is Project, Document, Page and Group',
   html.includes('New Project <kbd>Ctrl+N</kbd>')&&html.includes('New Document…')&&
   html.includes('New Page <kbd>Ctrl+Shift+N</kbd>')&&html.includes('Add Group (Container)'));
+check('Document View mode labels are Focus and Compare',
+  html.includes('data-mode="preview" class="active" aria-label="Focus view">Focus</button>')&&
+  html.includes('data-mode="split" aria-label="Compare view">Compare</button>')&&
+  html.includes('data-mode="code">Code</button>'));
 check('Project save commands own Ctrl+S shortcuts',
   html.includes('Save Project <kbd>Ctrl+S</kbd>')&&html.includes('Save Project As <kbd>Ctrl+Shift+S</kbd>')&&
   js.includes('saveLeafProject(true)')&&js.includes('saveLeafProject(false)'));
@@ -47,4 +51,4 @@ check('Supported Page formats remain HTML, Markdown, and PDF',
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0515.js')],{stdio:'inherit'});
 check('v0.5.15 complete regression chain',prior.status===0);
-console.log(`Leaf v0.5.16 hierarchy and .prj QA: ${passed}/14 PASS`);
+console.log(`Leaf v0.5.16 hierarchy and .prj QA: ${passed}/15 PASS`);

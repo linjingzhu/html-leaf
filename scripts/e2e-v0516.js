@@ -18,6 +18,9 @@ async function main(){
   let passed=0;const check=(name,condition,detail='')=>{if(!condition)throw new Error(`FAIL ${name}${detail?`: ${detail}`:''}`);passed++;console.log(`PASS ${name}`);};
   await send('Runtime.enable');await send('Page.enable');await sleep(700);
 
+  const modeLabels=await evaluate(`[...document.querySelectorAll('#viewSeg button[data-mode]')].map(button=>({mode:button.dataset.mode,label:button.textContent.trim(),aria:button.getAttribute('aria-label')}))`);
+  check('Document View modes are labelled Focus, Compare, and Code',JSON.stringify(modeLabels)===JSON.stringify([{mode:'preview',label:'Focus',aria:'Focus view'},{mode:'split',label:'Compare',aria:'Compare view'},{mode:'code',label:'Code',aria:null}]),JSON.stringify(modeLabels));
+
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true}))`);await sleep(60);
   const dialog=await evaluate(`({open:document.querySelector('#inputModal').classList.contains('show'),title:document.querySelector('#modalTitle').textContent,documents:document.querySelectorAll('.document-card').length})`);
   check('Ctrl+N opens New Project',dialog.open&&dialog.title==='New Project'&&dialog.documents===1,JSON.stringify(dialog));
@@ -76,6 +79,6 @@ async function main(){
 
   const screenshot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(__dirname,'qa-evidence-v0516.png'),Buffer.from(screenshot.data,'base64'));
-  console.log(`Leaf v0.5.16 functional QA: ${passed}/14 PASS`);socket.close();
+  console.log(`Leaf v0.5.16 functional QA: ${passed}/15 PASS`);socket.close();
 }
 main().catch(error=>{console.error(error.stack||error);process.exit(1);});

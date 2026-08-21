@@ -22,6 +22,8 @@ The Project is the saved Leaf workspace. A Project owns Documents. Each Document
 
 Legacy Project files are normalized in memory. Saving an opened legacy extension routes through Save As so the original file is not overwritten unexpectedly.
 
+The Document View mode labels are `Focus`, `Compare`, and `Code`. Internally the existing `preview`, `split`, and `code` state keys remain unchanged for project and preference compatibility.
+
 ## Supported Page formats
 
 - HTML / HTM
@@ -36,8 +38,8 @@ Animated WebP is not registered as an independent Page format.
 
 ## Verification
 
-- v0.5.16 hierarchy and `.prj` QA: 14/14
+- v0.5.16 hierarchy, `.prj`, and View labels QA: 15/15
 - Main-process adversarial document QA: 7/7, including explicit Animated WebP Page rejection
-- Source Electron functional QA: 14/14
+- Source Electron functional QA: 15/15
 - Source Fidelity fixtures: 14/14
 - Complete v0.5.0–v0.5.15 regression chain: PASS

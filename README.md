@@ -15,6 +15,7 @@ Project (.prj)                       Ctrl+N
 - `Ctrl+Shift+N` creates a Page under the currently selected object in the active Document.
 - New Projects save as `.prj`; legacy `.leaf`, `.hbeproj`, and JSON projects remain openable and migrate through Save As.
 - Supported Page formats remain HTML, Markdown, and PDF.
+- Document View modes are labelled `Focus`, `Compare`, and `Code` while retaining their existing behavior and saved-state keys.
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
