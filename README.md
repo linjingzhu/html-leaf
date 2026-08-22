@@ -40,13 +40,15 @@ Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
 | Platform | File | Source |
 | --- | --- | --- |
-| Windows x64 | `Leaf-Setup-0.5.16-x64.exe` | [`dist/`](dist) |
-| macOS Apple Silicon | `Leaf-0.5.16-mac-arm64.dmg` / `.zip` | [Releases](../../releases) |
-| macOS Intel | `Leaf-0.5.16-mac-x64.dmg` / `.zip` | [Releases](../../releases) |
+| Windows x64 | `Leaf-Setup-0.5.16-x64.exe` / `Leaf-0.5.16-x64.zip` | [`windows-v0.5.16`](../../releases/tag/windows-v0.5.16), [`dist/`](dist) |
+| macOS Apple Silicon | `Leaf-0.5.16-mac-arm64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
+| macOS Intel | `Leaf-0.5.16-mac-x64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
 
-macOS 빌드는 GitHub Actions의 `Build macOS` 워크플로가 macOS 러너에서 생성합니다.
-워크플로는 `claude/**` 브랜치 push, `v*` 태그 push, 그리고 수동 실행(Actions → Build macOS → Run workflow)으로 동작하며,
-결과물을 워크플로 아티팩트와 `macos-v<version>` 사전 릴리스에 함께 올립니다.
+플랫폼 빌드는 GitHub Actions의 `Build macOS` / `Build Windows` 워크플로가 각각 macOS·Windows 러너에서 생성합니다.
+두 워크플로 모두 `claude/**` 브랜치 push, `v*` 태그 push, 수동 실행(Actions → 워크플로 선택 → Run workflow)으로 동작하며,
+결과물을 워크플로 아티팩트와 `macos-v<version>` / `windows-v<version>` 사전 릴리스에 함께 올립니다.
+
+Windows 빌드는 코드 서명 인증서가 없어 SmartScreen 경고가 표시될 수 있습니다. **추가 정보 → 실행**을 선택하세요.
 
 macOS 빌드는 Apple Developer 인증서로 서명/공증되지 않았기 때문에 첫 실행이 차단됩니다.
 `Leaf.app`을 `/Applications`로 옮긴 뒤 아래 명령으로 격리 속성을 제거하거나, 앱을 우클릭한 다음 **열기**를 선택하세요.
