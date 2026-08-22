@@ -36,6 +36,38 @@ Project (.prj)                       Ctrl+N
 
 Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
+## Downloads
+
+| Platform | File | Source |
+| --- | --- | --- |
+| Windows x64 | `Leaf-Setup-0.5.16-x64.exe` | [`dist/`](dist) |
+| macOS Apple Silicon | `Leaf-0.5.16-mac-arm64.dmg` / `.zip` | [Releases](../../releases) |
+| macOS Intel | `Leaf-0.5.16-mac-x64.dmg` / `.zip` | [Releases](../../releases) |
+
+macOS 빌드는 GitHub Actions의 `Build macOS` 워크플로가 macOS 러너에서 생성합니다.
+워크플로는 `claude/**` 브랜치 push, `v*` 태그 push, 그리고 수동 실행(Actions → Build macOS → Run workflow)으로 동작하며,
+결과물을 워크플로 아티팩트와 `macos-v<version>` 사전 릴리스에 함께 올립니다.
+
+macOS 빌드는 Apple Developer 인증서로 서명/공증되지 않았기 때문에 첫 실행이 차단됩니다.
+`Leaf.app`을 `/Applications`로 옮긴 뒤 아래 명령으로 격리 속성을 제거하거나, 앱을 우클릭한 다음 **열기**를 선택하세요.
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Leaf.app
+```
+
+## Building locally
+
+```bash
+npm ci
+npm run dist:win          # Windows: NSIS installer + zip (Windows 필요)
+npm run dist:mac          # macOS: dmg + zip, arm64 + x64 (macOS 필요)
+npm run dist:mac:arm64    # Apple Silicon 전용
+npm run dist:mac:x64      # Intel 전용
+```
+
+빌드 결과는 `release-v<version>/`에 생성됩니다.
+`dmg` 타깃과 코드 서명은 macOS에서만 동작하므로, macOS 배포본은 macOS 또는 위 워크플로에서 빌드해야 합니다.
+
 ## v0.5.15 — Project / Document / Page Model
 
 Leaf now uses one consistent three-level content model:

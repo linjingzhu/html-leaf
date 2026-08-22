@@ -13,7 +13,10 @@
     "qa:theme-codex": "node scripts/qa-theme-codex-v0516.js",
     "qa:e2e-theme-codex": "node scripts/e2e-theme-codex-v0516.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
-    "dist:win": "electron-builder --win nsis zip --x64 --publish never"
+    "dist:win": "electron-builder --win nsis zip --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64 --publish never",
+    "dist:mac:arm64": "electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:mac:x64": "electron-builder --mac dmg zip --x64 --publish never"
   },
   "devDependencies": {
     "electron": "43.4.0",
@@ -31,6 +34,7 @@
       "src/**/*",
       "build/icon.ico",
       "build/icon.png",
+      "build/icon.icns",
       "README.md",
       "package.json"
     ],
@@ -52,6 +56,38 @@
       "installerHeaderIcon": "build/installerHeaderIcon.ico",
       "uninstallerIcon": "build/icon.ico",
       "artifactName": "Leaf-Setup-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Leaf-${version}-mac-${arch}.${ext}",
+      "darkModeSupport": true,
+      "hardenedRuntime": false,
+      "identity": null,
+      "extendInfo": {
+        "NSHumanReadableCopyright": "Leaf",
+        "LSMinimumSystemVersion": "11.0"
+      }
+    },
+    "dmg": {
+      "artifactName": "Leaf-${version}-mac-${arch}.${ext}",
+      "title": "Leaf ${version}"
     }
   }
 }
