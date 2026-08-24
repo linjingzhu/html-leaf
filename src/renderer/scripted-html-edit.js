@@ -8,6 +8,7 @@
     right: 'rightFrame',
     codePreview: 'codePreviewFrame'
   };
+  const BADGE_CLASSES = ['interactive', 'scripts-off', 'static', 'dom', 'js', 'canvas', 'fallback', 'unavailable'];
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;',
@@ -191,35 +192,65 @@
     return `<!doctype html><html><head>${base}${csp}${bridge}</head><body>${source}</body></html>`;
   }
 
-  function setRuntimeBadge(slot, scripted) {
+  function setRuntimeBadge(slot, state) {
     const badge = document.querySelector(`[data-runtime-badge="${slot}"]`);
     if (!badge) return;
-    badge.hidden = !scripted;
-    badge.textContent = scripted ? 'Interactive' : '';
-    badge.classList.toggle('interactive', !!scripted);
-    badge.title = scripted ? 'JavaScript runs in an isolated opaque-origin sandbox.' : '';
+    const states = {
+      interactive: {
+        text: 'Interactive',
+        className: 'interactive',
+        title: 'JavaScript runs in an isolated opaque-origin sandbox. Click Edit to switch this View to scripts-off DOM Edit.'
+      },
+      'scripts-off': {
+        text: 'Scripts off',
+        className: 'scripts-off',
+        title: 'JavaScript is disabled while DOM Edit is active. Turn Edit off to return to Interactive Preview.'
+      }
+    };
+    const config = states[state];
+    badge.hidden = !config;
+    badge.textContent = config?.text || '';
+    badge.title = config?.title || '';
+    badge.dataset.runtimeState = config ? state : '';
+    BADGE_CLASSES.forEach(name => badge.classList.remove(name));
+    if (config?.className) badge.classList.add(config.className);
+  }
+
+  function updateInspectorScriptsOffCopy(slot) {
+    const button = document.querySelector(`[data-edit-slot="${slot}"]`);
+    if (!button || !(button.classList.contains('active') || button.getAttribute('aria-pressed') === 'true')) return;
+    const body = document.getElementById('inspectorBody');
+    if (!body) return;
+    const empty = body.querySelector('.edit-mode-message,.empty-selection');
+    if (!empty) return;
+    empty.innerHTML = '<strong>Edit enabled</strong><span>JavaScript is disabled while editing. Hover or click an HTML object to inspect and modify the source DOM.</span>';
   }
 
   function enableStaticHtmlEdit(slot, page) {
     const frame = frameForSlot(slot);
     if (!frame || !isScriptedHtmlPage(page) || !hasRenderableContent(page)) return false;
-    frame.closest('.view-pane')?.classList.remove('scripted-preview');
-    setRuntimeBadge(slot, false);
-    frame.dataset.previewRuntime = 'static-editable';
+    const pane = frame.closest('.view-pane');
+    pane?.classList.remove('scripted-preview');
+    pane?.classList.add('scripts-off-edit');
+    setRuntimeBadge(slot, 'scripts-off');
+    frame.dataset.previewRuntime = 'static-editable-scripts-off';
     frame.dataset.snapshotToken = '';
     frame.dataset.snapshotPageId = page.id;
     frame.dataset.leafScriptedHtmlEdit = 'static';
     frame.setAttribute('sandbox', 'allow-same-origin');
     frame.removeAttribute('src');
     frame.srcdoc = buildStaticEditSource(page);
+    setTimeout(() => updateInspectorScriptsOffCopy(slot), 80);
     return true;
   }
 
   function restoreInteractivePreview(slot, page) {
     const frame = frameForSlot(slot);
     if (!frame || !isScriptedHtmlPage(page) || frame.dataset.leafScriptedHtmlEdit !== 'static') return false;
-    frame.closest('.view-pane')?.classList.add('scripted-preview');
-    setRuntimeBadge(slot, true);
+    const pane = frame.closest('.view-pane');
+    pane?.classList.add('scripted-preview');
+    pane?.classList.remove('scripts-off-edit');
+    setRuntimeBadge(slot, 'interactive');
     frame.dataset.previewRuntime = 'interactive-isolated';
     const token = `scripted-preview-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     frame.dataset.snapshotToken = token;
@@ -239,7 +270,9 @@
       button.disabled = false;
       button.title = button.classList.contains('active')
         ? 'Disable Edit for this Window'
-        : 'Enable static HTML Edit for this scripted Page';
+        : 'Enable scripts-off DOM Edit for this scripted Page';
+      const frame = frameForSlot(slot);
+      if (frame?.dataset.previewRuntime === 'static-editable-scripts-off') updateInspectorScriptsOffCopy(slot);
     });
   }
 
@@ -263,7 +296,7 @@
       frameForSlot(slot)?.addEventListener('load', () => setTimeout(refreshEditButtons, 0));
     });
     const observer = new MutationObserver(refreshEditButtons);
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'data-preview-runtime'] });
+    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'data-preview-runtime', 'aria-pressed'] });
     setInterval(refreshEditButtons, 1000);
     refreshEditButtons();
   }
