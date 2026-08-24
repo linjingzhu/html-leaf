@@ -7,6 +7,26 @@ const { pathToFileURL, fileURLToPath } = require('node:url');
 let mainWindow;
 let sessionTempDir = null;
 const initialHtmlSnapshots = new Map();
+const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement';
+
+function boolEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
+}
+
+const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS);
+
+if (htmlCanvasExperimentEnabled) {
+  app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE);
+}
+
+function runtimeConfig() {
+  return {
+    htmlCanvas: {
+      enabled: htmlCanvasExperimentEnabled,
+      blinkFeature: HTML_CANVAS_BLINK_FEATURE
+    }
+  };
+}
 
 app.setName('Leaf');
 if (process.platform === 'win32') app.setAppUserModelId('com.leaf.editor');
@@ -303,92 +323,6 @@ async function exportObjectAsset({ format, suggestedName, source }) {
   return filePath;
 }
 
-async function writeObjectAssetAtPath(filePath, format, source) {
-  const normalized = String(format || '').toLowerCase();
-  if (normalized === 'svg') {
-    const svg = String(source || '');
-    if (svg.length > 20_000_000 || !/^\s*<svg\b/i.test(svg)) throw new Error('Invalid SVG export payload.');
-    await atomicWriteFile(filePath, svg, 'utf8');
-    return;
-  }
-  const mime = normalized === 'jpg' ? 'image/jpeg' : normalized === 'png' ? 'image/png' : null;
-  const payload = String(source || '');
-  const match = mime && payload.match(new RegExp(`^data:${mime.replace('/', '\\/')};base64,([A-Za-z0-9+/=]+)$`));
-  if (!match || match[1].length > 120_000_000) throw new Error('Invalid raster export payload.');
-  await atomicWriteFile(filePath, Buffer.from(match[1], 'base64'));
-}
-
-async function exportObjectAssets({ format, items }) {
-  const normalized = String(format || '').toLowerCase();
-  if (!['png', 'jpg', 'svg'].includes(normalized) || !Array.isArray(items) || !items.length || items.length > 200) throw new Error('Supply between 1 and 200 valid object export items.');
-  let payloadSize = 0;
-  for (const item of items) {
-    const source = String(item?.source || '');payloadSize += source.length;
-    if (normalized === 'svg' ? !/^\s*<svg\b/i.test(source) : !new RegExp(`^data:image/${normalized === 'jpg' ? 'jpeg' : 'png'};base64,`).test(source)) throw new Error('An object export payload is invalid.');
-  }
-  if (payloadSize > 200_000_000) throw new Error('The combined object export payload is too large.');
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Export selected objects',
-    properties: ['openDirectory', 'createDirectory']
-  });
-  if (result.canceled || !result.filePaths[0]) return [];
-  const directory = result.filePaths[0];
-  const used = new Set();
-  const output = [];
-  const staged = [];
-  try {
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index] || {};
-      const base = path.basename(String(item.suggestedName || `leaf-object-${index + 1}.${normalized}`), path.extname(String(item.suggestedName || '')))
-        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-') || `leaf-object-${index + 1}`;
-      let candidate = `${base}.${normalized}`;
-      let suffix = 2;
-      while (used.has(candidate.toLowerCase()) || fsSync.existsSync(path.join(directory, candidate))) candidate = `${base}-${suffix++}.${normalized}`;
-      used.add(candidate.toLowerCase());
-      const filePath = path.join(directory, candidate);
-      const stagePath = path.join(directory, `.${candidate}.leaf-stage-${process.pid}-${Date.now()}-${index}`);
-      await writeObjectAssetAtPath(stagePath, normalized, item.source);
-      staged.push({ stagePath, filePath });
-    }
-    for (const item of staged) { await fs.rename(item.stagePath, item.filePath);output.push(item.filePath); }
-    return output;
-  } catch (error) {
-    await Promise.allSettled(staged.map(item => fs.unlink(item.stagePath)));
-    await Promise.allSettled(output.map(filePath => fs.unlink(filePath)));
-    throw error;
-  }
-}
-
-async function readLocalAssetDataUrl(rawUrl) {
-  const url = new URL(String(rawUrl || ''));
-  if (url.protocol !== 'file:') throw new Error('Only local file assets may be embedded.');
-  const filePath = fileURLToPath(url);
-  const extension = path.extname(filePath).toLowerCase();
-  const mime = ({ '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.webp':'image/webp', '.svg':'image/svg+xml' })[extension];
-  if (!mime) throw new Error('Unsupported local image type.');
-  const data = await fs.readFile(filePath);
-  if (data.length > 30_000_000) throw new Error('Local image is too large to embed.');
-  return `data:${mime};base64,${data.toString('base64')}`;
-}
-
-async function captureRendererRegion({ rect, scale = 1, format = 'png' }) {
-  if (!mainWindow || mainWindow.isDestroyed()) throw new Error('The Leaf window is unavailable.');
-  if (!['png', 'jpg'].includes(format) || ![rect?.x, rect?.y, rect?.width, rect?.height].every(value => Number.isFinite(Number(value)))) throw new Error('Invalid renderer capture request.');
-  const bounds = mainWindow.getContentBounds();
-  const x = Math.max(0, Math.floor(Number(rect?.x) || 0));
-  const y = Math.max(0, Math.floor(Number(rect?.y) || 0));
-  const width = Math.max(1, Math.min(bounds.width - x, Math.ceil(Number(rect?.width) || 0)));
-  const height = Math.max(1, Math.min(bounds.height - y, Math.ceil(Number(rect?.height) || 0)));
-  if (width <= 0 || height <= 0 || width * height > 80_000_000) throw new Error('The selected object is outside the visible document area.');
-  let image = await mainWindow.webContents.capturePage({ x, y, width, height });
-  const normalizedScale = Math.max(0.25, Math.min(16, Number(scale) || 1));
-  if ((width * normalizedScale) * (height * normalizedScale) > 80_000_000) throw new Error('Export dimensions are too large. Choose a smaller scale.');
-  if (normalizedScale !== 1) image = image.resize({ width: Math.max(1, Math.round(width * normalizedScale)), height: Math.max(1, Math.round(height * normalizedScale)), quality: 'best' });
-  return format === 'jpg'
-    ? `data:image/jpeg;base64,${image.toJPEG(92).toString('base64')}`
-    : `data:image/png;base64,${image.toPNG().toString('base64')}`;
-}
-
 function setDocumentFullscreen(enabled) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   mainWindow.setFullScreen(Boolean(enabled));
@@ -473,6 +407,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('runtime:config', () => runtimeConfig());
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
   ipcMain.handle('file:importPages', openDocumentFiles);
