@@ -60,6 +60,7 @@
     loadExtensionScript('./canvas-lab.js');
     loadExtensionScript('./view-drop-bridge.js');
     loadExtensionScript('./code-syntax-highlight.js');
+    loadExtensionScript('./scripted-html-edit.js');
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadLeafExtensions,{once:true});
