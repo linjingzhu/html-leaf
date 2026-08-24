@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Leaf scripted DOM edit fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .hero { border: 1px solid #9aa4b2; padding: 16px; }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <nav class="toc" aria-label="Fixture sections">
+    <a href="#intro">Intro</a>
+    <a href="#api">API</a>
+  </nav>
+
+  <div class="toolbar" data-edit-target="language-toolbar">
+    <button type="button" data-lang-target="en">English</button>
+    <button type="button" data-lang-target="ko">Korean</button>
+  </div>
+
+  <main>
+    <section id="intro" class="hero" data-edit-target="hero">
+      <h1 data-i18n="title">Scripted preview fixture</h1>
+      <p data-i18n="summary">This source exercises runtime JavaScript without using a user document.</p>
+      <button type="button" id="appendItem" data-edit-target="action-button">Append runtime item</button>
+    </section>
+
+    <section id="api" data-edit-target="api-section">
+      <h2>API Notes</h2>
+      <ul id="runtimeList" data-edit-target="runtime-list">
+        <li>Initial item</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const copy = {
+        en: {
+          title: 'Scripted preview fixture',
+          summary: 'This source exercises runtime JavaScript without using a user document.'
+        },
+        ko: {
+          title: 'Scripted preview fixture KO',
+          summary: 'Synthetic fixture for scripts-off DOM editing.'
+        }
+      };
+      function setLanguage(lang) {
+        const bundle = copy[lang] || copy.en;
+        document.querySelector('[data-i18n="title"]').textContent = bundle.title;
+        document.querySelector('[data-i18n="summary"]').textContent = bundle.summary;
+        document.documentElement.dataset.activeLanguage = lang;
+      }
+      document.querySelectorAll('[data-lang-target]').forEach(button => {
+        button.addEventListener('click', () => setLanguage(button.dataset.langTarget));
+      });
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', () => {
+          localStorage.setItem('leafFixtureActiveSection', anchor.getAttribute('href').slice(1));
+        });
+      });
+      document.getElementById('appendItem').addEventListener('click', () => {
+        const item = document.createElement('li');
+        item.dataset.runtimeItem = 'true';
+        item.textContent = `Runtime item ${document.querySelectorAll('[data-runtime-item]').length + 1}`;
+        document.getElementById('runtimeList').appendChild(item);
+      });
+      setLanguage('en');
+    })();
+  </script>
+</body>
+</html>
