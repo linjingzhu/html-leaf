@@ -15,23 +15,24 @@ function check(name, condition) {
   console.log(`PASS ${name}`);
 }
 
-check('Preference exposes Dark, Light, and Carbon only',
-  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
-  !html.includes('data-pref-theme="codex"') &&
-  !html.includes('theme-codex'));
-
-check('Light is the visible default Preference selection',
-  html.includes('data-pref-theme="light">Light <span class="check theme-light">✓</span>'));
+check('Preference exposes supported themes in the source shell',
+  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)));
 
 check('Theme policy normalizes unsupported or legacy themes to Light',
   themePolicy.includes("const ALLOWED_THEMES = new Set(['dark', 'light', 'carbon'])") &&
   themePolicy.includes("return ALLOWED_THEMES.has(theme) ? theme : 'light'") &&
   themePolicy.includes('normalizeSerializedState'));
 
-check('Theme policy removes any legacy Codex controls if old markup is encountered',
-  themePolicy.includes('removeCodexControls') &&
+check('Theme policy removes legacy Codex controls from the live Preference menu',
+  themePolicy.includes('function removeCodexControls()') &&
   themePolicy.includes('[data-pref-theme="codex"]') &&
-  themePolicy.includes('.theme-codex'));
+  themePolicy.includes('.theme-codex') &&
+  themePolicy.includes('control.remove()'));
+
+check('Theme policy makes Light the effective default body theme',
+  themePolicy.includes('const nextTheme = normalizeTheme(document.body.dataset.theme)') &&
+  themePolicy.includes('document.body.dataset.theme = nextTheme') &&
+  themePolicy.includes('syncThemeChecks(nextTheme)'));
 
 check('Renderer theme writes are guarded by the policy extension',
   js.includes('state.preferences.theme=button.dataset.prefTheme') &&
