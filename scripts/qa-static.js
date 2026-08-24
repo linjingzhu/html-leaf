@@ -2,161 +2,189 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const read = p => fs.readFileSync(path.join(root,p),'utf8');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+
 const pkg = JSON.parse(read('package.json'));
 const main = read('src/main.js');
 const preload = read('src/preload.js');
 const renderer = read('src/renderer/renderer.js');
 const css = read('src/renderer/styles.css');
 const html = read('src/renderer/index.html');
+const fidelity = read('src/renderer/source-fidelity.js');
+const registry = read('src/renderer/widget-registry.js');
 
 const checks = [];
-function check(name, condition, detail=''){
-  checks.push({name, pass:!!condition, detail});
-  if(!condition) process.exitCode = 1;
+function check(name, condition, detail = '') {
+  checks.push({ name, pass: !!condition, detail });
+  if (!condition) process.exitCode = 1;
 }
-function includesAll(text, parts){ return parts.every(p=>text.includes(p)); }
+function missingParts(text, parts) {
+  return parts.filter(part => !text.includes(part));
+}
+function checkIncludesAll(name, text, parts) {
+  const missing = missingParts(text, parts);
+  check(name, missing.length === 0, missing.length ? `Missing: ${missing.join(', ')}` : '');
+}
 
+const forbiddenFrameworks = ['react', 'react-dom', 'vite', 'tailwindcss', '@radix-ui/react-dialog'];
 check('No framework migration dependency',
-  !['react','react-dom','vite','tailwindcss','@radix-ui/react-dialog'].some(d=>pkg.dependencies?.[d] || pkg.devDependencies?.[d]),
+  !forbiddenFrameworks.some(name => pkg.dependencies?.[name] || pkg.devDependencies?.[name]),
   'Renderer remains Vanilla HTML/CSS/JS.');
-check('Electron dependency unchanged',
-  Object.keys(pkg.devDependencies||{}).length===1 && pkg.devDependencies.electron==='43.4.0',
-  JSON.stringify(pkg.devDependencies));
-check('Electron security boundaries preserved',
-  includesAll(main, ['contextIsolation: true','nodeIntegration: false','sandbox: true','webSecurity: true']));
-check('Preload uses narrow contextBridge surface',
+check('Desktop build toolchain is pinned',
+  pkg.devDependencies?.electron === '43.4.0' && pkg.devDependencies?.['electron-builder'] === '26.0.12',
+  JSON.stringify(pkg.devDependencies || {}));
+check('Package exposes current QA entry points',
+  pkg.scripts?.qa === 'node scripts/qa-v0516.js' && pkg.scripts?.['qa:static'] === 'node scripts/qa-static.js');
+check('Release metadata targets v0.5.16 output',
+  pkg.version === '0.5.16' && pkg.build?.directories?.output === 'release-v0.5.16');
+
+checkIncludesAll('Electron security boundaries preserved', main,
+  ['contextIsolation: true', 'nodeIntegration: false', 'sandbox: true', 'webSecurity: true']);
+check('Preload uses a narrow contextBridge surface',
   preload.includes('contextBridge.exposeInMainWorld') && !preload.includes('nodeIntegration'));
+check('Save Page As bridge is exposed only through preload',
+  preload.includes("exportPageAs: (payload) => ipcRenderer.invoke('file:exportPageAs'"));
 check('No CDN runtime resource in application shell',
   !/<(?:script|link)[^>]+(?:src|href)=["']https?:\/\//i.test(html));
 
-const semanticTokens = [
-  '--background','--foreground','--panel','--panel-secondary','--border','--border-subtle',
-  '--muted','--accent','--selection','--focus-ring','--success','--warning','--error'
-];
-check('Semantic design tokens present', semanticTokens.every(t=>css.includes(t)), semanticTokens.join(', '));
-check('Light/Dark share semantic token names',
-  css.includes('body[data-theme="light"]') && semanticTokens.slice(0,9).every(t=>css.includes(t)));
+checkIncludesAll('Canonical hierarchy is Project, Document, Page, and Group', html,
+  ['New Project <kbd>Ctrl+N</kbd>', 'data-action="new-document">New Document</button>',
+   'New Page <kbd>Ctrl+Shift+N</kbd>', 'data-tree-add="group">New Section</button>']);
+checkIncludesAll('Document View mode labels are Preview, Compare, and Code', html,
+  ['data-mode="preview" class="active" aria-label="Preview view">Preview</button>',
+   'data-mode="split" aria-label="Compare view">Compare</button>', 'data-mode="code">Code</button>']);
+check('Main menu starts without a product icon',
+  !html.includes('class="product-mark"') && html.includes('<nav class="main-menu" id="mainMenu"'));
+check('Help is the final main menu and About exists',
+  html.lastIndexOf('<button class="menu-trigger">Help</button>') > html.lastIndexOf('<button class="menu-trigger">Preference</button>') &&
+  html.includes('data-action="about"') && html.includes('id="aboutModal"'));
 
-check('Inspector collapse removes Inspector and its splitter columns',
-  css.includes('grid-template-columns:var(--sidebar-width) var(--splitter-hit) minmax(0,1fr) 0 0') &&
-  css.includes('.workspace.inspector-collapsed .inspector-resizer'));
-check('All splitters use shared 8px gutter + 1px visible separator',
-  html.includes('id="sidebarResizer"') && html.includes('id="splitDivider"') &&
-  html.includes('id="codeDivider"') && html.includes('id="inspectorResizer"') &&
-  css.includes('.splitter-handle::after') && css.includes('width:1px') && css.includes('--splitter-hit:8px'));
-check('Unified splitter uses Pointer Capture and rAF',
-  renderer.includes('setPointerCapture(pointerId)') &&
-  renderer.includes('requestAnimationFrame(flush)') &&
-  renderer.includes("document.body.classList.add('is-resizing')"));
-check('Resize blocks iframe pointer interaction',
-  css.includes('body.is-resizing iframe{pointer-events:none!important}'));
-check('Split and Code dividers are real resizers',
-  renderer.includes("refs.splitDivider.addEventListener('pointerdown'") &&
-  renderer.includes("refs.codeDivider.addEventListener('pointerdown'"));
-check('Sidebar and Inspector resizers are real resizers',
-  renderer.includes("refs.sidebarResizer.addEventListener('pointerdown'") &&
-  renderer.includes("refs.inspectorResizer.addEventListener('pointerdown'"));
+checkIncludesAll('Project save commands own Ctrl shortcuts', html,
+  ['Save Project <kbd>Ctrl+S</kbd>', 'Save Project As <kbd>Ctrl+Shift+S</kbd>']);
+checkIncludesAll('Project files save with the prj extension', main,
+  ["defaultPath: suggestedName || 'project.prj'", "extensions: ['prj']", "if (!/\\.prj$/i.test(filePath)) filePath += '.prj'"]);
+checkIncludesAll('Legacy Leaf project extensions remain openable', main,
+  ["extensions: ['prj', 'leaf', 'hbeproj', 'json']"]);
+check('Legacy leaf-document projects still migrate in renderer',
+  renderer.includes("payload?.format==='leaf-document'"));
 
-check('Project card grouping preserved',
-  renderer.includes("card.className='project-card'") && css.includes('.project-card{') &&
-  css.includes('--project-color'));
-check('Empty page is a true placeholder',
-  renderer.includes("source:'',baseUrl:null,sourcePath:null,isEmpty:true"));
-check('Explorer HTML drag/drop preserved',
-  renderer.includes('readDroppedHtml(file)') && preload.includes('webUtils.getPathForFile(file)'));
-check('Preview render size controls exist in every preview slot',
-  ['single','left','right','codePreview'].every(slot=>html.includes(`data-preview-size-slot="${slot}"`)));
-check('Preview viewport presets include responsive and fixed sizes',
-  html.includes('value="responsive"') && html.includes('value="1920x1080"') &&
-  html.includes('value="390x844"') && html.includes('value="custom"'));
-check('Preview fixed size changes actual iframe surface dimensions',
-  renderer.includes('surface.style.width=`${width}px`') &&
-  renderer.includes('surface.style.height=`${height}px`') &&
-  css.includes('.preview-canvas.is-responsive'));
+checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, and PDF', main,
+  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])",
+   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']"]);
+check('Obsolete image Page formats are not restored',
+  !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'"));
+checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF', html,
+  ['option value="html"', 'option value="markdown"', 'option value="json"', 'option value="pdf"']);
+checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
+  ['async function exportPageAs', 'printToPDF({ printBackground: true, preferCSSPageSize: true })', "javascript: false"]);
 
+checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
+  ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}",
+   "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
+checkIncludesAll('PDF Edit delegates to the native PDF toolbar', renderer,
+  ["const pdfAvailable=page?.documentType==='pdf'&&!!frame", "Use the native PDF toolbar to highlight, draw, annotate, fill, sign"]);
+checkIncludesAll('Clear targets its own View without an active-Inspector guard', renderer,
+  ['pendingClearPageId=pageId;', 'const selectionBelongsToPage=selectedElementFrame&&frameToPageId(selectedElementFrame)===page.id']);
 
-check('HTML Edit OFF gates hover/select',
-  renderer.includes("if(!htmlEditEnabled || e.target.dataset?.editorOverlay) return"));
-check('Hover and Selected visuals are distinct',
-  renderer.includes("stateName='hover'") && renderer.includes("stateName==='selected'"));
+checkIncludesAll('Hover inspection has independent overlay and tooltip', renderer,
+  ["hoverOverlay.dataset.editorOverlay='hover-highlight'", "hoverTooltip.dataset.editorOverlay='hover-tooltip'",
+   'positionHoverOverlay(e.target)', 'syncSelectionOverlays()']);
+checkIncludesAll('Hover tooltip exposes object identity and semantics', renderer,
+  ["['Name',objectDisplayName(el)]", "['Role',implicitRole(el)]", "['Display',computed.display||'—']", "['Focusable',isKeyboardFocusable(el)?'Yes':'No']"]);
+checkIncludesAll('Every visual View owns non-mutating highlight search', renderer,
+  ["CSS.highlights.set('leaf-search-all'", "CSS.highlights.set('leaf-search-current'", "if(event.key==='Enter'){event.preventDefault();refreshViewSearch"]);
+check('Search controls exist for four visual Views plus Code',
+  (html.match(/data-view-search=/g) || []).length === 4 && html.includes('id="codeSearch"'));
 
-check('Inspector draft has explicit edit-context fields',
-  includesAll(renderer, ['selectedElementId','savedValues','dirtyFields','validationErrors','inspectorPreviewEnabled','htmlEditEnabled']));
-check('Typing/Preview do not commit source',
-  renderer.includes('applyDraftPreview()') && renderer.includes('syncFrameToPage(inspectorDraft.frame,page)'));
-check('Apply is a transaction boundary',
-  renderer.includes('// One Apply = one logical transaction boundary.') && renderer.includes('pushUndo(page)'));
-check('Reset restores last applied state',
-  renderer.includes('inspectorDraft.values=clone(inspectorDraft.savedValues)') &&
-  renderer.includes('inspectorDraft.dirtyFields=[]'));
+checkIncludesAll('Hierarchy observes Page load and author DOM changes', renderer,
+  ['function bindHierarchyObserver(frame)', 'observer.observe(doc.body,{subtree:true,childList:true,characterData:true,attributes:true})', 'bindHierarchyObserver(frame);']);
+checkIncludesAll('Hierarchy displays object type at the right edge', renderer,
+  ['function hierarchyObjectType(el)', '<span class="hierarchy-type">']);
+check('Hierarchy type style reserves right-edge space',
+  css.includes('.hierarchy-type{flex:none;margin-left:auto'));
+checkIncludesAll('A source document has one Page identity and one Compare binding', renderer,
+  ['function pageDocumentKey(page)', 'function loadedPageForPath(sourcePath)', 'This document is already open. Focused the existing Page.',
+   'function bindPageToSlot(slot,nextPageId)', 'samePageDocument(nextPageId,state.views[other])']);
 
-check('Draft validation blocks Apply',
-  renderer.includes('function validateInspectorDraft()') &&
-  renderer.includes('hasInspectorValidationErrors()') &&
-  renderer.includes("applyButton.disabled=!(htmlEditEnabled && inspectorDraft?.dirty) || invalid"));
-check('Invalid draft prevents preview partial application',
-  renderer.includes('if(inspectorPreviewEnabled && !hasInspectorValidationErrors()) applyDraftPreview()') &&
-  renderer.includes('else restoreDraftOriginalLive()'));
+checkIncludesAll('Splitters reserve a visible eight-pixel gutter', css,
+  ['--splitter-hit:8px', 'background:var(--background);cursor:col-resize', '.view-divider{background:var(--background)']);
+checkIncludesAll('Edit outline and View header sizing match v0.5.16', css,
+  ['--view-head-h:34px', 'outline:2px solid #ff3f46', 'height:var(--view-head-h);flex:0 0 var(--view-head-h)']);
+checkIncludesAll('Startup status paints before renderer bootstrap', html,
+  ['id="appStartup"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);
+checkIncludesAll('Startup status closes deterministically', renderer,
+  ["performance.measure('leaf-renderer-bootstrap'", "document.documentElement.dataset.leafReady='true'", "startup?.classList.add('is-complete')"]);
 
-check('Unsaved guard covers page switching',
-  renderer.includes('function selectPageFromTree') && renderer.includes('withUnsavedInspectorGuard(()=>'));
-check('Unsaved guard covers element switching',
-  renderer.includes('targetId!==currentId') && renderer.includes('withUnsavedInspectorGuard(selectTarget'));
-check('Unsaved guard covers project switching',
-  renderer.includes("state.selectedProjectId=project.id") && renderer.includes('row.onclick=e=>') &&
-  renderer.includes('withUnsavedInspectorGuard(()=>'));
-check('Unsaved dialog exposes Cancel / Discard / Apply',
-  includesAll(html,['id="unsavedCancel"','id="unsavedDiscard"','id="unsavedApply"']));
+const semanticTokens = ['--background', '--foreground', '--panel', '--panel-secondary', '--border', '--border-subtle', '--muted', '--accent', '--selection', '--focus-ring', '--success', '--warning', '--error'];
+check('Semantic design tokens present', semanticTokens.every(token => css.includes(token)), semanticTokens.join(', '));
+check('Dark, Light, Carbon, and Codex themes are exposed',
+  ['dark', 'light', 'carbon', 'codex'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
+  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') && css.includes('body[data-theme="codex"]'));
+check('Codex is the default preference theme',
+  renderer.includes("scale:1, theme:'codex'") && renderer.includes("state.preferences.theme || 'codex'"));
+check('Theme CSS does not leak into Page iframes',
+  !css.includes('body[data-theme="carbon"] iframe') && !css.includes('body[data-theme="codex"] iframe'));
 
-check('Inspector properties are single vertical rows',
-  renderer.includes('propertyRow(') && css.includes('.property-row{') &&
-  css.includes('grid-template-columns:minmax(92px,42%) minmax(0,1fr)'));
+checkIncludesAll('Zoom controls live outside the scrolling canvas', renderer,
+  ["layer.className='viewport-floating-controls'", 'layer.append(control,fit);pane?.appendChild(layer)']);
+checkIncludesAll('Zoom-independent scrollbar compensation remains metadata-safe', renderer,
+  ['const PREVIEW_SCROLLBAR_VISUAL_SIZE=8', 'function runtimePreviewScrollbarCss(zoom=100)', 'applyPreviewScrollbarCompensation(slot,zoom);',
+   "frame.dataset.scrollbarCompensation=applied?'inverse-zoom':'native'"]);
+checkIncludesAll('Scrollbar runtime metadata is stripped from saved source', fidelity,
+  ['[data-leaf-scrollbar-runtime]', "'data-leaf-scrollbar-runtime'", 'editorArtifactReport']);
+check('Preview fallback surfaces use the canvas token',
+  css.includes('iframe{width:100%;height:100%;border:0;background:var(--canvas)'));
 
-check('No general panel shadows',
-  !/\.sidebar[^}]*box-shadow|\.inspector[^}]*box-shadow|\.menubar[^}]*box-shadow/s.test(css));
-check('Popup/dialog shadow token exists',
-  css.includes('--shadow-popup') && css.includes('.context-menu{') && css.includes('.modal{'));
+checkIncludesAll('Objects palette includes practical content, form, and layout controls', registry,
+  ["type:'button'", "type:'link'", "type:'form'", "type:'textInput'", "type:'table'", "type:'columns'", "type:'hero'"]);
+checkIncludesAll('Overlay components establish a free-positioning context', registry,
+  ['position:relative;display:block;min-height:240px']);
+checkIncludesAll('Viewport placement preview handles palette, Used, and existing objects', renderer,
+  ['function calculateViewportPlacement(', 'function renderViewportPlacementPreview(', 'data.template&&!data.used&&!data.existing']);
+checkIncludesAll('Table overlay selection and structure actions remain wired', renderer,
+  ['function tableRangeCells(startCell,endCell)', 'function selectedTableRowIndexes(table)', 'function selectedTableColumnIndexes(table)']);
+checkIncludesAll('Inspector owns live property-name search and hyperlink controls', renderer,
+  ['function filterInspectorProperties()', "propertyRow('linkHref','Link URL'", "propertyRow('linkTarget','Open In'", "['http:','https:','mailto:','tel:'].includes(url.protocol)"]);
+checkIncludesAll('Project tree search preserves visible ancestors', renderer,
+  ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
-check('Desktop density targets are represented',
-  css.includes('--control-h:30px') && css.includes('--row-h:27px') && css.includes('--section-h:28px'));
-
-// Data-model scale smoke: 10 projects / 50 groups / 300 pages.
 const large = [];
-let pageCount=0, groupCount=0;
-for(let p=0;p<10;p++){
-  const project={id:`p${p}`,nodes:[]};
-  for(let g=0;g<5;g++){
-    const gid=`p${p}g${g}`;
-    project.nodes.push({id:gid,type:'group',parentId:null,order:g});
+let pageCount = 0;
+let groupCount = 0;
+for (let p = 0; p < 10; p++) {
+  const project = { id: `p${p}`, nodes: [] };
+  for (let g = 0; g < 5; g++) {
+    const gid = `p${p}g${g}`;
+    project.nodes.push({ id: gid, type: 'group', parentId: null, order: g });
     groupCount++;
-    for(let n=0;n<6;n++){
-      project.nodes.push({id:`${gid}page${n}`,type:'page',parentId:gid,order:n,source:'<p>x</p>'});
+    for (let n = 0; n < 6; n++) {
+      project.nodes.push({ id: `${gid}page${n}`, type: 'page', parentId: gid, order: n, source: '<p>x</p>' });
       pageCount++;
     }
   }
   large.push(project);
 }
-check('Large tree fixture = 10 projects', large.length===10);
-check('Large tree fixture = 50 groups', groupCount===50);
-check('Large tree fixture = 300 pages', pageCount===300);
+check('Large tree fixture = 10 projects / 50 groups / 300 pages',
+  large.length === 10 && groupCount === 50 && pageCount === 300,
+  `${large.length} projects, ${groupCount} groups, ${pageCount} pages`);
 check('Large tree hierarchy parent IDs resolve',
   large.every(project => {
-    const ids=new Set(project.nodes.map(n=>n.id));
-    return project.nodes.every(n=>n.parentId===null || ids.has(n.parentId));
+    const ids = new Set(project.nodes.map(node => node.id));
+    return project.nodes.every(node => node.parentId === null || ids.has(node.parentId));
   }));
 
-// Project reorder invariant: B above A produces B,A,C.
-const order=['A','B','C'];
-const from=order.indexOf('B'), to=order.indexOf('A');
-const [moved]=order.splice(from,1); order.splice(to,0,moved);
-check('Project drag reorder invariant B,A,C', order.join(',')==='B,A,C', order.join(','));
+const order = ['A', 'B', 'C'];
+const from = order.indexOf('B');
+const to = order.indexOf('A');
+const [moved] = order.splice(from, 1);
+order.splice(to, 0, moved);
+check('Project drag reorder invariant B,A,C', order.join(',') === 'B,A,C', order.join(','));
 
-console.log('\nHTML Book Editor v0.3.5 static QA');
-console.log('==================================');
-for(const item of checks){
-  console.log(`${item.pass?'PASS':'FAIL'}  ${item.name}${item.detail?` — ${item.detail}`:''}`);
+console.log('\nLeaf v0.5.16 static QA');
+console.log('=======================');
+for (const item of checks) {
+  console.log(`${item.pass ? 'PASS' : 'FAIL'}  ${item.name}${item.detail ? ` - ${item.detail}` : ''}`);
 }
-const passed=checks.filter(x=>x.pass).length;
+const passed = checks.filter(item => item.pass).length;
 console.log(`\n${passed}/${checks.length} checks passed.`);
-if(process.exitCode) process.exit(process.exitCode);
+if (process.exitCode) process.exit(process.exitCode);
