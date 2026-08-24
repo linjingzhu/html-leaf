@@ -9,6 +9,7 @@ on:
         default: true
   push:
     branches:
+      - "stable"
       - "claude/**"
     tags:
       - "v*"
@@ -33,6 +34,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run static QA
+        run: npm run qa:static && npm run qa:theme-light
 
       - name: Build macOS dmg + zip
         env:
