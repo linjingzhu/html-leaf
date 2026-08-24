@@ -58,6 +58,7 @@
   function loadLeafExtensions(){
     loadExtensionScript('./preview-universal-edit.js');
     loadExtensionScript('./canvas-lab.js');
+    loadExtensionScript('./view-drop-bridge.js');
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadLeafExtensions,{once:true});
