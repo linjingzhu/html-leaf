@@ -49,6 +49,39 @@
     blinkFeature: 'CanvasDrawElement'
   };
 
+  function injectBadgeStyle() {
+    if (document.getElementById('leaf-html-canvas-capability-style')) return;
+    const style = document.createElement('style');
+    style.id = 'leaf-html-canvas-capability-style';
+    style.textContent = `
+      .preview-runtime-badge.dom{
+        color:var(--success);border-color:color-mix(in srgb,var(--success) 35%,var(--border));
+        background:color-mix(in srgb,var(--success) 8%,var(--panel-secondary));
+      }
+      .preview-runtime-badge.js{
+        color:var(--warning);border-color:color-mix(in srgb,var(--warning) 35%,var(--border));
+        background:color-mix(in srgb,var(--warning) 8%,var(--panel-secondary));
+      }
+      .preview-runtime-badge.scripts-off{
+        color:var(--focus-ring);border-color:color-mix(in srgb,var(--focus-ring) 38%,var(--border));
+        background:color-mix(in srgb,var(--focus-ring) 9%,var(--panel-secondary));
+      }
+      .preview-runtime-badge.canvas{
+        color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
+        background:color-mix(in srgb,var(--accent) 10%,var(--panel-secondary));
+      }
+      .preview-runtime-badge.fallback{
+        color:var(--warning);border-color:color-mix(in srgb,var(--warning) 42%,var(--border));
+        background:color-mix(in srgb,var(--warning) 10%,var(--panel-secondary));
+      }
+      .preview-runtime-badge.unavailable{
+        color:var(--error);border-color:color-mix(in srgb,var(--error) 42%,var(--border));
+        background:color-mix(in srgb,var(--error) 8%,var(--panel-secondary));
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function readState() {
     try {
       return JSON.parse(localStorage.getItem(STATE_KEY) || 'null');
@@ -197,6 +230,7 @@
   }
 
   function install() {
+    injectBadgeStyle();
     refreshRuntimeConfig().then(refresh);
     new MutationObserver(refresh).observe(document.body, {
       subtree: true,
