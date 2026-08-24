@@ -45,5 +45,23 @@
     return{ok:false,reason:`unsupported-fields:${changed.join(',')}`};
   }
 
+  function loadExtensionScript(src){
+    if(document.querySelector(`script[data-leaf-extension="${src}"]`))return;
+    const script=document.createElement('script');
+    script.src=src;
+    script.async=true;
+    script.dataset.leafExtension=src;
+    script.onerror=()=>console.warn(`Leaf extension failed to load: ${src}`);
+    document.body.appendChild(script);
+  }
+
+  function loadLeafExtensions(){
+    loadExtensionScript('./preview-universal-edit.js');
+    loadExtensionScript('./canvas-lab.js');
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadLeafExtensions,{once:true});
+  else loadLeafExtensions();
+
   window.SourceFidelity={stripEditorArtifactsFromDocument,editorArtifactReport,tryMinimalDirectTextPatch,tryInspectorMinimalPatch};
 })();
