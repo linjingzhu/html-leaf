@@ -217,8 +217,31 @@
         display:flex;
         pointer-events:auto;
       }
-      .view-pane.${OVER_CLASS} .html-drop-zone,
-      .code-editor-pane.${OVER_CLASS} .html-drop-zone{
+      .view-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone,
+      .code-editor-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone,
+      body.${ROUTING_CLASS} .view-pane:not(.is-empty) .html-drop-zone.drag-over,
+      body.${ROUTING_CLASS} .code-editor-pane:not(.is-empty) .html-drop-zone.drag-over{
+        background:rgba(255,255,255,.64);
+        border-color:rgba(255,255,255,.72);
+        color:#17202a;
+        backdrop-filter:blur(1px);
+      }
+      .view-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone .drop-icon,
+      .code-editor-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone .drop-icon,
+      body.${ROUTING_CLASS} .view-pane:not(.is-empty) .html-drop-zone.drag-over .drop-icon,
+      body.${ROUTING_CLASS} .code-editor-pane:not(.is-empty) .html-drop-zone.drag-over .drop-icon{
+        background:rgba(255,255,255,.56);
+        border-color:rgba(23,32,42,.22);
+        color:#17202a;
+      }
+      .view-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone span,
+      .code-editor-pane.${OVER_CLASS}:not(.is-empty) .html-drop-zone span,
+      body.${ROUTING_CLASS} .view-pane:not(.is-empty) .html-drop-zone.drag-over span,
+      body.${ROUTING_CLASS} .code-editor-pane:not(.is-empty) .html-drop-zone.drag-over span{
+        color:rgba(23,32,42,.72);
+      }
+      .view-pane.${OVER_CLASS}.is-empty .html-drop-zone,
+      .code-editor-pane.${OVER_CLASS}.is-empty .html-drop-zone{
         background:color-mix(in srgb,var(--accent) 8%,var(--canvas));
         border-color:var(--focus-ring);
       }
