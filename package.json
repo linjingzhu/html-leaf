@@ -13,11 +13,12 @@
     "qa:zoom-scrollbar": "node scripts/qa-zoom-scrollbar-v0516.js",
     "qa:theme-codex": "node scripts/qa-theme-codex-v0516.js",
     "qa:e2e-theme-codex": "node scripts/e2e-theme-codex-v0516.js",
+    "version:build": "node scripts/bump-build-version.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
-    "dist:win": "electron-builder --win nsis zip --x64 --publish never",
-    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64 --publish never",
-    "dist:mac:arm64": "electron-builder --mac dmg zip --arm64 --publish never",
-    "dist:mac:x64": "electron-builder --mac dmg zip --x64 --publish never"
+    "dist:win": "npm run version:build && electron-builder --win nsis zip --x64 --publish never",
+    "dist:mac": "npm run version:build && electron-builder --mac dmg zip --x64 --arm64 --publish never",
+    "dist:mac:arm64": "npm run version:build && electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:mac:x64": "npm run version:build && electron-builder --mac dmg zip --x64 --publish never"
   },
   "devDependencies": {
     "electron": "43.4.0",
