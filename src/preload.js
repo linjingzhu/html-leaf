@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  runtimeConfig: () => ipcRenderer.invoke('runtime:config'),
   importHtml: () => ipcRenderer.invoke('file:importHtml'),
   readHtmlPath: (filePath) => ipcRenderer.invoke('file:readHtmlPath', filePath),
   readDroppedHtml: (file) => {
