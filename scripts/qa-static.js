@@ -12,6 +12,7 @@ const css = read('src/renderer/styles.css');
 const html = read('src/renderer/index.html');
 const fidelity = read('src/renderer/source-fidelity.js');
 const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
+const htmlCanvasCapability = read('src/renderer/html-canvas-capability.js');
 const registry = read('src/renderer/widget-registry.js');
 
 const checks = [];
@@ -84,9 +85,18 @@ checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
    "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
 checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./scripted-html-edit.js')"]);
-checkIncludesAll('Scripted HTML Edit converts interactive previews into selectable static DOM', scriptedHtmlEdit,
-  ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable'",
-   "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)"]);
+checkIncludesAll('HTML-in-Canvas capability extension is loaded with source-fidelity guards', fidelity,
+  ["loadExtensionScript('./html-canvas-capability.js')", "loadExtensionScript('./canvas-lab.js')"]);
+checkIncludesAll('HTML-in-Canvas experiment is gated before Electron ready', main,
+  ["const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement'", "const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS)",
+   "app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE)", "ipcMain.handle('runtime:config', () => runtimeConfig())"]);
+check('Preload exposes renderer runtime config through the narrow bridge',
+  preload.includes("runtimeConfig: () => ipcRenderer.invoke('runtime:config')"));
+checkIncludesAll('Renderer detects HTML-in-Canvas capability before exposing badge states', htmlCanvasCapability,
+  ["typeof ctx?.drawElementImage === 'function'", 'window.LeafHtmlCanvasCapability', "label: 'Canvas'", "label: 'Fallback'", "label: 'Unavailable'"]);
+checkIncludesAll('Scripted HTML Edit converts interactive previews into scripts-off selectable DOM', scriptedHtmlEdit,
+  ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
+   "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)", "setRuntimeBadge(slot, 'scripts-off')"]);
 checkIncludesAll('Scripted HTML preview restores the interactive sandbox after Edit is disabled', scriptedHtmlEdit,
   ["frame.dataset.previewRuntime = 'interactive-isolated'", "frame.setAttribute('sandbox', 'allow-scripts')",
    "restoreInteractivePreview(slot, page)"]);
