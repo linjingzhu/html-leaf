@@ -58,6 +58,7 @@
   function loadLeafExtensions(){
     loadExtensionScript('./theme-policy.js');
     loadExtensionScript('./preview-universal-edit.js');
+    loadExtensionScript('./html-canvas-capability.js');
     loadExtensionScript('./canvas-lab.js');
     loadExtensionScript('./view-drop-bridge.js');
     loadExtensionScript('./code-syntax-highlight.js');

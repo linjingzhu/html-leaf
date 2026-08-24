@@ -7,6 +7,26 @@ const { pathToFileURL, fileURLToPath } = require('node:url');
 let mainWindow;
 let sessionTempDir = null;
 const initialHtmlSnapshots = new Map();
+const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement';
+
+function boolEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
+}
+
+const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS);
+
+if (htmlCanvasExperimentEnabled) {
+  app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE);
+}
+
+function runtimeConfig() {
+  return {
+    htmlCanvas: {
+      enabled: htmlCanvasExperimentEnabled,
+      blinkFeature: HTML_CANVAS_BLINK_FEATURE
+    }
+  };
+}
 
 app.setName('Leaf');
 if (process.platform === 'win32') app.setAppUserModelId('com.leaf.editor');
@@ -314,7 +334,7 @@ async function writeObjectAssetAtPath(filePath, format, source) {
   const mime = normalized === 'jpg' ? 'image/jpeg' : normalized === 'png' ? 'image/png' : null;
   const payload = String(source || '');
   const match = mime && payload.match(new RegExp(`^data:${mime.replace('/', '\\/')};base64,([A-Za-z0-9+/=]+)$`));
-  if (!match || match[1].length > 120_000_000) throw new Error('Invalid raster export payload.');
+  if (!match || !match[1] || match[1].length > 120_000_000) throw new Error('Invalid raster export payload.');
   await atomicWriteFile(filePath, Buffer.from(match[1], 'base64'));
 }
 
@@ -473,6 +493,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('runtime:config', () => runtimeConfig());
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
   ipcMain.handle('file:importPages', openDocumentFiles);
