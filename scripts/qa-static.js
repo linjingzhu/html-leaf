@@ -11,6 +11,7 @@ const renderer = read('src/renderer/renderer.js');
 const css = read('src/renderer/styles.css');
 const html = read('src/renderer/index.html');
 const fidelity = read('src/renderer/source-fidelity.js');
+const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
 const registry = read('src/renderer/widget-registry.js');
 
 const checks = [];
@@ -81,6 +82,14 @@ checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
 checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
   ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}",
    "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
+checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity guards', fidelity,
+  ["loadExtensionScript('./scripted-html-edit.js')"]);
+checkIncludesAll('Scripted HTML Edit converts interactive previews into selectable static DOM', scriptedHtmlEdit,
+  ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable'",
+   "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)"]);
+checkIncludesAll('Scripted HTML preview restores the interactive sandbox after Edit is disabled', scriptedHtmlEdit,
+  ["frame.dataset.previewRuntime = 'interactive-isolated'", "frame.setAttribute('sandbox', 'allow-scripts')",
+   "restoreInteractivePreview(slot, page)"]);
 checkIncludesAll('PDF Edit delegates to the native PDF toolbar', renderer,
   ["const pdfAvailable=page?.documentType==='pdf'&&!!frame", "Use the native PDF toolbar to highlight, draw, annotate, fill, sign"]);
 checkIncludesAll('Clear targets its own View without an active-Inspector guard', renderer,
