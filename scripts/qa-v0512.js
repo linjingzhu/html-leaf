@@ -19,7 +19,7 @@ check('Object export saves through a validated atomic main-process path',preload
 check('Object context menu exposes Export',html.includes('data-object-context="export"')&&js.includes("if(action==='export')openObjectExportDialog()"));
 check('Used Preview owns a visible toggle and horizontal splitter',html.includes('id="toggleUsedPreview"')&&html.includes('id="usedPreviewSplitter"')&&css.includes('.preview-collapsed'));
 check('Used Preview size and visibility persist in layout state',js.includes('usedPreviewVisible:true')&&js.includes('usedPreviewRatio:0.42')&&js.includes('state.layout.usedPreviewRatio=value'));
-check('Viewport Edit remains a stable pressed-state toggle',js.includes("button.textContent='Edit'")&&js.includes("button.setAttribute('aria-pressed',active?'true':'false')"));
+check('Viewport Edit remains a stable pressed-state toggle',js.includes("button.textContent=active?'Apply':'Edit'")&&js.includes("button.setAttribute('aria-pressed',active?'true':'false')"));
 check('Every document View owns a UI-free fullscreen control',html.split('data-document-fullscreen=').length===5&&js.includes('function setDocumentFullscreen(')&&js.includes('dataset.documentFullscreenSlot')&&css.includes('body.document-view-only'));
 check('Fullscreen control becomes an accessible Show UI control in the same location',(js.includes("button.textContent=active?'Show UI':'⛶'")||js.includes("button.setAttribute('aria-label',active?'Show Leaf UI'"))&&css.includes('>.document-fullscreen-toggle'));
 check('Enter starts selected text editing',js.includes("event.key==='Enter' && !editing && !modifier")&&js.includes('editSelectedText()'));
