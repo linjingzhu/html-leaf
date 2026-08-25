@@ -56,8 +56,11 @@
     document.body.appendChild(script);
   }
 
-  function loadLeafExtensions(){
+  function loadEarlyExtensions(){
     loadExtensionScript('./theme-policy.js');
+  }
+
+  function loadLeafExtensions(){
     loadExtensionScript('./preview-universal-edit.js');
     loadExtensionScript('./html-canvas-capability.js');
     loadExtensionScript('./canvas-lab.js');
@@ -68,8 +71,45 @@
     loadExtensionScript('./scripted-html-edit.js');
   }
 
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadLeafExtensions,{once:true});
-  else loadLeafExtensions();
+  let extensionsLoaded=false;
+
+  function isRendererReady(){
+    return document.documentElement.dataset.leafReady==='true';
+  }
+
+  function loadLeafExtensionsOnce(){
+    if(extensionsLoaded)return;
+    extensionsLoaded=true;
+    loadLeafExtensions();
+  }
+
+  function waitForRendererReady(){
+    if(isRendererReady()){
+      loadLeafExtensionsOnce();
+      return;
+    }
+
+    const observer=new MutationObserver(()=>{
+      if(!isRendererReady())return;
+      observer.disconnect();
+      loadLeafExtensionsOnce();
+    });
+    observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-leaf-ready']});
+
+    setTimeout(()=>{
+      if(!extensionsLoaded&&!isRendererReady()){
+        console.warn('Leaf extensions are waiting for renderer readiness.');
+      }
+    },2500);
+  }
+
+  function installExtensions(){
+    loadEarlyExtensions();
+    waitForRendererReady();
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installExtensions,{once:true});
+  else installExtensions();
 
   window.SourceFidelity={stripEditorArtifactsFromDocument,editorArtifactReport,tryMinimalDirectTextPatch,tryInspectorMinimalPatch};
 })();
