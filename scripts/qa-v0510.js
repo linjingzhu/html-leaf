@@ -19,8 +19,8 @@ check('BrowserWindow uses the branded Windows icon',main.includes("icon: path.jo
 check('Main menu begins without an embedded product mark',!html.includes('class="product-mark"')&&html.includes('<nav class="main-menu" id="mainMenu"'));
 check('Removed product mark leaves no application-bar gutter styles',!css.includes('.product-mark{')&&!css.includes('.product-mark img{'));
 check('Windows package uses branded application icon',pkg.build?.win?.icon==='build/icon.ico');
-check('Installer and uninstaller use branded icons',pkg.build?.nsis?.installerIcon==='build/installerIcon.ico'&&pkg.build?.nsis?.uninstallerIcon==='build/icon.ico');
-check('Installer creates Desktop and Start Menu shortcuts',pkg.build?.nsis?.createDesktopShortcut===true&&pkg.build?.nsis?.createStartMenuShortcut===true&&pkg.build?.nsis?.shortcutName==='Leaf');
+check('Windows executable uses the branded Leaf icon',pkg.build?.win?.icon==='build/icon.ico'&&pkg.build?.productName==='Leaf');
+check('Branded icon ships inside the portable package',Array.isArray(pkg.build?.files)&&pkg.build.files.includes('build/icon.ico'));
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v059.js')],{stdio:'inherit'});
 check('qa-v059.js regression',prior.status===0);

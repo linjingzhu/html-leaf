@@ -40,7 +40,7 @@ Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
 | Platform | File | Source |
 | --- | --- | --- |
-| Windows x64 | `Leaf-Setup-0.5.16-x64.exe` / `Leaf-0.5.16-x64.zip` | [`windows-v0.5.16`](../../releases/tag/windows-v0.5.16), [`dist/`](dist) |
+| Windows x64 | `Leaf-0.5.16-x64.zip` (portable, no install) | [`windows-v0.5.16`](../../releases/tag/windows-v0.5.16), [`dist/`](dist) |
 | macOS Apple Silicon | `Leaf-0.5.16-mac-arm64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
 | macOS Intel | `Leaf-0.5.16-mac-x64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
 
@@ -61,7 +61,7 @@ xattr -dr com.apple.quarantine /Applications/Leaf.app
 
 ```bash
 npm ci
-npm run dist:win          # Windows: NSIS installer + zip (Windows 필요)
+npm run dist:win          # Windows: portable zip (Windows 필요)
 npm run dist:mac          # macOS: dmg + zip, arm64 + x64 (macOS 필요)
 npm run dist:mac:arm64    # Apple Silicon 전용
 npm run dist:mac:x64      # Intel 전용

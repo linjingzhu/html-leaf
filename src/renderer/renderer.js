@@ -3467,8 +3467,36 @@
   };
   refs.replaceHtmlModal.addEventListener('keydown',event=>{trapDialogFocus(refs.replaceHtmlModal,event);if(event.key==='Escape')closeReplaceHtmlDialog();});
 
+  async function openPagesIntoSlot(slot){
+    withUnsavedInspectorGuard(async()=>{
+      try{
+        const results=await window.electronAPI.importPages();
+        if(!results?.length) return;
+        await addPageResultToDocument(results[0], slot);
+        for(const result of results.slice(1)) await addPageResultToDocument(result);
+        showToast(`${results.length} page${results.length===1?'':'s'} imported`);
+      }catch(error){
+        console.error('Page import failed',error);
+        showToast(`Import failed: ${error.message}`);
+      }
+    });
+  }
+
+  function bindDropZoneHit(pane, slot){
+    const zone=pane.querySelector('.html-drop-zone'); if(!zone) return;
+    zone.setAttribute('role','button');
+    zone.setAttribute('tabindex','0');
+    zone.setAttribute('title','Open a Page in this View');
+    zone.addEventListener('click',()=>openPagesIntoSlot(slot));
+    zone.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      event.preventDefault();openPagesIntoSlot(slot);
+    });
+  }
+
   function bindDropTarget(selector, slot){
     const pane=$(selector); if(!pane) return;
+    bindDropZoneHit(pane, slot);
     pane.addEventListener('dragenter',e=>{if([...(e.dataTransfer?.files||[])].some(isHtmlFile)||e.dataTransfer?.types?.includes('Files')){e.preventDefault();if(slot==='right'&&atlassianPreviewState)pane.dataset.atlassianDrag='true';else pane.querySelector('.html-drop-zone')?.classList.add('drag-over');}});
     pane.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';if(slot==='right'&&atlassianPreviewState)pane.dataset.atlassianDrag='true';else pane.querySelector('.html-drop-zone')?.classList.add('drag-over');}});
     pane.addEventListener('dragleave',e=>{if(!pane.contains(e.relatedTarget)){pane.querySelector('.html-drop-zone')?.classList.remove('drag-over');pane.removeAttribute('data-atlassian-drag');}});

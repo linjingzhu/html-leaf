@@ -404,7 +404,9 @@ iframe{width:100%;height:100%;border:0;background:var(--canvas);color-scheme:dar
   background:var(--canvas);border:1px dashed var(--border-strong);
   color:var(--text-secondary);text-align:center;pointer-events:none
 }
-.view-pane.is-empty .html-drop-zone,.code-editor-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto}
+.view-pane.is-empty .html-drop-zone,.code-editor-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
+.html-drop-zone:hover{background:color-mix(in srgb,var(--accent) 5%,var(--canvas));border-color:var(--focus-ring)}
+.html-drop-zone:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-3px}
 .html-drop-zone.drag-over{background:color-mix(in srgb,var(--accent) 7%,var(--canvas));border-color:var(--focus-ring)}
 .html-drop-zone strong{font-size:13px;font-weight:600}
 .html-drop-zone span{font-size:11px;color:var(--muted)}
@@ -750,7 +752,9 @@ body.document-view-only .document-fullscreen-target .view-pane-head>.document-fu
 body.document-view-only .document-fullscreen-target .preview-canvas{position:absolute;inset:0}
 body.document-view-only .document-fullscreen-target .html-drop-zone{inset:0}
 body.document-view-only .document-fullscreen-target .viewport-zoom-indicator{display:none}
-.objects-toolbar{padding:8px;border-bottom:1px solid var(--border);display:grid;gap:7px}.objects-toolbar input{height:28px;background:var(--input);color:var(--foreground);border:1px solid var(--border);border-radius:4px;padding:0 8px}
+.objects-toolbar{padding:8px;border-bottom:1px solid var(--border);display:grid;gap:7px}
+/* Search sits on the row the pane title used to occupy, with New Document beside it. */
+.project-search-toolbar{grid-template-columns:minmax(0,1fr) auto;align-items:center}.objects-toolbar input{height:28px;background:var(--input);color:var(--foreground);border:1px solid var(--border);border-radius:4px;padding:0 8px}
 .objects-filter{display:flex;gap:3px}.objects-filter button{height:24px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:4px}.objects-filter button.active{background:var(--selected);color:var(--foreground)}
 .objects-list{overflow:auto;padding:7px}.object-category{margin:8px 5px 5px;color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase}
 .object-item{display:grid;grid-template-columns:22px 1fr auto;gap:7px;align-items:center;min-height:34px;padding:4px 6px;border-radius:4px;cursor:grab}.object-item:hover{background:var(--hover)}
