@@ -47,9 +47,9 @@ addPass('2. Startup debug actions remain clickable even while loading is stuck',
     'function installStartupActionCapture()',
     "document.addEventListener('pointerup',handleStartupActionEvent,true)",
     "document.addEventListener('click',handleStartupActionEvent,true)",
-    "button.dataset.leafStartupAction='continue'",
-    "button.dataset.leafStartupAction='reset'",
-    "button.dataset.leafStartupAction='copy'"
+    "continueButton.dataset.leafStartupAction='continue'",
+    "resetButton.dataset.leafStartupAction='reset'",
+    "copyButton.dataset.leafStartupAction='copy'"
   ]),
   assertIncludes('startup buttons force pointer events and expose Electron clipboard fallback', fidelity, [
     "startup.style.pointerEvents='auto'",
