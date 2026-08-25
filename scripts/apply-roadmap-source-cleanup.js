@@ -27,6 +27,14 @@ function replaceRequired(source, from, to, file, reason) {
   return source.split(from).join(to);
 }
 
+function replaceRequiredPattern(source, pattern, to, file, reason) {
+  if (!pattern.test(source)) {
+    if (source.includes(to)) return source;
+    throw new Error(`${file}: expected source pattern not found for ${reason}.`);
+  }
+  return source.replace(pattern, to);
+}
+
 function removeCodexThemeCss(css) {
   const marker = '/* Codex-inspired application chrome.';
   const start = css.indexOf(marker);
@@ -81,14 +89,9 @@ function cleanupIndex() {
     '<div class="app-startup" id="appStartup" role="status" aria-live="polite">',
     '<div class="app-startup is-complete" id="appStartup" role="status" aria-live="polite">'
   );
-  next = replaceRequired(
+  next = replaceRequiredPattern(
     next,
-    `      continueButton.addEventListener('click', () => {
-        document.documentElement.dataset.leafReady = 'true';
-        const startup = document.getElementById('appStartup');
-        startup?.classList.add('is-complete');
-        setTimeout(() => startup?.remove(), 120);
-      });`,
+    /      continueButton\.addEventListener\('click', \(\) => \{\r?\n\s*document\.documentElement\.dataset\.leafReady = 'true';\r?\n\s*const startup = document\.getElementById\('appStartup'\);\r?\n\s*startup\?\.classList\.add\('is-complete'\);\r?\n\s*setTimeout\(\(\) => startup\?\.remove\(\), 120\);\r?\n\s*\}\);/,
     `      continueButton.addEventListener('click', () => {
         const startup = document.getElementById('appStartup');
         if (document.documentElement.dataset.leafReady !== 'true') {
