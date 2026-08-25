@@ -64,9 +64,16 @@
       continueButton.title = 'Hide the startup overlay if the editor already rendered behind it.';
       styleStartupButton(continueButton);
       continueButton.addEventListener('click', () => {
-        document.documentElement.dataset.leafReady = 'true';
         const startup = document.getElementById('appStartup');
+        if (document.documentElement.dataset.leafReady !== 'true') {
+          window.LeafStartup?.reportError?.('Cannot continue before renderer signals ready.', 'manual-continue-before-ready');
+          return;
+        }
         startup?.classList.add('is-complete');
+        if (startup) {
+          startup.style.pointerEvents = 'none';
+          startup.setAttribute('aria-hidden', 'true');
+        }
         setTimeout(() => startup?.remove(), 120);
       });
 
@@ -91,6 +98,8 @@
       const message = document.getElementById('appStartupMessage');
       if (message) message.textContent = `Startup issue (${context}): ${detail}`;
       const startup = document.getElementById('appStartup');
+      startup?.classList.remove('is-complete');
+      if (startup) startup.style.pointerEvents = 'auto';
       startup?.classList.remove('is-complete');
       if (startup) startup.style.pointerEvents = 'auto';
       startup?.classList.add('startup-error');

@@ -40,7 +40,7 @@
   };
 
   resetPersistedEditorState();
-  let state = normalizeState(createDefaultState());
+  let state = normalizeState(loadState() || createDefaultState());
   let selectedTreeNode = state.selectedTreeNode || null;
   let activeSlots = state.activeSlots || { split:'left', code:'preview' };
   let selectedElement = null;
