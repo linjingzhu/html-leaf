@@ -266,6 +266,20 @@ checkIncludesAll('Startup status paints before renderer bootstrap', html,
   ['id="appStartup"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);
 checkIncludesAll('Startup status closes deterministically', renderer,
   ["performance.measure('leaf-renderer-bootstrap'", "document.documentElement.dataset.leafReady='true'", "startup?.classList.add('is-complete')"]);
+
+checkIncludesAll('Application footer exposes version and live diagnostics', html,
+  ['id="appStatusBar"', 'id="appVersion"', 'id="appDebugMessage"', 'aria-live="polite"']);
+checkIncludesAll('Footer occupies a stable non-overlapping app grid row', css,
+  ['grid-template-rows:34px minmax(0,1fr) 22px', '.app-statusbar{', '.status-debug{',
+   'body.document-view-only .app-statusbar', 'position:fixed;right:14px;bottom:30px']);
+checkIncludesAll('Packaged version is exposed through the sandboxed startup bridge', preload,
+  ["const { version: appVersion } = require('../package.json');", 'appVersion,', 'startupInfo: () => Promise.resolve(startupInfo())']);
+checkIncludesAll('Startup diagnostics continuously update footer state', fidelity,
+  ['function renderDebugFooter(', 'function applyRuntimeVersion(', 'footer.dataset.level=debugFooterLevel',
+   'renderDebugFooter(line,debugFooterLevel(message,level))', 'applyRuntimeVersion(info?.appVersion)']);
+check('Footer diagnostics add no MutationObserver or polling loop',
+  !/MutationObserver\([^)]*renderDebugFooter/.test(fidelity) &&
+  !/setInterval\([^)]*renderDebugFooter/.test(fidelity));
 checkIncludesAll('Startup diagnostics cannot leave an invisible pointer-blocking overlay', fidelity,
   ["const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v6'",
    'function startupOverlayShouldCapturePointer(startup)',
