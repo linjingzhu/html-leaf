@@ -39,8 +39,8 @@ includesAll('Capability runtime feature-detects drawElementImage before painting
 
 includesAll('Canvas Preview is default-off and preserves DOM Preview fallback', capability, [
   'runtime.enabled',
-  "slotMode(slot) === 'dom'",
-  "setSlotMode(slot, 'dom')",
+  "if (mode === 'dom')",
+  "setSlotMode('left', 'dom')",
   "frame.dataset.previewRuntime = 'canvas-fallback'",
   "frame.style.opacity = ''"
 ]);
@@ -50,7 +50,7 @@ includesAll('Canvas Preview synchronizes viewport, zoom, and DPR before first ba
   'readSlotZoom(slot)',
   'canvas.width = Math.max(1, Math.round(rect.width * dpr))',
   'ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0)',
-  'record.firstPaint = true',
+  'firstPaint: true',
   "setRuntimeBadge(slot, 'canvas'"
 ]);
 
@@ -65,8 +65,8 @@ includesAll('Fallback reasons are visible and non-destructive', capability, [
   'paint-failure',
   'protected-content',
   'readback-restricted',
-  'data-canvas-fallback-reason',
-  "setRuntimeBadge(slot, 'fallback'"
+  'canvasFallbackReason',
+  "runtime.supported ? 'fallback'"
 ]);
 
 includesAll('Runtime wrappers are stripped from saved source reports', fidelity, [
