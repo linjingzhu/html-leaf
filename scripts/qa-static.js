@@ -97,6 +97,10 @@ check('Preload exposes renderer runtime config through the narrow bridge',
   preload.includes("runtimeConfig: () => ipcRenderer.invoke('runtime:config')"));
 checkIncludesAll('Renderer detects HTML-in-Canvas capability before exposing badge states', htmlCanvasCapability,
   ["typeof ctx?.drawElementImage === 'function'", 'window.LeafHtmlCanvasCapability', "label: 'Canvas'", "label: 'Fallback'", "label: 'Unavailable'"]);
+checkIncludesAll('Leaf extension bundle waits for renderer readiness before touching View DOM', fidelity,
+  ["function waitForRendererReady(){", "document.documentElement.dataset.leafReady==='true'", "attributeFilter:['data-leaf-ready']", 'loadLeafExtensionsOnce();']);
+checkIncludesAll('HTML-in-Canvas observer waits for Leaf readiness before installing', htmlCanvasCapability,
+  ['let installed = false;', 'function isLeafReady() {', "document.documentElement.dataset.leafReady === 'true'", 'if (document.body && isLeafReady()) {']);
 checkIncludesAll('Scripted HTML Edit converts interactive previews into scripts-off selectable DOM', scriptedHtmlEdit,
   ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
    "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)", "setRuntimeBadge(slot, 'scripts-off')"]);
