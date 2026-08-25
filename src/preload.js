@@ -1,8 +1,10 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { version: appVersion } = require('../package.json');
 
 function startupInfo() {
   return {
     diagnostics: 'preload-startup-info-v1',
+    appVersion,
     platform: process.platform,
     arch: process.arch,
     electron: process.versions.electron,

@@ -111,7 +111,24 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .app-startup-progress i{display:block;width:34%;height:100%;background:#9dca35;animation:leaf-startup-progress 1.1s ease-in-out infinite}
 .app-startup.startup-error .app-startup-progress i{background:#d86b72;animation:none;width:100%}
 @keyframes leaf-startup-progress{from{transform:translateX(-110%)}to{transform:translateX(310%)}}
-.app{height:100vh;display:grid;grid-template-rows:34px 1fr}
+.app{height:100vh;display:grid;grid-template-rows:34px minmax(0,1fr) 22px}
+
+.app-statusbar{
+  min-width:0;height:22px;display:flex;align-items:center;gap:7px;padding:0 9px;
+  border-top:1px solid var(--border);background:var(--panel);color:var(--muted);
+  font-size:10px;line-height:1;user-select:none
+}
+.status-version{flex:none;color:var(--text-secondary);font-weight:600}
+.status-divider{width:1px;height:10px;flex:none;background:var(--border-strong)}
+.status-indicator{width:6px;height:6px;flex:none;border-radius:50%;background:var(--muted)}
+.app-statusbar[data-level="success"] .status-indicator{background:var(--success)}
+.app-statusbar[data-level="warning"] .status-indicator{background:var(--warning)}
+.app-statusbar[data-level="error"] .status-indicator{background:var(--error)}
+.app-statusbar[data-level="error"] .status-debug{color:var(--error)}
+.status-debug{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace
+}
 
 /* Application bar */
 .menubar{
@@ -567,12 +584,13 @@ body[data-theme="light"] .code-area textarea{background:#fbfbfc;color:#242a31}
   color:var(--muted);font-size:11px;line-height:1.4
 }
 .toast{
-  position:fixed;right:14px;bottom:14px;z-index:300;padding:8px 10px;
+  position:fixed;right:14px;bottom:30px;z-index:300;padding:8px 10px;
   background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-popup);
   box-shadow:var(--shadow-popup);font-size:11px;opacity:0;transform:translateY(6px);
   transition:opacity 130ms,transform 130ms;pointer-events:none
 }
 .toast.show{opacity:1;transform:none}
+body.document-view-only .toast{bottom:14px}
 
 /* Small-window desktop behavior, not mobile redesign */
 @media(max-width:1200px){
@@ -676,6 +694,7 @@ body[data-theme="light"] .code-area textarea{background:#fbfbfc;color:#242a31}
    the same upper-right control becomes the only visible route back to the UI. */
 body.document-view-only .app{grid-template-rows:1fr}
 body.document-view-only .menubar,
+body.document-view-only .app-statusbar,
 body.document-view-only .sidebar,
 body.document-view-only .sidebar-resizer,
 body.document-view-only .inspector,
