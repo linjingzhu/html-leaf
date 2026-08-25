@@ -258,17 +258,16 @@
     });
   }
 
-  function scheduleInstall() {
+  const LIFECYCLE_EVENTS = ['leaf-renderer-ready', 'leaf-tree-rendered', 'leaf-view-mode-changed', 'leaf-frame-rendered'];
+
+  LIFECYCLE_EVENTS.forEach(type => document.addEventListener(type, install));
+
+  // Injected after the renderer signals ready, so `leaf-renderer-ready` may already have fired.
+  if (document.documentElement.dataset.leafReady === 'true') {
     install();
-    requestAnimationFrame(install);
-    setTimeout(install, 160);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', scheduleInstall, { once: true });
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
   } else {
-    scheduleInstall();
+    install();
   }
-
-  new MutationObserver(scheduleInstall).observe(document.documentElement, { childList: true, subtree: true });
 })();

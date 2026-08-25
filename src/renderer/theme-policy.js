@@ -23,27 +23,17 @@
     }
   }
 
-  function patchStoredState() {
+  // One-shot only. renderer.js owns preferences.theme and normalizes it on load,
+  // so intercepting every state write here would re-parse the whole project
+  // payload for a single string.
+  function patchStoredStateOnce() {
     try {
       const current = localStorage.getItem(STATE_KEY);
       if (!current) return;
+      // Escaped page sources cannot produce this unescaped key/value pair.
+      if (/"theme":"(?:dark|light|carbon)"/.test(current)) return;
       const normalized = normalizeSerializedState(current);
       if (normalized !== current) localStorage.setItem(STATE_KEY, normalized);
-    } catch {}
-  }
-
-  function patchLocalStorageWrites() {
-    try {
-      if (localStorage.__leafThemePolicyPatched) return;
-      const nativeSetItem = localStorage.setItem.bind(localStorage);
-      Object.defineProperty(localStorage, '__leafThemePolicyPatched', {
-        value: true,
-        configurable: false
-      });
-      localStorage.setItem = (key, value) => {
-        const nextValue = key === STATE_KEY ? normalizeSerializedState(value) : value;
-        return nativeSetItem(key, nextValue);
-      };
     } catch {}
   }
 
@@ -66,7 +56,6 @@
   }
 
   function enforceThemePolicy() {
-    patchStoredState();
     removeCodexControls();
     if (!document.body) return;
     const nextTheme = normalizeTheme(document.body.dataset.theme);
@@ -75,7 +64,7 @@
   }
 
   function install() {
-    patchLocalStorageWrites();
+    patchStoredStateOnce();
     enforceThemePolicy();
     document.addEventListener('click', event => {
       const codexThemeControl = event.target.closest?.('[data-pref-theme="codex"]');

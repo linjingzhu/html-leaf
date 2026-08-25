@@ -550,14 +550,12 @@
     Object.keys(FRAME_CONFIG).forEach(slot => bindFrame(frameForSlot(slot)));
   }
 
-  function scheduleInstall() {
-    install();
-    requestAnimationFrame(install);
-    setTimeout(install, 160);
-  }
+  const LIFECYCLE_EVENTS = ['leaf-renderer-ready', 'leaf-frame-rendered'];
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleInstall, { once: true });
-  else scheduleInstall();
+  LIFECYCLE_EVENTS.forEach(type => document.addEventListener(type, install));
 
-  new MutationObserver(scheduleInstall).observe(document.documentElement, { childList: true, subtree: true });
+  // Injected after the renderer signals ready, so `leaf-renderer-ready` may already have fired.
+  if (document.documentElement.dataset.leafReady === 'true') install();
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+  else install();
 })();

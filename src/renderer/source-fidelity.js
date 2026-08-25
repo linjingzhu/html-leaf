@@ -435,6 +435,7 @@
   }
 
   const observedRendererScripts=new WeakSet();
+  let rendererScriptObserver=null;
   function observeRendererScript(script){
     if(!script||observedRendererScripts.has(script))return;
     const src=rendererScriptSrc(script);
@@ -461,8 +462,18 @@
       }
     });
     observer.observe(document.documentElement,{childList:true,subtree:true});
+    rendererScriptObserver=observer;
     window.addEventListener('load',()=>recordStartupDebug('window load event fired'),{once:true});
     document.addEventListener('DOMContentLoaded',()=>recordStartupDebug('DOMContentLoaded fired'),{once:true});
+  }
+
+  // Startup-only diagnostics: recovery never appends renderer.js once leafReady is set,
+  // so the observer cannot do further work and must not survive into render traffic.
+  function disconnectRendererScriptObserver(reason){
+    if(!rendererScriptObserver)return;
+    rendererScriptObserver.disconnect();
+    rendererScriptObserver=null;
+    recordStartupDebug('renderer script observer disconnected',reason);
   }
 
   function installStartupDiagnostics(){
@@ -629,6 +640,7 @@
   function loadLeafExtensionsOnce(){
     if(extensionsLoaded)return;
     extensionsLoaded=true;
+    disconnectRendererScriptObserver('renderer ready');
     recordStartupDebug('renderer ready; loading Leaf extensions');
     releaseStartupPointerBarrier('renderer ready');
     loadLeafExtensions();
