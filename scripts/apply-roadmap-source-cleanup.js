@@ -65,6 +65,25 @@ function cleanupStyles() {
   write(file, removeCodexThemeCss(source));
 }
 
+function cleanupStaticQa() {
+  const file = 'scripts/qa-static.js';
+  const source = read(file);
+  let next = source.replace(
+    /check\('Dark, Light, Carbon, and Codex themes are exposed',[\s\S]*?check\('Theme CSS does not leak into Page iframes'/,
+    `check('Dark, Light, and Carbon themes are exposed without legacy Codex source',\n  ['dark', 'light', 'carbon'].every(theme => html.includes(\`data-pref-theme="\${theme}"\`)) &&\n  !html.includes('data-pref-theme="codex"') &&\n  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&\n  !css.includes('body[data-theme="codex"]'));\ncheck('Light is the default preference theme',\n  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&\n  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));\ncheck('Theme CSS does not leak into Page iframes'`
+  );
+  if (next === source) throw new Error(`${file}: failed to rewrite legacy Codex QA checks.`);
+  write(file, next);
+}
+
+function cleanupThemeLightQa() {
+  const file = 'scripts/qa-theme-light-v0516.js';
+  const source = read(file);
+  if (source.includes('Light theme source contains no Codex option or CSS')) return;
+  const insertion = `\ncheck('Light theme source contains no Codex option or CSS',\n  !html.includes('data-pref-theme="codex"') && !js.includes("theme:'codex'") &&\n  !js.includes("state.preferences.theme || 'codex'") && !css.includes('body[data-theme="codex"]'));\n`;
+  write(file, source.replace('\nconsole.log(`Leaf Light theme policy QA: ${passed}/7 PASS`);', `${insertion}\nconsole.log(\`Leaf Light theme policy QA: \${passed}/8 PASS\`);`));
+}
+
 function removeHistoricalCodexQa() {
   const file = path.join(root, 'scripts/qa-theme-codex-v0516.js');
   if (fs.existsSync(file)) fs.rmSync(file);
@@ -73,5 +92,7 @@ function removeHistoricalCodexQa() {
 cleanupRenderer();
 cleanupIndex();
 cleanupStyles();
+cleanupStaticQa();
+cleanupThemeLightQa();
 removeHistoricalCodexQa();
 console.log('Roadmap source cleanup applied: Light default, Codex theme source removed.');
