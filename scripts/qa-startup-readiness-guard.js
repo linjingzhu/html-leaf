@@ -11,6 +11,8 @@ const html = read('src/renderer/index.html');
 const renderer = read('src/renderer/renderer.js');
 const fidelity = read('src/renderer/source-fidelity.js');
 const themePolicy = read('src/renderer/theme-policy.js');
+const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
+const previewUniversalEdit = read('src/renderer/preview-universal-edit.js');
 const cleanup = read('scripts/apply-roadmap-source-cleanup.js');
 const qa = read('scripts/qa-v0516.js');
 
@@ -92,6 +94,76 @@ function probeThemePolicyEventLoop() {
   };
 }
 
+function probeScriptedHtmlEditTransition() {
+  const listeners = new Map();
+  const classes = new Set(['scripted-preview']);
+  const pane = {
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); }
+    }
+  };
+  const frame = {
+    dataset: { previewRuntime: 'interactive-isolated' },
+    attributes: new Map([['sandbox', 'allow-scripts']]),
+    closest(selector) { return selector === '.view-pane' ? pane : null; },
+    addEventListener() {},
+    setAttribute(name, value) { this.attributes.set(name, String(value)); },
+    removeAttribute(name) { this.attributes.delete(name); },
+    srcdoc: ''
+  };
+  const badgeClasses = new Set();
+  const badge = {
+    hidden: true,
+    dataset: {},
+    textContent: '',
+    title: '',
+    classList: {
+      add(name) { badgeClasses.add(name); },
+      remove(name) { badgeClasses.delete(name); }
+    }
+  };
+  const page = {
+    id: 'page-scripted',
+    type: 'page',
+    documentType: 'html',
+    source: '<!doctype html><html><head></head><body><main>Editable</main><script>window.rendered=true</script></body></html>'
+  };
+  const state = { views: { single: page.id }, documents: [{ nodes: [page] }] };
+  const document = {
+    getElementById(id) { return id === 'singleFrame' ? frame : null; },
+    querySelector(selector) { return selector === '[data-runtime-badge="single"]' ? badge : null; },
+    addEventListener(type, callback) { listeners.set(type, callback); }
+  };
+
+  vm.runInNewContext(scriptedHtmlEdit, {
+    document,
+    localStorage: { getItem() { return JSON.stringify(state); } },
+    setTimeout(callback) { callback(); return 1; },
+    console,
+    Date,
+    Math
+  }, { timeout: 1000, filename: 'scripted-html-edit.js' });
+
+  const transition = listeners.get('leaf-edit-runtime-transition');
+  transition?.({ detail: { enabled: true, slot: 'single', pageId: page.id } });
+  const enabled = frame.dataset.previewRuntime === 'static-editable-scripts-off' &&
+    frame.attributes.get('sandbox') === 'allow-same-origin' &&
+    frame.srcdoc.includes('<main>Editable</main>') &&
+    frame.srcdoc.includes("script-src 'none'") &&
+    classes.has('scripts-off-edit');
+  transition?.({ detail: { enabled: false, slot: 'single', pageId: page.id } });
+  const disabled = frame.dataset.previewRuntime === 'interactive-isolated' &&
+    frame.attributes.get('sandbox') === 'allow-scripts' &&
+    classes.has('scripted-preview') &&
+    !classes.has('scripts-off-edit');
+
+  return {
+    pass: !!transition && enabled && disabled,
+    detail: JSON.stringify({ enabled, disabled, runtime: frame.dataset.previewRuntime })
+  };
+}
+
 check('Renderer restores persisted Leaf state before creating a fallback state',
   renderer.includes('let state = normalizeState(loadState() || createDefaultState());') &&
   !renderer.includes('let state = normalizeState(createDefaultState());'));
@@ -130,6 +202,34 @@ const themePolicyProbe = probeThemePolicyEventLoop();
 check('Theme policy remains idle across repeated enforcement and observer callbacks',
   themePolicyProbe.pass,
   themePolicyProbe.detail);
+
+check('Renderer exclusively owns Edit button availability',
+  renderer.includes('button.disabled=unavailable;') &&
+  !/button\.disabled\s*=/.test(scriptedHtmlEdit) &&
+  !/button\.disabled\s*=/.test(previewUniversalEdit));
+
+includesAll('Renderer publishes scripted and visual Edit runtime transitions', renderer, [
+  'const scriptedHtmlAvailable=pageRequiresScripts(page)&&!!frame;',
+  "frame.dataset.previewRuntime!=='interactive-isolated'||scriptedHtmlAvailable",
+  "new CustomEvent('leaf-edit-runtime-transition'"
+]);
+
+check('Edit extensions cannot create an attribute-observer feedback loop',
+  !scriptedHtmlEdit.includes('new MutationObserver') &&
+  !previewUniversalEdit.includes('new MutationObserver') &&
+  !scriptedHtmlEdit.includes('setInterval(') &&
+  !previewUniversalEdit.includes('setInterval('));
+
+check('Edit extensions consume the renderer transition event without competing click handlers',
+  scriptedHtmlEdit.includes("document.addEventListener('leaf-edit-runtime-transition'") &&
+  previewUniversalEdit.includes("document.addEventListener('leaf-edit-runtime-transition'") &&
+  !scriptedHtmlEdit.includes('handleEditClick') &&
+  !previewUniversalEdit.includes("event.target.closest?.('[data-edit-slot]')"));
+
+const scriptedHtmlEditProbe = probeScriptedHtmlEditTransition();
+check('Scripted HTML Edit event performs a reversible runtime transition',
+  scriptedHtmlEditProbe.pass,
+  scriptedHtmlEditProbe.detail);
 
 const startupErrorReleaseCount = (html.match(
   /startup\?\.classList\.remove\('is-complete'\);\r?\n\s*if \(startup\) startup\.style\.pointerEvents = 'auto';/g
