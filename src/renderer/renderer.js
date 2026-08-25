@@ -49,6 +49,7 @@
   let selectedTableCells = new Set();
   const frameSelectionRenderers = new WeakMap();
   let inlineTextEditSession = null;
+  let inlineTextEditStarting = false;
 
   const SelectionManager={
     source:null,
@@ -4197,7 +4198,8 @@
     if(inlineTextEditSession) endInlineTextEdit();
     const page=pageById(frameToPageId(frame));
     if(!page) return false;
-    inlineTextEditSession={element,frame,page,originalContentEditable:element.getAttribute('contenteditable'),originalHtml:element.innerHTML,composing:false};
+    inlineTextEditSession={element,frame,page,originalContentEditable:element.getAttribute('contenteditable'),originalHtml:element.innerHTML,composing:false,listeners:null};
+    inlineTextEditStarting=true;
     element.setAttribute('contenteditable','plaintext-only');
     element.focus({preventScroll:true});
     const selection=frame.contentWindow.getSelection();
@@ -4240,18 +4242,26 @@
     element.addEventListener('keydown',keydown);
     element.addEventListener('blur',blur);
     inlineTextEditSession.listeners={updateLiveState,compositionStart,compositionEnd,keydown,blur};
+    inlineTextEditStarting=false;
     return true;
   }
 
   function endInlineTextEdit({commit=true,restoreSelection=true}={}){
+    // focus() during setup re-enters through pane activation; the edit the user
+    // just started must not be torn down by its own focus.
+    if(inlineTextEditStarting) return;
     const session=inlineTextEditSession;
     if(!session) return;
     const {element,frame,page,listeners}=session;
-    element.removeEventListener('input',listeners.updateLiveState);
-    element.removeEventListener('compositionstart',listeners.compositionStart);
-    element.removeEventListener('compositionend',listeners.compositionEnd);
-    element.removeEventListener('keydown',listeners.keydown);
-    element.removeEventListener('blur',listeners.blur);
+    // beginInlineTextEdit focuses the element before its listeners are attached,
+    // and focus can re-enter here, so the session may not carry them yet.
+    if(listeners){
+      element.removeEventListener('input',listeners.updateLiveState);
+      element.removeEventListener('compositionstart',listeners.compositionStart);
+      element.removeEventListener('compositionend',listeners.compositionEnd);
+      element.removeEventListener('keydown',listeners.keydown);
+      element.removeEventListener('blur',listeners.blur);
+    }
     if(session.originalContentEditable===null) session.element.removeAttribute('contenteditable');
     else session.element.setAttribute('contenteditable',session.originalContentEditable);
     const walker=element.ownerDocument.createTreeWalker(element,NodeFilter.SHOW_TEXT);
@@ -5469,7 +5479,8 @@
     if(action==='delete')deleteSelectedElements();
   });
   document.addEventListener('pointerdown',event=>{if(!event.target.closest('#objectContextMenu'))closeObjectContextMenu();},true);
-  document.addEventListener('pointerdown',()=>{
+  document.addEventListener('pointerdown',event=>{
+    if(event.leafActivationReason==='focus')return;
     if(inlineTextEditSession)endInlineTextEdit({commit:true});
   },true);
 

@@ -151,6 +151,22 @@ checkIncludesAll('Leaf extension bundle waits for renderer readiness before touc
 // the QA suites assert on source text, and multi-line literals silently stop
 // matching when a file is CRLF. Windows runners check out with core.autocrlf,
 // so this only reproduces in CI unless .gitattributes pins the working tree.
+// In-iframe input never reaches the parent document, so active-view-policy
+// synthesizes a pointerdown to tell the renderer which pane is active. That
+// forged gesture must carry why it fired: focus-driven activation is not a
+// click, and treating it as one cancelled every inline text edit on start.
+const activePolicy = read(path.join(rendererDir, 'active-view-policy.js'));
+check('Synthesized pane activation states whether a pointer or focus caused it',
+  /function dispatchPaneActivation\(slot, reason = 'pointer'\)/.test(activePolicy) &&
+  activePolicy.includes('event.leafActivationReason = reason;') &&
+  activePolicy.includes("dispatchPaneActivation(slot, 'pointer')") &&
+  !/dispatchPaneActivation\(slot\)/.test(activePolicy) &&
+  renderer.includes("if(event.leafActivationReason==='focus')return;"));
+check('Inline text edit setup cannot be torn down by its own focus',
+  renderer.includes('let inlineTextEditStarting = false;') &&
+  renderer.includes('if(inlineTextEditStarting) return;') &&
+  /const \{element,frame,page,listeners\}=session;[\s\S]{0,200}?if\(listeners\)\{/.test(renderer));
+
 const textDirs = ['src/renderer', 'src/', 'scripts', '.github/workflows'];
 const textExtensions = ['.js', '.html', '.css', '.json', '.yml', '.md'];
 const trackedTextFiles = [...new Set(textDirs.flatMap(dir => {
@@ -256,8 +272,21 @@ checkIncludesAll('Application footer exposes version and live diagnostics', html
 checkIncludesAll('Footer occupies a stable non-overlapping app grid row', css,
   ['grid-template-rows:34px minmax(0,1fr) 22px', '.app-statusbar{', '.status-debug{',
    'body.document-view-only .app-statusbar', 'position:fixed;right:14px;bottom:30px']);
+// The version must reach the renderer, but NOT by reading a file: this preload
+// is sandboxed, so require() outside Electron's allowlist throws before
+// contextBridge runs and the renderer loses electronAPI entirely.
 checkIncludesAll('Packaged version is exposed through the sandboxed startup bridge', preload,
-  ["const { version: appVersion } = require('../package.json');", 'appVersion,', 'startupInfo: () => Promise.resolve(startupInfo())']);
+  ["ipcRenderer.invoke('app:version')", 'appVersion,', 'startupInfo: () => Promise.resolve(startupInfo())']);
+check('Main process serves the version the sandboxed preload asks for',
+  main.includes("ipcMain.handle('app:version'"),
+  main.includes("ipcMain.handle('app:version'") ? '' : 'no app:version handler');
+const preloadFileRequires = [...preload.matchAll(/require\((['"])([^'"]+)\1\)/g)]
+  .map(match => match[2]).filter(name => name.startsWith('.') || name.endsWith('.json'));
+check('Sandboxed preload requires nothing off Electron\'s allowlist',
+  preloadFileRequires.length === 0,
+  preloadFileRequires.length
+    ? `Throws before contextBridge runs: ${preloadFileRequires.join(', ')}`
+    : 'electron only.');
 checkIncludesAll('Startup diagnostics continuously update footer state', fidelity,
   ['function renderDebugFooter(', 'function applyRuntimeVersion(', 'footer.dataset.level=debugFooterLevel',
    'renderDebugFooter(line,debugFooterLevel(message,level))', 'applyRuntimeVersion(info?.appVersion)']);

@@ -1,7 +1,13 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
-const { version: appVersion } = require('../package.json');
 
-function startupInfo() {
+// This preload is sandboxed, so require() resolves only Electron's allowlist.
+// Reading package.json from disk here throws before the contextBridge surface
+// is exposed, which leaves the renderer without electronAPI entirely.
+async function startupInfo() {
+  let appVersion = null;
+  try {
+    appVersion = await ipcRenderer.invoke('app:version');
+  } catch {}
   return {
     diagnostics: 'preload-startup-info-v1',
     appVersion,
