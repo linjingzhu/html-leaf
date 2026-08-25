@@ -9,6 +9,15 @@ let sessionTempDir = null;
 const initialHtmlSnapshots = new Map();
 const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement';
 
+function appTitle() {
+  return `Leaf v${app.getVersion()}`;
+}
+
+function syncAppTitle() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setTitle(appTitle());
+}
+
 function boolEnv(value) {
   return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
@@ -475,7 +484,7 @@ function createWindow() {
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: '#17191d',
-    title: 'Leaf',
+    title: appTitle(),
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -487,6 +496,11 @@ function createWindow() {
     }
   });
   mainWindow.setMenuBarVisibility(false);
+  mainWindow.on('page-title-updated', event => {
+    event.preventDefault();
+    syncAppTitle();
+  });
+  mainWindow.webContents.on('did-finish-load', syncAppTitle);
   mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', true));
   mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', false));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
