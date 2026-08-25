@@ -162,6 +162,27 @@ check('Startup script observer is the only app-shell subtree observer and it dis
 const extensionScripts = [...fidelity.matchAll(/loadExtensionScript\('\.\/([\w-]+\.js)'\)/g)]
   .map(match => match[1]).filter(name => rendererScripts.includes(name));
 const amplifiedExtensions = extensionScripts.filter(name => amplifiedInstallCallbacks(read(path.join(rendererDir, name))).length);
+const workflowFiles = fs.readdirSync(path.join(root, '.github', 'workflows')).filter(name => name.endsWith('.yml')).sort();
+// `qa` needs Electron and a display, so CI cannot run it; every other qa:* script must be covered.
+const runnableQaScripts = Object.keys(pkg.scripts).filter(name => name.startsWith('qa:')).sort();
+const workflowQaSuites = workflowFiles.flatMap(name => {
+  const text = read(path.join('.github', 'workflows', name));
+  return [...text.matchAll(/- name: [^\n]*QA[^\n]*\n\s*run: \|\n((?:\s*npm run [^\n]*\n)+)/g)]
+    .map(match => ({
+      workflow: name,
+      suites: [...match[1].matchAll(/npm run (qa:[\w:-]+)/g)].map(entry => entry[1]).sort().join(' ')
+    }));
+});
+const distinctSuiteSets = [...new Set(workflowQaSuites.map(entry => entry.suites))];
+check('Every workflow QA step runs the identical suite set',
+  workflowQaSuites.length >= 4 && distinctSuiteSets.length === 1,
+  distinctSuiteSets.length === 1
+    ? `${workflowQaSuites.length} QA steps across ${workflowFiles.length} workflows`
+    : `Diverged: ${workflowQaSuites.map(entry => `${entry.workflow}[${entry.suites}]`).join(' | ')}`);
+const uncoveredQaScripts = runnableQaScripts.filter(name => !(distinctSuiteSets[0] || '').split(' ').includes(name));
+check('CI covers every runnable qa:* script',
+  uncoveredQaScripts.length === 0,
+  uncoveredQaScripts.length ? `Not run by CI: ${uncoveredQaScripts.join(', ')}` : `${runnableQaScripts.length} suites covered.`);
 check('Leaf extensions never amplify one change into rAF plus timer reinstalls',
   extensionScripts.length >= 6 && amplifiedExtensions.length === 0,
   amplifiedExtensions.length ? `Amplified: ${amplifiedExtensions.join(', ')}` : `${extensionScripts.length} extension scripts scanned.`);

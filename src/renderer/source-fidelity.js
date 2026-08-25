@@ -280,7 +280,12 @@
     const message=document.getElementById('appStartupMessage');
     if(message)message.textContent=`Startup issue (${context}): ${detail}`;
     const startup=document.getElementById('appStartup');
-    startup?.classList.add('startup-error');
+    if(startup){
+      startup.classList.remove('is-complete');
+      startup.style.pointerEvents='auto';
+      startup.style.opacity='1';
+      startup.classList.add('startup-error');
+    }
     startup?.setAttribute('data-error-context',context);
     startup?.setAttribute('title',detail);
     if(startup){
