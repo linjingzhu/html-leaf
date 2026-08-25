@@ -34,7 +34,7 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
     'setTimeout(loadRenderer, 80)'
   ]),
   assertIncludes('visible debug panel is created by the early fidelity bundle', fidelity, [
-    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v4'",
+    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5'",
     "panel.id='appStartupDebug'",
     'startup.appendChild(panel)',
     'function recordStartupDebug(message,detail)',
@@ -42,7 +42,7 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
   ])
 ]);
 
-addPass('2. Startup debug actions remain clickable even while loading is stuck', [
+addPass('2. Startup debug actions remain clickable without blocking the rendered app', [
   assertIncludes('startup actions use capture-level event handling', fidelity, [
     'function installStartupActionCapture()',
     "document.addEventListener('pointerup',handleStartupActionEvent,true)",
@@ -51,12 +51,18 @@ addPass('2. Startup debug actions remain clickable even while loading is stuck',
     "resetButton.dataset.leafStartupAction='reset'",
     "copyButton.dataset.leafStartupAction='copy'"
   ]),
-  assertIncludes('startup buttons force pointer events and expose Electron clipboard fallback', fidelity, [
+  assertIncludes('startup buttons force pointer events only while the overlay is visible', fidelity, [
+    "if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
     "startup.style.pointerEvents='auto'",
     "'pointer-events:auto'",
     'window.electronAPI?.writeTextClipboard',
-    'fallbackCopyStartupDebugLog(text)',
-    "startup.style.pointerEvents='none'"
+    'fallbackCopyStartupDebugLog(text)'
+  ]),
+  assertIncludes('renderer readiness releases the invisible startup pointer barrier', fidelity, [
+    'function releaseStartupPointerBarrier(',
+    "startup.style.pointerEvents='none'",
+    "startup.setAttribute('aria-hidden','true')",
+    "releaseStartupPointerBarrier('renderer ready')"
   ])
 ]);
 

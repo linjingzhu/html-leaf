@@ -149,6 +149,12 @@ checkIncludesAll('Startup status paints before renderer bootstrap', html,
   ['id="appStartup"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);
 checkIncludesAll('Startup status closes deterministically', renderer,
   ["performance.measure('leaf-renderer-bootstrap'", "document.documentElement.dataset.leafReady='true'", "startup?.classList.add('is-complete')"]);
+checkIncludesAll('Startup diagnostics cannot leave an invisible pointer-blocking overlay', fidelity,
+  ["const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5'",
+   "if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
+   'function releaseStartupPointerBarrier(',
+   "startup.setAttribute('aria-hidden','true')",
+   "releaseStartupPointerBarrier('renderer ready')"]);
 
 const semanticTokens = ['--background', '--foreground', '--panel', '--panel-secondary', '--border', '--border-subtle', '--muted', '--accent', '--selection', '--focus-ring', '--success', '--warning', '--error'];
 check('Semantic design tokens present', semanticTokens.every(token => css.includes(token)), semanticTokens.join(', '));

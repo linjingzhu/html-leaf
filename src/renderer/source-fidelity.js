@@ -2,7 +2,7 @@
   'use strict';
   const EDITOR_CLASS_NAMES=new Set(['table-cell-selected','viewport-object-drop-target']);
   const STARTUP_STATE_KEY='leaf-v0-5-16-state';
-  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v4';
+  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5';
   const STARTUP_DEBUG_LIMIT=120;
   const RENDERER_BOOTSTRAP_RETRY_MS=120;
   const RENDERER_BOOTSTRAP_MAX_WAIT_MS=2200;
@@ -39,7 +39,9 @@
   function ensureStartupDebugPanel(){
     const startup=document.getElementById('appStartup');
     if(!startup)return null;
-    startup.style.pointerEvents='auto';
+    if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error')){
+      startup.style.pointerEvents='auto';
+    }
     let panel=document.getElementById('appStartupDebug');
     if(panel)return panel;
     panel=document.createElement('pre');
@@ -159,14 +161,20 @@
     fallbackCopyStartupDebugLog(text);
   }
 
-  function hideStartupOverlay(reason='manual'){
-    recordStartupDebug('startup overlay hide requested',reason);
-    document.documentElement.dataset.leafReady='true';
+  function releaseStartupPointerBarrier(reason='renderer-ready'){
     const startup=document.getElementById('appStartup');
     if(!startup)return;
     startup.style.pointerEvents='none';
+    startup.setAttribute('aria-hidden','true');
     startup.classList.add('is-complete');
-    setTimeout(()=>startup?.remove(),120);
+    recordStartupDebug('startup overlay pointer barrier released',reason);
+    setTimeout(()=>startup?.remove(),220);
+  }
+
+  function hideStartupOverlay(reason='manual'){
+    recordStartupDebug('startup overlay hide requested',reason);
+    document.documentElement.dataset.leafReady='true';
+    releaseStartupPointerBarrier(reason);
   }
 
   function handleStartupAction(action){
@@ -218,6 +226,7 @@
     const startup=document.getElementById('appStartup');
     if(startup){
       startup.style.pointerEvents='auto';
+      startup.removeAttribute('aria-hidden');
       startup.style.cursor='default';
     }
     const actions=document.createElement('div');
@@ -265,6 +274,11 @@
     startup?.classList.add('startup-error');
     startup?.setAttribute('data-error-context',context);
     startup?.setAttribute('title',detail);
+    if(startup){
+      startup.style.pointerEvents='auto';
+      startup.removeAttribute('aria-hidden');
+      startup.classList.remove('is-complete');
+    }
     ensureStartupActions();
   }
 
@@ -607,6 +621,7 @@
     if(extensionsLoaded)return;
     extensionsLoaded=true;
     recordStartupDebug('renderer ready; loading Leaf extensions');
+    releaseStartupPointerBarrier('renderer ready');
     loadLeafExtensions();
   }
 
