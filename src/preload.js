@@ -1,7 +1,20 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+function startupInfo() {
+  return {
+    diagnostics: 'preload-startup-info-v1',
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    sandboxed: process.sandboxed === true
+  };
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   runtimeConfig: () => ipcRenderer.invoke('runtime:config'),
+  startupInfo: () => Promise.resolve(startupInfo()),
   importHtml: () => ipcRenderer.invoke('file:importHtml'),
   readHtmlPath: (filePath) => ipcRenderer.invoke('file:readHtmlPath', filePath),
   readDroppedHtml: (file) => {
