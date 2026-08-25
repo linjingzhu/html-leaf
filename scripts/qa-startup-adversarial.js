@@ -34,7 +34,7 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
     'setTimeout(loadRenderer, 80)'
   ]),
   assertIncludes('visible debug panel is created by the early fidelity bundle', fidelity, [
-    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v3'",
+    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v4'",
     "panel.id='appStartupDebug'",
     'startup.appendChild(panel)',
     'function recordStartupDebug(message,detail)',
