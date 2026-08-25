@@ -19,6 +19,14 @@ function replaceAllIfPresent(source, replacements) {
   return next;
 }
 
+function replaceRequired(source, from, to, file, reason) {
+  if (!source.includes(from)) {
+    if (source.includes(to)) return source;
+    throw new Error(`${file}: expected source fragment not found for ${reason}.`);
+  }
+  return source.split(from).join(to);
+}
+
 function removeCodexThemeCss(css) {
   const marker = '/* Codex-inspired application chrome.';
   const start = css.indexOf(marker);
@@ -47,8 +55,18 @@ function cleanupRenderer() {
     'state.preferences.theme=button.dataset.prefTheme;',
     "state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';"
   );
+  next = replaceRequired(
+    next,
+    'let state = normalizeState(createDefaultState());',
+    'let state = normalizeState(loadState() || createDefaultState());',
+    file,
+    'saved state restoration'
+  );
   if (next.includes("theme:'codex'") || next.includes("state.preferences.theme || 'codex'")) {
     throw new Error(`${file}: legacy Codex theme defaults remain after cleanup.`);
+  }
+  if (next.includes('let state = normalizeState(createDefaultState());')) {
+    throw new Error(`${file}: renderer still discards saved state during startup.`);
   }
   write(file, next);
 }
@@ -63,10 +81,37 @@ function cleanupIndex() {
     '<div class="app-startup" id="appStartup" role="status" aria-live="polite">',
     '<div class="app-startup is-complete" id="appStartup" role="status" aria-live="polite">'
   );
+  next = replaceRequired(
+    next,
+    `      continueButton.addEventListener('click', () => {
+        document.documentElement.dataset.leafReady = 'true';
+        const startup = document.getElementById('appStartup');
+        startup?.classList.add('is-complete');
+        setTimeout(() => startup?.remove(), 120);
+      });`,
+    `      continueButton.addEventListener('click', () => {
+        const startup = document.getElementById('appStartup');
+        if (document.documentElement.dataset.leafReady !== 'true') {
+          window.LeafStartup?.reportError?.('Cannot continue before renderer signals ready.', 'manual-continue-before-ready');
+          return;
+        }
+        startup?.classList.add('is-complete');
+        if (startup) {
+          startup.style.pointerEvents = 'none';
+          startup.setAttribute('aria-hidden', 'true');
+        }
+        setTimeout(() => startup?.remove(), 120);
+      });`,
+    file,
+    'manual startup continue readiness guard'
+  );
   next = next.replace(
     "      startup?.classList.add('startup-error');",
     "      startup?.classList.remove('is-complete');\n      if (startup) startup.style.pointerEvents = 'auto';\n      startup?.classList.add('startup-error');"
   );
+  if (next.includes("document.documentElement.dataset.leafReady = 'true';")) {
+    throw new Error(`${file}: inline startup fallback can still fake renderer readiness.`);
+  }
   write(file, next);
 }
 
@@ -82,74 +127,42 @@ function cleanupSourceFidelityStartup() {
   let next = source;
   next = next.replace(
     "startup.style.pointerEvents='auto';\n    let panel=document.getElementById('appStartupDebug');",
-    "if(!startup.classList.contains('is-complete'))startup.style.pointerEvents='auto';\n    let panel=document.getElementById('appStartupDebug');"
+    "if(startupOverlayShouldCapturePointer(startup))startup.style.pointerEvents='auto';\n    let panel=document.getElementById('appStartupDebug');"
   );
   next = next.replace(
     "if(startup){\n      startup.style.pointerEvents='auto';\n      startup.style.cursor='default';\n    }",
-    "if(startup&&!startup.classList.contains('is-complete')){\n      startup.style.pointerEvents='auto';\n      startup.style.cursor='default';\n    }"
+    "if(startup){\n      if(startupOverlayShouldCapturePointer(startup))startup.style.pointerEvents='auto';\n      startup.style.cursor='default';\n    }"
   );
   next = next.replace(
     "    startup?.classList.add('startup-error');\n    startup?.setAttribute('data-error-context',context);",
     "    if(startup){\n      startup.classList.remove('is-complete');\n      startup.style.pointerEvents='auto';\n      startup.style.opacity='1';\n      startup.classList.add('startup-error');\n    }\n    startup?.setAttribute('data-error-context',context);"
   );
-  write(file, next);
-}
-
-function cleanupStaticQa() {
-  const file = 'scripts/qa-static.js';
-  const source = read(file);
-  let next = source;
-  if (!next.includes('without legacy Codex source')) {
-    next = next.replace(
-      /check\('Dark, Light, Carbon, and Codex themes are exposed',[\s\S]*?check\('Theme CSS does not leak into Page iframes'/,
-      `check('Dark, Light, and Carbon themes are exposed without legacy Codex source',\n  ['dark', 'light', 'carbon'].every(theme => html.includes(\`data-pref-theme="\${theme}"\`)) &&\n  !html.includes('data-pref-theme="codex"') &&\n  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&\n  !css.includes('body[data-theme="codex"]'));\ncheck('Light is the default preference theme',\n  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&\n  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));\ncheck('Theme CSS does not leak into Page iframes'`
-    );
-    if (next === source) throw new Error(`${file}: failed to rewrite legacy Codex QA checks.`);
+  next = replaceRequired(
+    next,
+    `  function hideStartupOverlay(reason='manual'){
+    recordStartupDebug('startup overlay hide requested',reason);
+    document.documentElement.dataset.leafReady='true';
+    releaseStartupPointerBarrier(reason);
+  }`,
+    `  function hideStartupOverlay(reason='manual'){
+    recordStartupDebug('startup overlay hide requested',reason);
+    if(!isRendererReady()){
+      reportStartupError('Cannot continue before renderer signals ready.','manual-continue-before-ready');
+      return;
+    }
+    releaseStartupPointerBarrier(reason);
+  }`,
+    file,
+    'manual startup continue readiness guard'
+  );
+  if (next.includes("document.documentElement.dataset.leafReady='true';")) {
+    throw new Error(`${file}: source-fidelity can still fake renderer readiness.`);
   }
-
-  next = next.replace(
-    "checkIncludesAll('Startup status paints before renderer bootstrap', html,\n  ['id=\"appStartup\"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);",
-    "checkIncludesAll('Startup diagnostics are hidden by default while the main app enters immediately', html,\n  ['id=\"appStartup\"', 'class=\"app-startup is-complete\"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);"
-  );
   write(file, next);
-}
-
-function cleanupStartupAdversarialQa() {
-  const file = 'scripts/qa-startup-adversarial.js';
-  const source = read(file);
-  let next = source;
-  next = next.replace(
-    "    'id=\"appStartupMessage\"',\n    'setTimeout(loadRenderer, 80)'",
-    "    'id=\"appStartupMessage\"',\n    'class=\"app-startup is-complete\"',\n    'setTimeout(loadRenderer, 80)'"
-  );
-  next = next.replace(
-    "    \"startup.style.pointerEvents='auto'\",\n    \"'pointer-events:auto'\",\n    'window.electronAPI?.writeTextClipboard',\n    'fallbackCopyStartupDebugLog(text)',\n    \"startup.style.pointerEvents='none'\"",
-    "    \"if(!startup.classList.contains('is-complete'))startup.style.pointerEvents='auto'\",\n    \"if(startup&&!startup.classList.contains('is-complete'))\",\n    \"startup.classList.remove('is-complete')\",\n    \"'pointer-events:auto'\",\n    'window.electronAPI?.writeTextClipboard',\n    'fallbackCopyStartupDebugLog(text)',\n    \"startup.style.pointerEvents='none'\""
-  );
-  write(file, next);
-}
-
-function cleanupThemeLightQa() {
-  const file = 'scripts/qa-theme-light-v0516.js';
-  const source = read(file);
-  if (source.includes('Light theme source contains no Codex option or CSS')) return;
-  const insertion = `\ncheck('Light theme source contains no Codex option or CSS',\n  !html.includes('data-pref-theme="codex"') && !js.includes("theme:'codex'") &&\n  !js.includes("state.preferences.theme || 'codex'") && !css.includes('body[data-theme="codex"]'));\n`;
-  const next = source.replace('\nconsole.log(`Leaf Light theme policy QA: ${passed}/7 PASS`);', `${insertion}\nconsole.log(\`Leaf Light theme policy QA: \${passed}/8 PASS\`);`);
-  if (next === source) throw new Error(`${file}: failed to add Light source cleanup assertion.`);
-  write(file, next);
-}
-
-function removeHistoricalCodexQa() {
-  const file = path.join(root, 'scripts/qa-theme-codex-v0516.js');
-  if (fs.existsSync(file)) fs.rmSync(file);
 }
 
 cleanupRenderer();
 cleanupIndex();
 cleanupStyles();
 cleanupSourceFidelityStartup();
-cleanupStaticQa();
-cleanupStartupAdversarialQa();
-cleanupThemeLightQa();
-removeHistoricalCodexQa();
-console.log('Roadmap source cleanup applied: Light default, non-blocking startup diagnostics, Codex theme source removed.');
+console.log('Roadmap source cleanup applied: Light default, renderer-owned startup readiness, saved-state restore, Codex theme source removed.');
