@@ -23,6 +23,8 @@
     viewportHeightInput: $('#viewportHeightInput'),
     clearHtmlModal: $('#clearHtmlModal'), clearHtmlTarget: $('#clearHtmlTarget'),
     cancelEditModal: $('#cancelEditModal'), cancelEditTarget: $('#cancelEditTarget'),
+    groupTileView: $('#groupTileView'), groupTileGrid: $('#groupTileGrid'),
+    groupTileTitle: $('#groupTileTitle'), groupTileCount: $('#groupTileCount'), groupTileClose: $('#groupTileClose'),
     replaceHtmlModal: $('#replaceHtmlModal'), replaceHtmlTarget: $('#replaceHtmlTarget'), replaceHtmlMessage: $('#replaceHtmlMessage'),
     replaceHtmlOpenNew: $('#replaceHtmlOpenNew'),
     jiraExportModal: $('#jiraExportModal'), jiraExportSource: $('#jiraExportSource'),
@@ -1092,6 +1094,7 @@
       refs.tree.appendChild(card);
     });
     if(!refs.tree.children.length&&refs.projectSearch?.value.trim())refs.tree.innerHTML='<div class="used-component-empty">No matching documents.</div>';
+    renderGroupTileView();
     emitLifecycle('leaf-tree-rendered',{});
   }
 
@@ -2452,6 +2455,155 @@
   });
   $('#atlassianPreviewClose')?.addEventListener('click',closeAtlassianSplitPreview);
 
+  // Group Tile View: selecting a Group covers the viewport with its descendants
+  // as square thumbnails. Thumbnails are scripts-off, non-same-origin iframes
+  // filled only once a tile scrolls into view - opening a 200-Page Group must
+  // never spawn 200 live documents at once.
+  const GROUP_TILE_LOGICAL_SIZE=1280;
+  let groupTileIntersection=null;
+  let groupTileResize=null;
+  let groupTileSignature='';
+
+  function selectedGroupContext(){
+    if(!selectedTreeNode) return null;
+    const found=nodeById(selectedTreeNode);
+    return found?.node?.type==='group' ? found : null;
+  }
+
+  function teardownGroupTileObservers(){
+    groupTileIntersection?.disconnect();groupTileIntersection=null;
+    groupTileResize?.disconnect();groupTileResize=null;
+  }
+
+  function scaleGroupTileThumbs(){
+    if(!refs.groupTileGrid) return;
+    refs.groupTileGrid.querySelectorAll('.group-tile-thumb iframe').forEach(frame=>{
+      const width=frame.parentElement?.clientWidth||0;
+      if(!width) return;
+      frame.style.transform=`scale(${width/GROUP_TILE_LOGICAL_SIZE})`;
+    });
+  }
+
+  function fillGroupTileThumb(thumb){
+    if(thumb.dataset.tileFilled==='true') return;
+    thumb.dataset.tileFilled='true';
+    const page=pageById(thumb.dataset.pageId);
+    if(!pageHasRenderableContent(page)||page.documentType==='pdf') return;
+    const frame=document.createElement('iframe');
+    frame.setAttribute('sandbox','');
+    frame.setAttribute('scrolling','no');
+    frame.setAttribute('tabindex','-1');
+    frame.setAttribute('aria-hidden','true');
+    frame.title=`${page.name} thumbnail`;
+    frame.srcdoc=buildPreviewSource(page,{allowScripts:false});
+    thumb.querySelector('.group-tile-placeholder')?.remove();
+    thumb.appendChild(frame);
+    scaleGroupTileThumbs();
+  }
+
+  function groupTilePlaceholderLabel(node){
+    if(node.type==='group') return 'GROUP';
+    if(node.documentType==='pdf') return 'PDF';
+    if(!pageHasRenderableContent(node)) return 'EMPTY';
+    return '';
+  }
+
+  function buildGroupTile(project,node){
+    const tile=document.createElement('button');
+    tile.type='button';
+    tile.className=`group-tile${node.type==='group'?' is-group':''}`;
+    tile.dataset.tileNodeId=node.id;
+    tile.title=node.name;
+    const thumb=document.createElement('div');
+    thumb.className='group-tile-thumb';
+    const label=groupTilePlaceholderLabel(node);
+    if(node.type==='page'&&!label) thumb.dataset.pageId=node.id;
+    if(label){
+      const placeholder=document.createElement('div');
+      placeholder.className='group-tile-placeholder';
+      placeholder.textContent=node.type==='group'?'▰':label;
+      thumb.appendChild(placeholder);
+    }
+    if(node.type==='page'&&node.documentType&&node.documentType!=='html'){
+      const badge=document.createElement('span');
+      badge.className='group-tile-badge';
+      badge.textContent=node.documentType.toUpperCase();
+      thumb.appendChild(badge);
+    }
+    const name=document.createElement('span');
+    name.className='group-tile-name';
+    name.textContent=node.name;
+    tile.append(thumb,name);
+    tile.addEventListener('click',()=>{
+      if(node.type==='group'){
+        withUnsavedInspectorGuard(()=>{
+          state.selectedDocumentId=project.id;
+          selectedTreeNode=node.id;
+          clearInspector();renderAll();persist();
+        });
+        return;
+      }
+      selectPageFromTree(node.id);
+      persist();
+    });
+    return tile;
+  }
+
+  function renderGroupTileView(){
+    const view=refs.groupTileView,grid=refs.groupTileGrid;
+    if(!view||!grid) return;
+    const found=selectedGroupContext();
+    if(!found){
+      teardownGroupTileObservers();
+      groupTileSignature='';
+      document.body.classList.remove('group-tiles-open');
+      if(!view.hidden){view.hidden=true;grid.textContent='';}
+      return;
+    }
+    const {project,node}=found;
+    const items=children(project,node.id);
+    // renderTree() runs on every search keystroke; rebuilding the grid there
+    // would discard every already-loaded thumbnail for nothing.
+    const signature=[node.id,node.name,items.map(item=>`${item.id}:${item.name}:${item.documentType||''}:${pageHasRenderableContent(item)?1:0}`).join('|')].join('#');
+    if(signature===groupTileSignature&&!view.hidden) return;
+    groupTileSignature=signature;
+    teardownGroupTileObservers();
+    grid.textContent='';
+    view.hidden=false;
+    document.body.classList.add('group-tiles-open');
+    refs.groupTileTitle.textContent=node.name;
+    refs.groupTileCount.textContent=items.length?`${items.length} item${items.length===1?'':'s'}`:'';
+    if(!items.length){
+      const empty=document.createElement('div');
+      empty.className='group-tile-empty';
+      empty.textContent='This Group has no Pages yet.';
+      grid.appendChild(empty);
+      emitLifecycle('leaf-group-tiles-rendered',{groupId:node.id,count:0});
+      return;
+    }
+    items.forEach(item=>grid.appendChild(buildGroupTile(project,item)));
+    groupTileIntersection=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(!entry.isIntersecting) return;
+        groupTileIntersection?.unobserve(entry.target);
+        fillGroupTileThumb(entry.target);
+      });
+    },{root:grid,rootMargin:'150px'});
+    grid.querySelectorAll('.group-tile-thumb[data-page-id]').forEach(thumb=>groupTileIntersection.observe(thumb));
+    groupTileResize=new ResizeObserver(()=>scaleGroupTileThumbs());
+    groupTileResize.observe(grid);
+    emitLifecycle('leaf-group-tiles-rendered',{groupId:node.id,count:items.length});
+  }
+
+  refs.groupTileClose?.addEventListener('click',()=>{
+    const found=selectedGroupContext();
+    if(!found) return;
+    withUnsavedInspectorGuard(()=>{
+      selectedTreeNode=null;
+      renderAll();persist();
+    });
+  });
+
   function setModePanelVisibility(){
     $$('[data-mode-panel]').forEach(panel=>{
       panel.classList.toggle('is-active', panel.dataset.modePanel===state.mode);
@@ -2529,6 +2681,7 @@
     setTimeout(renderHierarchy,0);
     renderTree();
     renderCrumbs();
+    renderGroupTileView();
     emitLifecycle('leaf-view-mode-changed',{mode:state.mode});
   }
 

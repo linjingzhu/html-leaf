@@ -344,6 +344,39 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Group Tile View -------------------------------------------------------
+checkIncludesAll('Group Tile View is wired into the tree and the viewport', renderer,
+  ['function renderGroupTileView(', 'function selectedGroupContext(', "found?.node?.type==='group'", 'function buildGroupTile(']);
+checkIncludesAll('Group Tile View markup exists in the viewport host', html,
+  ['id="groupTileView"', 'id="groupTileGrid"', 'id="groupTileTitle"', 'id="groupTileClose"']);
+checkIncludesAll('Tiles are rounded squares with the file name printed underneath', css,
+  ['.group-tile-thumb{', 'aspect-ratio:1/1', '.group-tile-name{']);
+
+// A Group can hold hundreds of Pages. Filling every tile on render would spawn
+// that many live documents at once - exactly the shape that froze the renderer
+// in the v0.5.16 defect family. The thumbnails must stay lazy.
+const tileSection = renderer.slice(
+  renderer.indexOf('const GROUP_TILE_LOGICAL_SIZE'),
+  renderer.indexOf('function setModePanelVisibility()')
+);
+check('Group Tile View section is present', tileSection.length > 500, `${tileSection.length} chars`);
+check('Group tile thumbnails are filled lazily, not all at once',
+  /new IntersectionObserver\(/.test(tileSection) && tileSection.includes('unobserve(entry.target)'));
+check('Group tile thumbnails run with scripts off and without same-origin access',
+  tileSection.includes("frame.setAttribute('sandbox','')")
+  && /buildPreviewSource\([^)]*allowScripts:false/.test(tileSection)
+  && !tileSection.includes('allow-scripts'));
+check('Group tile rebuilds are skipped when nothing about the Group changed',
+  tileSection.includes('groupTileSignature') && /if\(signature===groupTileSignature/.test(tileSection));
+check('Leaving a Group tears the tile observers down',
+  tileSection.includes('function teardownGroupTileObservers()')
+  && /groupTileIntersection\?\.disconnect\(\)/.test(tileSection)
+  && /groupTileResize\?\.disconnect\(\)/.test(tileSection));
+check('The Tile View hides the pane chrome it covers instead of stacking under it',
+  renderer.includes("classList.add('group-tiles-open')")
+  && renderer.includes("classList.remove('group-tiles-open')")
+  && css.includes('body.group-tiles-open .viewport-floating-controls{display:none}'));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;
