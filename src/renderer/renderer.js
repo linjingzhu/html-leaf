@@ -326,7 +326,7 @@
     $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
-    $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
+    $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -3503,7 +3503,9 @@
       const active=htmlEditEnabled && editOwnerSlot===slot;
       const directAvailable=isDirectSourceType(page)&&!!frame;
       const pdfAvailable=page?.documentType==='pdf'&&!!frame;
-      const htmlAvailable=page?.documentType==='html'&&frame?.dataset.previewRuntime!=='interactive-isolated';
+      const scriptedHtmlAvailable=pageRequiresScripts(page)&&!!frame;
+      const htmlAvailable=page?.documentType==='html'&&!!frame&&
+        (frame.dataset.previewRuntime!=='interactive-isolated'||scriptedHtmlAvailable);
       const unavailable=(!pageHasRenderableContent(page)&&!(active&&isDirectSourceType(page)))||!(htmlAvailable||directAvailable||pdfAvailable);
       button.classList.toggle('active',active);
       button.closest('.view-pane')?.classList.toggle('edit-active',active);
@@ -3515,6 +3517,7 @@
         ?'Edit is unavailable for this Page in the current View'
         :pdfAvailable&&!active?'Enable PDF annotation tools in the native viewer'
         :directAvailable&&!active?`Edit ${page.documentType==='json'?'JSON':'Markdown'} source directly in this View`:standardEditTitle;
+      if(scriptedHtmlAvailable&&!active)button.title='Enable scripts-off DOM Edit for this scripted Page';
     });
 
     if(refs.resetInspectorBtn){
@@ -3587,6 +3590,14 @@
     const affectedPage=pageById(pageIdForSlot(affectedSlot));
     const rerenderDirect=isDirectSourceType(affectedPage)&&!!affectedFrame;
     if(!enabled&&affectedFrame?.dataset.directSourceToken)directSourceUndoTokens.delete(affectedFrame.dataset.directSourceToken);
+    if(affectedSlot){
+      document.dispatchEvent(new CustomEvent('leaf-edit-runtime-transition',{detail:{
+        enabled:!!enabled,
+        slot:affectedSlot,
+        pageId:affectedPage?.id||null,
+        documentType:affectedPage?.documentType||null
+      }}));
+    }
     htmlEditEnabled=!!enabled;
     editOwnerSlot=htmlEditEnabled?slot:null;
     if(!htmlEditEnabled){
