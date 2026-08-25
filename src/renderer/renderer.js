@@ -3548,8 +3548,8 @@
       button.closest('.view-pane')?.classList.toggle('edit-active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
       button.disabled=unavailable;
-      button.textContent='Edit';
-      const standardEditTitle=active?'Disable Edit for this Window':'Enable Edit for this Window';
+      button.textContent=active?'Apply':'Edit';
+      const standardEditTitle=active?'Apply changes and leave Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
         ?'Edit is unavailable for this Page in the current View'
         :pdfAvailable&&!active?'Enable PDF annotation tools in the native viewer'
