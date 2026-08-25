@@ -143,11 +143,14 @@ checkIncludesAll('Startup status closes deterministically', renderer,
 
 const semanticTokens = ['--background', '--foreground', '--panel', '--panel-secondary', '--border', '--border-subtle', '--muted', '--accent', '--selection', '--focus-ring', '--success', '--warning', '--error'];
 check('Semantic design tokens present', semanticTokens.every(token => css.includes(token)), semanticTokens.join(', '));
-check('Dark, Light, Carbon, and Codex themes are exposed',
-  ['dark', 'light', 'carbon', 'codex'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
-  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') && css.includes('body[data-theme="codex"]'));
-check('Codex is the default preference theme',
-  renderer.includes("scale:1, theme:'codex'") && renderer.includes("state.preferences.theme || 'codex'"));
+check('Dark, Light, and Carbon themes are exposed without legacy Codex source',
+  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
+  !html.includes('data-pref-theme="codex"') &&
+  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&
+  !css.includes('body[data-theme="codex"]'));
+check('Light is the default preference theme',
+  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&
+  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));
 check('Theme CSS does not leak into Page iframes',
   !css.includes('body[data-theme="carbon"] iframe') && !css.includes('body[data-theme="codex"] iframe'));
 
