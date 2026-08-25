@@ -22,10 +22,8 @@ function countMatches(text, pattern) {
   return (String(text || '').match(pattern) || []).length;
 }
 
-const lineEnding = extension.includes('\r\n') ? '\r\n' : '\n';
-const instrumented = extension.replace(
-  /  waitForLeafReady\(\);\r?\n\}\);\s*$/,
-  [
+function buildApiExport(eol) {
+  return [
     '  globalThis.__scriptedHtmlEditApi = {',
     '    hasRenderableContent,',
     '    isScriptedHtmlPage,',
@@ -34,8 +32,17 @@ const instrumented = extension.replace(
     '    runtimePreviewScrollbarCss',
     '  };',
     '})();'
-  ].join(lineEnding)
-);
+  ].join(eol);
+}
+
+const lfFooter = '  waitForLeafReady();\n})();';
+const crlfFooter = '  waitForLeafReady();\r\n})();';
+let instrumented = extension;
+if (extension.includes(crlfFooter)) {
+  instrumented = extension.replace(crlfFooter, buildApiExport('\r\n'));
+} else if (extension.includes(lfFooter)) {
+  instrumented = extension.replace(lfFooter, buildApiExport('\n'));
+}
 check('Scripted HTML Edit extension can be QA-instrumented without changing source', instrumented !== extension);
 
 let api = null;
