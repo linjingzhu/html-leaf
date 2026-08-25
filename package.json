@@ -9,6 +9,7 @@
     "dev": "electron .",
     "qa": "node scripts/qa-v0516.js",
     "qa:static": "node scripts/qa-static.js",
+    "qa:startup-adversarial": "node scripts/qa-startup-adversarial.js",
     "qa:fidelity": "node scripts/qa-source-fidelity.js",
     "qa:scripted-html-edit": "node scripts/qa-scripted-html-edit-v0516.js",
     "qa:zoom-scrollbar": "node scripts/qa-zoom-scrollbar-v0516.js",
