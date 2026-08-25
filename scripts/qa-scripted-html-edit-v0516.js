@@ -7,6 +7,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 const fixture = read('tests/html-fixtures/11-scripted-dom-edit.html');
 const extension = read('src/renderer/scripted-html-edit.js');
+const renderer = read('src/renderer/renderer.js');
 const fidelity = read('src/renderer/source-fidelity.js');
 
 const checks = [];
@@ -109,8 +110,14 @@ checkIncludesAll('Edit click transitions scripted pages into selectable scripts-
   ["frame.dataset.previewRuntime = 'static-editable-scripts-off'", "frame.dataset.snapshotToken = ''", "frame.setAttribute('sandbox', 'allow-same-origin')", 'frame.srcdoc = buildStaticEditSource(page)', "setRuntimeBadge(slot, 'scripts-off')"]);
 checkIncludesAll('Edit toggle restores scripted pages to interactive isolated preview', extension,
   ["frame.dataset.previewRuntime = 'interactive-isolated'", "frame.setAttribute('sandbox', 'allow-scripts')", 'frame.srcdoc = buildInteractiveSource(page, token)', "setRuntimeBadge(slot, 'interactive')"]);
-checkIncludesAll('Scripted Edit keeps the Edit button enabled for scripted HTML pages', extension,
-  ['function refreshEditButtons()', 'button.disabled = false', "Enable scripts-off DOM Edit for this scripted Page"]);
+checkIncludesAll('Renderer keeps Edit available for scripted HTML pages', renderer,
+  ['const scriptedHtmlAvailable=pageRequiresScripts(page)&&!!frame;',
+   "frame.dataset.previewRuntime!=='interactive-isolated'||scriptedHtmlAvailable",
+   "Enable scripts-off DOM Edit for this scripted Page"]);
+checkIncludesAll('Scripted Edit follows the renderer runtime transition event', extension,
+  ['function handleEditRuntimeTransition(event)', "document.addEventListener('leaf-edit-runtime-transition'", 'if (enabled) enableStaticHtmlEdit(slot, page);']);
+check('Scripted Edit does not override renderer-owned button state',
+  !/button\.disabled\s*=/.test(extension) && !extension.includes('new MutationObserver') && !extension.includes('setInterval('));
 checkIncludesAll('Source fidelity strips scripted-edit runtime artifacts before save', fidelity,
   ['[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime]', "'data-leaf-scrollbar-runtime'", 'editorArtifactReport']);
 
