@@ -39,11 +39,6 @@
     return state.views.single || pageList()[0]?.page.id || '';
   }
 
-  function supportsHtmlInCanvas() {
-    const proto = window.CanvasRenderingContext2D?.prototype;
-    return !!(proto && (proto.drawElement || proto.drawElementImage || proto.drawHTMLElement));
-  }
-
   function renderPageSource(page) {
     if (!page) return '<!doctype html><html><body></body></html>';
     if (page.documentType === 'markdown') {
@@ -67,15 +62,15 @@
     style.id = 'leaf-canvas-lab-style';
     style.textContent = `
       .canvas-lab-view{display:none;position:relative;min-width:0;min-height:0;background:var(--panel-secondary,#f2f4f7)}
-      .canvas-lab-view.is-active{display:grid;grid-template-rows:42px minmax(0,1fr) 104px;height:100%}
+      .canvas-lab-view.is-active{display:grid;grid-template-rows:42px minmax(0,1fr) 124px;height:100%}
       .canvas-lab-toolbar{display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--border,#d0d7e2);background:var(--panel,#fff);min-width:0}
       .canvas-lab-toolbar select{height:28px;min-width:170px;border:1px solid var(--border,#d0d7e2);border-radius:6px;background:var(--panel-secondary,#f2f4f7);color:var(--foreground,#20242a)}
-      .canvas-lab-toolbar .canvas-lab-status{margin-left:auto;font-size:11px;font-weight:700;color:var(--success,#1f8a56);padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--success,#1f8a56) 12%,transparent)}
+      .canvas-lab-status{margin-left:auto;font-size:11px;font-weight:700;color:var(--success,#1f8a56);padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--success,#1f8a56) 12%,transparent)}
       .canvas-lab-mode{display:inline-flex;border:1px solid var(--border,#d0d7e2);border-radius:6px;overflow:hidden}
       .canvas-lab-mode button{height:28px;border:0;border-right:1px solid var(--border,#d0d7e2);background:var(--panel,#fff);color:var(--muted,#667085);padding:0 10px}
       .canvas-lab-mode button:last-child{border-right:0}
       .canvas-lab-mode button.active{background:var(--accent,#4268d6);color:#fff;font-weight:700}
-      .canvas-lab-body{min-height:0;padding:12px;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:12px}
+      .canvas-lab-body{min-height:0;padding:12px;display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:12px}
       .canvas-lab-stage{min-width:0;display:grid;grid-template-columns:1fr;gap:12px}
       .canvas-lab-stage.side-by-side{grid-template-columns:1fr 1fr}
       .canvas-lab-card{min-width:0;min-height:0;border:1px solid var(--border,#d0d7e2);border-radius:8px;background:var(--panel,#fff);overflow:hidden;display:grid;grid-template-rows:32px minmax(0,1fr)}
@@ -89,9 +84,10 @@
       .canvas-lab-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#667085)}
       .canvas-lab-check{display:flex;align-items:center;gap:7px;color:var(--foreground,#20242a)}
       .canvas-lab-check::before{content:"";width:12px;height:12px;border-radius:3px;background:var(--accent,#4268d6);box-shadow:inset 0 0 0 2px #fff}
+      .canvas-lab-check.warn::before{background:var(--warning,#9e7336)}
       .canvas-lab-metric{display:flex;justify-content:space-between;color:var(--muted,#667085)}
-      .canvas-lab-metric strong{color:var(--foreground,#20242a)}
-      .canvas-lab-trace{border-top:1px solid var(--border,#d0d7e2);background:var(--panel,#fff);padding:9px 12px;display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px;font-size:12px}
+      .canvas-lab-metric strong{color:var(--foreground,#20242a);text-align:right}
+      .canvas-lab-trace{border-top:1px solid var(--border,#d0d7e2);background:var(--panel,#fff);padding:9px 12px;display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;font-size:12px}
       .canvas-lab-trace strong{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#667085)}
       .canvas-lab-lines{display:grid;gap:5px;color:var(--muted,#667085)}
       .canvas-lab-lines span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -122,12 +118,12 @@
           <option value="webgl">WebGL Texture</option>
           <option value="webgpu">WebGPU Texture</option>
         </select>
-        <span class="canvas-lab-status" id="canvasLabStatus"></span>
+        <span class="canvas-lab-status" id="canvasLabStatus">Canvas Lab</span>
       </div>
       <div class="canvas-lab-body">
         <div class="canvas-lab-stage" id="canvasLabStage">
           <section class="canvas-lab-card" data-canvas-lab-pane="canvas">
-            <div class="canvas-lab-card-head"><strong>Canvas Preview</strong><span class="canvas-lab-badge" id="canvasLabApiBadge">probe</span><span class="canvas-lab-badge">event trace</span></div>
+            <div class="canvas-lab-card-head"><strong>Canvas Preview</strong><span class="canvas-lab-badge" id="canvasLabApiBadge">probe</span><span class="canvas-lab-badge">hit-test</span></div>
             <div class="canvas-lab-canvas-wrap"><canvas id="canvasLabCanvas"></canvas></div>
           </section>
           <section class="canvas-lab-card" data-canvas-lab-pane="dom" hidden>
@@ -138,16 +134,17 @@
         <aside class="canvas-lab-side">
           <div class="canvas-lab-panel">
             <div class="canvas-lab-title">Interaction</div>
-            <div class="canvas-lab-check">Hit testing</div>
-            <div class="canvas-lab-check">Hover</div>
-            <div class="canvas-lab-check">Click</div>
-            <div class="canvas-lab-check">Focus</div>
+            <div class="canvas-lab-check" id="canvasLabHitTest">Hit testing</div>
+            <div class="canvas-lab-check" id="canvasLabPointerMap">Pointer transform</div>
+            <div class="canvas-lab-check" id="canvasLabClickTrace">Click trace</div>
+            <div class="canvas-lab-check" id="canvasLabFallbackState">Fallback visible</div>
           </div>
           <div class="canvas-lab-panel">
             <div class="canvas-lab-title">Diagnostics</div>
             <div class="canvas-lab-metric"><span>Paint count</span><strong id="canvasLabPaintCount">0</strong></div>
             <div class="canvas-lab-metric"><span>Frame cost</span><strong id="canvasLabFrameCost">0ms</strong></div>
             <div class="canvas-lab-metric"><span>API</span><strong id="canvasLabApiName">Fallback</strong></div>
+            <div class="canvas-lab-metric"><span>Mismatch</span><strong id="canvasLabMismatchList">none</strong></div>
           </div>
         </aside>
       </div>
@@ -193,12 +190,50 @@
     const row = document.createElement('span');
     row.innerHTML = `<b>${esc(kind)}</b> ${esc(detail)}`;
     trace.prepend(row);
-    while (trace.children.length > 5) trace.lastElementChild.remove();
+    while (trace.children.length > 6) trace.lastElementChild.remove();
+  }
+
+  function setMetric(id, value) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = String(value);
+  }
+
+  function setCheck(id, ok, label) {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.classList.toggle('warn', !ok);
+    if (label) node.textContent = label;
+  }
+
+  function canvasPointFromEvent(event, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      x: Math.round((event.clientX - rect.left) * dpr),
+      y: Math.round((event.clientY - rect.top) * dpr),
+      cssX: Math.round(event.clientX - rect.left),
+      cssY: Math.round(event.clientY - rect.top),
+      dpr
+    };
+  }
+
+  function validateSlotAlignment(result = {}) {
+    const mismatch = [];
+    const canvas = document.getElementById('canvasLabCanvas');
+    const frame = document.getElementById('canvasLabDomFrame');
+    if (!canvas || !frame) return { ok: false, mismatch: ['missing-surface'] };
+    const canvasRect = canvas.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    if (frame.offsetParent && Math.abs(canvasRect.width - frameRect.width) > 2) mismatch.push('responsive-size');
+    if (Number(result.zoom || 1) <= 0) mismatch.push('zoom');
+    if (Number(result.dpr || window.devicePixelRatio || 1) <= 0) mismatch.push('dpr');
+    setMetric('canvasLabMismatchList', mismatch.length ? mismatch.join(', ') : 'none');
+    return { ok: mismatch.length === 0, mismatch };
   }
 
   function drawFallbackCanvas(page, reason = '') {
     const canvas = document.getElementById('canvasLabCanvas');
-    if (!canvas) return;
+    if (!canvas) return { state: 'fallback', reason };
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(640, Math.floor(rect.width || 860));
     const height = Math.max(360, Math.floor(rect.height || 420));
@@ -215,56 +250,52 @@
     for (let y = 0; y < height; y += 24) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
     }
-    const pageX = Math.round(width * 0.1);
-    const pageY = Math.round(height * 0.12);
-    const pageW = Math.round(width * 0.8);
-    const pageH = Math.round(height * 0.72);
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#c9d2e4';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(pageX, pageY, pageW, pageH, 8);
-    ctx.fill();
-    ctx.stroke();
     ctx.fillStyle = '#243763';
-    ctx.fillRect(pageX + 28, pageY + 30, Math.min(360, pageW * 0.58), 24);
-    ctx.fillStyle = '#cbd6ea';
-    ctx.fillRect(pageX + 28, pageY + 70, Math.min(520, pageW * 0.75), 14);
-    ctx.fillStyle = '#eef3fb';
-    ctx.strokeStyle = '#d6deed';
-    const cardW = Math.max(90, (pageW - 78) / 3);
-    for (let i = 0; i < 3; i += 1) {
-      const x = pageX + 28 + i * (cardW + 11);
-      ctx.beginPath();
-      ctx.roundRect(x, pageY + 112, cardW, 74, 6);
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#4268d6';
-    ctx.beginPath();
-    ctx.roundRect(pageX + 28, pageY + pageH - 58, 92, 34, 5);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '700 13px system-ui';
-    ctx.fillText('Submit', pageX + 44, pageY + pageH - 36);
-    ctx.strokeStyle = '#ff3f46';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pageX + 28, pageY + pageH - 58, 92, 34);
-    ctx.fillStyle = '#344054';
+    ctx.font = '700 16px system-ui';
+    ctx.fillText(page?.name || 'No page selected', 24, 40);
+    ctx.fillStyle = '#667085';
     ctx.font = '12px system-ui';
-    ctx.fillText(page?.name || 'No page selected', 18, height - 18);
-    if (reason) ctx.fillText(reason, width - Math.min(430, width - 30), height - 18);
-    document.getElementById('canvasLabPaintCount').textContent = String(Number(document.getElementById('canvasLabPaintCount').textContent || 0) + 1);
-    document.getElementById('canvasLabFrameCost').textContent = `${Math.max(1, Math.round((performance.now() - start) * 10) / 10)}ms`;
+    ctx.fillText(reason || 'DOM fallback active', 24, 62);
+    setMetric('canvasLabPaintCount', Number(document.getElementById('canvasLabPaintCount')?.textContent || 0) + 1);
+    setMetric('canvasLabFrameCost', `${Math.max(1, Math.round((performance.now() - start) * 10) / 10)}ms`);
+    return { state: 'fallback', reason, width, height, zoom: 1, dpr: window.devicePixelRatio || 1 };
   }
 
-  function renderLab() {
+  async function renderLabThroughRuntime(page) {
+    const canvas = document.getElementById('canvasLabCanvas');
+    const start = performance.now();
+    const runtime = window.LeafHtmlCanvasRuntime;
+    if (!runtime?.renderToCanvasFromHtml || !page || page.documentType !== 'html') {
+      const result = drawFallbackCanvas(page, !page ? 'no page selected' : 'non-HTML fallback');
+      setMetric('canvasLabApiName', 'Fallback');
+      return result;
+    }
+    try {
+      const result = await runtime.renderToCanvasFromHtml({
+        canvas,
+        html: renderPageSource(page),
+        baseUrl: page.baseUrl || '',
+        zoom: 1
+      });
+      setMetric('canvasLabPaintCount', Number(document.getElementById('canvasLabPaintCount')?.textContent || 0) + 1);
+      setMetric('canvasLabFrameCost', `${Math.max(1, Math.round((performance.now() - start) * 10) / 10)}ms`);
+      setMetric('canvasLabApiName', result.method || 'drawElementImage');
+      return result;
+    } catch (error) {
+      const result = drawFallbackCanvas(page, error?.message || 'paint-failure');
+      setMetric('canvasLabApiName', 'Fallback');
+      return result;
+    }
+  }
+
+  async function renderLab() {
     const select = document.getElementById('canvasLabPageSelect');
     const page = pageById(select?.value) || pageById(activePageId());
-    const apiSupported = supportsHtmlInCanvas();
-    document.getElementById('canvasLabStatus').textContent = apiSupported ? 'HTML-in-Canvas Ready' : 'Canvas fallback active';
-    document.getElementById('canvasLabApiBadge').textContent = apiSupported ? 'native API' : 'fallback';
-    document.getElementById('canvasLabApiName').textContent = apiSupported ? 'Native' : 'Fallback';
+    const runtime = window.LeafHtmlCanvasRuntime;
+    const detected = runtime?.detectHtmlInCanvasSupport?.() || { supported: false, reason: 'runtime-missing' };
+    document.getElementById('canvasLabStatus').textContent = detected.supported ? 'HTML-in-Canvas Ready' : 'Canvas fallback active';
+    document.getElementById('canvasLabApiBadge').textContent = detected.supported ? 'native API' : 'fallback';
+    document.getElementById('canvasLabApiName').textContent = detected.supported ? 'Native' : 'Fallback';
 
     const frame = document.getElementById('canvasLabDomFrame');
     if (frame) {
@@ -284,7 +315,12 @@
         } catch {}
       };
     }
-    drawFallbackCanvas(page, apiSupported ? 'Native draw API detected' : 'Native draw API unavailable');
+
+    const result = await renderLabThroughRuntime(page);
+    const alignment = validateSlotAlignment(result);
+    setCheck('canvasLabHitTest', true, 'Hit testing');
+    setCheck('canvasLabPointerMap', alignment.ok, alignment.ok ? 'Pointer transform' : 'Pointer mismatch');
+    setCheck('canvasLabFallbackState', result.state !== 'canvas', result.state === 'canvas' ? 'Native Canvas paint' : `Fallback: ${result.reason || 'visible'}`);
   }
 
   function setCanvasMode(mode) {
@@ -293,14 +329,9 @@
     const canvasPane = document.querySelector('[data-canvas-lab-pane="canvas"]');
     const domPane = document.querySelector('[data-canvas-lab-pane="dom"]');
     const eventsOnly = mode === 'events';
-    stage.classList.toggle('side-by-side', mode === 'side-by-side');
+    stage.classList.toggle('side-by-side', mode === 'side-by-side' || eventsOnly);
     canvasPane.hidden = mode === 'dom';
-    domPane.hidden = !(mode === 'dom' || mode === 'side-by-side');
-    if (eventsOnly) {
-      canvasPane.hidden = false;
-      domPane.hidden = false;
-      stage.classList.add('side-by-side');
-    }
+    domPane.hidden = !(mode === 'dom' || mode === 'side-by-side' || eventsOnly);
     renderLab();
   }
 
@@ -318,12 +349,14 @@
       button.addEventListener('click', () => setCanvasMode(button.dataset.canvasLabMode));
     });
     document.getElementById('canvasLabCanvas')?.addEventListener('mousemove', event => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      setTrace('mousemove', `canvas ${Math.round(event.clientX - rect.left)}, ${Math.round(event.clientY - rect.top)}`);
+      const point = canvasPointFromEvent(event, event.currentTarget);
+      setCheck('canvasLabPointerMap', true, `Pointer transform ${point.cssX}, ${point.cssY}`);
+      setTrace('hit-test', `canvas ${point.cssX}, ${point.cssY} / ${point.x}, ${point.y} @${point.dpr}x`);
     }, { passive: true });
     document.getElementById('canvasLabCanvas')?.addEventListener('click', event => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      setTrace('click', `canvas ${Math.round(event.clientX - rect.left)}, ${Math.round(event.clientY - rect.top)}`);
+      const point = canvasPointFromEvent(event, event.currentTarget);
+      setCheck('canvasLabClickTrace', true, `Click trace ${point.cssX}, ${point.cssY}`);
+      setTrace('click', `canvas ${point.cssX}, ${point.cssY}`);
     });
   }
 
