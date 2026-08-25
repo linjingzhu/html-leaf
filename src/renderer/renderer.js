@@ -22,6 +22,9 @@
     viewportSizeModal: $('#viewportSizeModal'), viewportWidthInput: $('#viewportWidthInput'),
     viewportHeightInput: $('#viewportHeightInput'),
     clearHtmlModal: $('#clearHtmlModal'), clearHtmlTarget: $('#clearHtmlTarget'),
+    cancelEditModal: $('#cancelEditModal'), cancelEditTarget: $('#cancelEditTarget'),
+    groupTileView: $('#groupTileView'), groupTileGrid: $('#groupTileGrid'),
+    groupTileTitle: $('#groupTileTitle'), groupTileCount: $('#groupTileCount'), groupTileClose: $('#groupTileClose'),
     replaceHtmlModal: $('#replaceHtmlModal'), replaceHtmlTarget: $('#replaceHtmlTarget'), replaceHtmlMessage: $('#replaceHtmlMessage'),
     replaceHtmlOpenNew: $('#replaceHtmlOpenNew'),
     jiraExportModal: $('#jiraExportModal'), jiraExportSource: $('#jiraExportSource'),
@@ -1026,6 +1029,14 @@
     return{query,projectMatch,visible};
   }
 
+  const VIEW_CHIPS=[
+    {slot:'single',letter:'P',title:'Loaded in Preview'},
+    {slot:'left',letter:'L',title:'Loaded in Compare left'},
+    {slot:'right',letter:'R',title:'Loaded in Compare right'},
+    {slot:'codePreview',letter:'V',title:'Loaded in Code preview'},
+    {slot:'codePage',letter:'C',title:'Loaded in the Code editor'}
+  ];
+
   function renderTree(){
     refs.tree.innerHTML='';
     state.documents.forEach((project)=>{
@@ -1083,6 +1094,7 @@
       refs.tree.appendChild(card);
     });
     if(!refs.tree.children.length&&refs.projectSearch?.value.trim())refs.tree.innerHTML='<div class="used-component-empty">No matching documents.</div>';
+    renderGroupTileView();
     emitLifecycle('leaf-tree-rendered',{});
   }
 
@@ -1108,11 +1120,15 @@
       if(node.id===state.views.right) row.classList.add('view-right');
       if(node.id===state.views.codePreview) row.classList.add('view-code-preview');
       if(node.id===state.views.codePage) row.classList.add('view-code-editor');
+      // A Page can sit in several Views at once. These used to be one ::after,
+      // so only the last matching rule's letter showed and the rest were hidden.
+      const viewChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot])
+        .map(chip=>`<span class="view-chip view-chip-${chip.slot}" title="${esc(chip.title)}">${chip.letter}</span>`).join('');
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
       const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':'◇';
-      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
+      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span>${viewChips}<button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
         if(e.target.closest('.tree-row-add'))return;
@@ -2439,6 +2455,155 @@
   });
   $('#atlassianPreviewClose')?.addEventListener('click',closeAtlassianSplitPreview);
 
+  // Group Tile View: selecting a Group covers the viewport with its descendants
+  // as square thumbnails. Thumbnails are scripts-off, non-same-origin iframes
+  // filled only once a tile scrolls into view - opening a 200-Page Group must
+  // never spawn 200 live documents at once.
+  const GROUP_TILE_LOGICAL_SIZE=1280;
+  let groupTileIntersection=null;
+  let groupTileResize=null;
+  let groupTileSignature='';
+
+  function selectedGroupContext(){
+    if(!selectedTreeNode) return null;
+    const found=nodeById(selectedTreeNode);
+    return found?.node?.type==='group' ? found : null;
+  }
+
+  function teardownGroupTileObservers(){
+    groupTileIntersection?.disconnect();groupTileIntersection=null;
+    groupTileResize?.disconnect();groupTileResize=null;
+  }
+
+  function scaleGroupTileThumbs(){
+    if(!refs.groupTileGrid) return;
+    refs.groupTileGrid.querySelectorAll('.group-tile-thumb iframe').forEach(frame=>{
+      const width=frame.parentElement?.clientWidth||0;
+      if(!width) return;
+      frame.style.transform=`scale(${width/GROUP_TILE_LOGICAL_SIZE})`;
+    });
+  }
+
+  function fillGroupTileThumb(thumb){
+    if(thumb.dataset.tileFilled==='true') return;
+    thumb.dataset.tileFilled='true';
+    const page=pageById(thumb.dataset.pageId);
+    if(!pageHasRenderableContent(page)||page.documentType==='pdf') return;
+    const frame=document.createElement('iframe');
+    frame.setAttribute('sandbox','');
+    frame.setAttribute('scrolling','no');
+    frame.setAttribute('tabindex','-1');
+    frame.setAttribute('aria-hidden','true');
+    frame.title=`${page.name} thumbnail`;
+    frame.srcdoc=buildPreviewSource(page,{allowScripts:false});
+    thumb.querySelector('.group-tile-placeholder')?.remove();
+    thumb.appendChild(frame);
+    scaleGroupTileThumbs();
+  }
+
+  function groupTilePlaceholderLabel(node){
+    if(node.type==='group') return 'GROUP';
+    if(node.documentType==='pdf') return 'PDF';
+    if(!pageHasRenderableContent(node)) return 'EMPTY';
+    return '';
+  }
+
+  function buildGroupTile(project,node){
+    const tile=document.createElement('button');
+    tile.type='button';
+    tile.className=`group-tile${node.type==='group'?' is-group':''}`;
+    tile.dataset.tileNodeId=node.id;
+    tile.title=node.name;
+    const thumb=document.createElement('div');
+    thumb.className='group-tile-thumb';
+    const label=groupTilePlaceholderLabel(node);
+    if(node.type==='page'&&!label) thumb.dataset.pageId=node.id;
+    if(label){
+      const placeholder=document.createElement('div');
+      placeholder.className='group-tile-placeholder';
+      placeholder.textContent=node.type==='group'?'▰':label;
+      thumb.appendChild(placeholder);
+    }
+    if(node.type==='page'&&node.documentType&&node.documentType!=='html'){
+      const badge=document.createElement('span');
+      badge.className='group-tile-badge';
+      badge.textContent=node.documentType.toUpperCase();
+      thumb.appendChild(badge);
+    }
+    const name=document.createElement('span');
+    name.className='group-tile-name';
+    name.textContent=node.name;
+    tile.append(thumb,name);
+    tile.addEventListener('click',()=>{
+      if(node.type==='group'){
+        withUnsavedInspectorGuard(()=>{
+          state.selectedDocumentId=project.id;
+          selectedTreeNode=node.id;
+          clearInspector();renderAll();persist();
+        });
+        return;
+      }
+      selectPageFromTree(node.id);
+      persist();
+    });
+    return tile;
+  }
+
+  function renderGroupTileView(){
+    const view=refs.groupTileView,grid=refs.groupTileGrid;
+    if(!view||!grid) return;
+    const found=selectedGroupContext();
+    if(!found){
+      teardownGroupTileObservers();
+      groupTileSignature='';
+      document.body.classList.remove('group-tiles-open');
+      if(!view.hidden){view.hidden=true;grid.textContent='';}
+      return;
+    }
+    const {project,node}=found;
+    const items=children(project,node.id);
+    // renderTree() runs on every search keystroke; rebuilding the grid there
+    // would discard every already-loaded thumbnail for nothing.
+    const signature=[node.id,node.name,items.map(item=>`${item.id}:${item.name}:${item.documentType||''}:${pageHasRenderableContent(item)?1:0}`).join('|')].join('#');
+    if(signature===groupTileSignature&&!view.hidden) return;
+    groupTileSignature=signature;
+    teardownGroupTileObservers();
+    grid.textContent='';
+    view.hidden=false;
+    document.body.classList.add('group-tiles-open');
+    refs.groupTileTitle.textContent=node.name;
+    refs.groupTileCount.textContent=items.length?`${items.length} item${items.length===1?'':'s'}`:'';
+    if(!items.length){
+      const empty=document.createElement('div');
+      empty.className='group-tile-empty';
+      empty.textContent='This Group has no Pages yet.';
+      grid.appendChild(empty);
+      emitLifecycle('leaf-group-tiles-rendered',{groupId:node.id,count:0});
+      return;
+    }
+    items.forEach(item=>grid.appendChild(buildGroupTile(project,item)));
+    groupTileIntersection=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(!entry.isIntersecting) return;
+        groupTileIntersection?.unobserve(entry.target);
+        fillGroupTileThumb(entry.target);
+      });
+    },{root:grid,rootMargin:'150px'});
+    grid.querySelectorAll('.group-tile-thumb[data-page-id]').forEach(thumb=>groupTileIntersection.observe(thumb));
+    groupTileResize=new ResizeObserver(()=>scaleGroupTileThumbs());
+    groupTileResize.observe(grid);
+    emitLifecycle('leaf-group-tiles-rendered',{groupId:node.id,count:items.length});
+  }
+
+  refs.groupTileClose?.addEventListener('click',()=>{
+    const found=selectedGroupContext();
+    if(!found) return;
+    withUnsavedInspectorGuard(()=>{
+      selectedTreeNode=null;
+      renderAll();persist();
+    });
+  });
+
   function setModePanelVisibility(){
     $$('[data-mode-panel]').forEach(panel=>{
       panel.classList.toggle('is-active', panel.dataset.modePanel===state.mode);
@@ -2516,6 +2681,7 @@
     setTimeout(renderHierarchy,0);
     renderTree();
     renderCrumbs();
+    renderGroupTileView();
     emitLifecycle('leaf-view-mode-changed',{mode:state.mode});
   }
 
@@ -3467,8 +3633,36 @@
   };
   refs.replaceHtmlModal.addEventListener('keydown',event=>{trapDialogFocus(refs.replaceHtmlModal,event);if(event.key==='Escape')closeReplaceHtmlDialog();});
 
+  async function openPagesIntoSlot(slot){
+    withUnsavedInspectorGuard(async()=>{
+      try{
+        const results=await window.electronAPI.importPages();
+        if(!results?.length) return;
+        await addPageResultToDocument(results[0], slot);
+        for(const result of results.slice(1)) await addPageResultToDocument(result);
+        showToast(`${results.length} page${results.length===1?'':'s'} imported`);
+      }catch(error){
+        console.error('Page import failed',error);
+        showToast(`Import failed: ${error.message}`);
+      }
+    });
+  }
+
+  function bindDropZoneHit(pane, slot){
+    const zone=pane.querySelector('.html-drop-zone'); if(!zone) return;
+    zone.setAttribute('role','button');
+    zone.setAttribute('tabindex','0');
+    zone.setAttribute('title','Open a Page in this View');
+    zone.addEventListener('click',()=>openPagesIntoSlot(slot));
+    zone.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      event.preventDefault();openPagesIntoSlot(slot);
+    });
+  }
+
   function bindDropTarget(selector, slot){
     const pane=$(selector); if(!pane) return;
+    bindDropZoneHit(pane, slot);
     pane.addEventListener('dragenter',e=>{if([...(e.dataTransfer?.files||[])].some(isHtmlFile)||e.dataTransfer?.types?.includes('Files')){e.preventDefault();if(slot==='right'&&atlassianPreviewState)pane.dataset.atlassianDrag='true';else pane.querySelector('.html-drop-zone')?.classList.add('drag-over');}});
     pane.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';if(slot==='right'&&atlassianPreviewState)pane.dataset.atlassianDrag='true';else pane.querySelector('.html-drop-zone')?.classList.add('drag-over');}});
     pane.addEventListener('dragleave',e=>{if(!pane.contains(e.relatedTarget)){pane.querySelector('.html-drop-zone')?.classList.remove('drag-over');pane.removeAttribute('data-atlassian-drag');}});
@@ -3548,8 +3742,10 @@
       button.closest('.view-pane')?.classList.toggle('edit-active',active);
       button.setAttribute('aria-pressed',active?'true':'false');
       button.disabled=unavailable;
-      button.textContent='Edit';
-      const standardEditTitle=active?'Disable Edit for this Window':'Enable Edit for this Window';
+      button.textContent=active?'Apply':'Edit';
+      const cancelButton=document.querySelector(`[data-edit-cancel="${slot}"]`);
+      if(cancelButton)cancelButton.hidden=!active;
+      const standardEditTitle=active?'Apply changes and leave Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
         ?'Edit is unavailable for this Page in the current View'
         :pdfAvailable&&!active?'Enable PDF annotation tools in the native viewer'
@@ -3621,6 +3817,44 @@
     });
   }
 
+  let editSessionSnapshot=null;
+  let pendingEditCancel=null;
+
+  function editSessionIsDirty(){
+    if(!editSessionSnapshot)return false;
+    const page=pageById(editSessionSnapshot.pageId);
+    return !!page&&String(page.source||'')!==editSessionSnapshot.source;
+  }
+
+  function restoreEditSessionSnapshot(){
+    const snapshot=editSessionSnapshot;
+    if(!snapshot)return;
+    const page=pageById(snapshot.pageId);
+    if(page&&String(page.source||'')!==snapshot.source){
+      pushUndo(page);
+      page.source=snapshot.source;
+      markJiraCheckStale();
+      persist();
+      renderVisibleFramesForPage(page.id,null);
+      if(state.mode==='code'&&state.views.codePage===page.id)loadCodePage();
+    }
+  }
+
+  function cancelHtmlEdit(slot){
+    if(!(htmlEditEnabled&&editOwnerSlot===slot))return;
+    if(editSessionIsDirty()){
+      pendingEditCancel=slot;
+      const page=pageById(editSessionSnapshot.pageId);
+      if(refs.cancelEditTarget)refs.cancelEditTarget.textContent=page?.name||page?.fileName||'';
+      refs.cancelEditModal?.classList.add('show');
+      setTimeout(()=>$('#cancelEditKeep')?.focus(),0);
+      return;
+    }
+    setHtmlEditEnabled(false,slot);
+  }
+
+  function closeCancelEditDialog(){refs.cancelEditModal?.classList.remove('show');pendingEditCancel=null;}
+
   function setHtmlEditEnabled(enabled,slot=editOwnerSlot){
     const affectedSlot=slot||editOwnerSlot;
     const affectedFrame=frameForEditSlot(affectedSlot);
@@ -3628,6 +3862,8 @@
     const rerenderDirect=isDirectSourceType(affectedPage)&&!!affectedFrame;
     if(!enabled&&affectedFrame?.dataset.directSourceToken)directSourceUndoTokens.delete(affectedFrame.dataset.directSourceToken);
     if(affectedSlot){
+      if(enabled&&affectedPage)editSessionSnapshot={slot:affectedSlot,pageId:affectedPage.id,source:String(affectedPage.source||'')};
+      else if(!enabled)editSessionSnapshot=null;
       flushPersist();
       document.dispatchEvent(new CustomEvent('leaf-edit-runtime-transition',{detail:{
         enabled:!!enabled,
@@ -6221,15 +6457,47 @@
     if(!['preview','editor'].includes(activeSlots.code)) activeSlots.code='preview';
   }
   function renderCrumbs(){
-    const page=pageById(currentActivePageId());if(!page){refs.crumbs.textContent='No page selected';return;}
-    const x=nodeById(page.id);const names=[page.name];let parent=page.parentId;while(parent){const p=x.project.nodes.find(n=>n.id===parent);if(!p)break;names.unshift(p.name);parent=p.parentId;}names.unshift(x.project.name);refs.crumbs.textContent=names.join(' / ');
+    const project=state.projectName||'Leaf Project';
+    const document_=activeDocument()?.name||'No Document';
+    refs.crumbs.innerHTML=`<button type="button" class="crumb crumb-project" data-crumb-kind="project">${esc(project)}</button>`+
+      `<span class="crumb-sep">/</span><span class="crumb-document">${esc(document_)}</span>`;
   }
+
+  refs.crumbs?.addEventListener('click',event=>{
+    if(!event.target.closest?.('.crumb-project'))return;
+    withUnsavedInspectorGuard(()=>{
+      selectedTreeNode=null;
+      clearInspector();
+      renderTree();
+      renderCrumbs();
+      refs.tree?.focus({preventScroll:true});
+      persist();
+    });
+  });
   function renderAll(){
     repairViews();
     renderViewMode();
     updateClearButtons();
-    $('#workspaceTitle').textContent=`${state.projectName||'Leaf Project'} / ${activeDocument()?.name||'No Document'}`;
+    renderCrumbs();
   }
+
+  $$('[data-edit-cancel]').forEach(button=>button.addEventListener('click',event=>{
+    event.preventDefault();event.stopPropagation();
+    cancelHtmlEdit(button.dataset.editCancel);
+  }));
+  $('#cancelEditKeep')?.addEventListener('click',closeCancelEditDialog);
+  $('#cancelEditConfirm')?.addEventListener('click',()=>{
+    const slot=pendingEditCancel;
+    closeCancelEditDialog();
+    if(!slot)return;
+    restoreEditSessionSnapshot();
+    setHtmlEditEnabled(false,slot);
+    showToast('Edits discarded');
+  });
+  refs.cancelEditModal?.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.cancelEditModal,event);
+    if(event.key==='Escape')closeCancelEditDialog();
+  });
 
   $('#quickAddDocument').onclick=newDocument;
   clearInspector();

@@ -220,7 +220,6 @@
     <button class="panel-toggle-top sidebar-toggle-top" id="sidebarToggleTop" type="button"
             aria-controls="leftSidebar" aria-expanded="true" aria-label="Hide left panel" title="Hide left panel">◨</button>
     <div class="menubar-spacer"></div>
-    <div class="workspace-title" id="workspaceTitle">Untitled Workspace</div>
     <button class="panel-toggle-top inspector-toggle-top" id="inspectorToggleTop" type="button"
             aria-controls="inspector" aria-expanded="true" aria-label="Hide Inspector" title="Hide Inspector">◧</button>
   </header>
@@ -229,14 +228,14 @@
     <aside class="sidebar" id="leftSidebar">
       <div class="left-top">
         <div class="left-tabs">
-          <button class="left-tab active" data-left-tab="project">Project</button>
+          <button class="left-tab active" data-left-tab="project">Documents</button>
           <button class="left-tab" data-left-tab="objects">Objects</button>
           <button class="left-tab" data-left-tab="used">Used</button>
         </div>
         <section class="left-tab-panel active" data-left-panel="project">
-          <div class="pane-title"><span>Documents</span><button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button></div>
           <div class="objects-toolbar project-search-toolbar">
             <input id="projectSearch" type="search" placeholder="Search documents..." aria-label="Search Project documents" />
+            <button id="quickAddDocument" class="tiny-btn" title="New Document">＋</button>
           </div>
           <div class="tree" id="tree" tabindex="0"></div>
         </section>
@@ -288,6 +287,7 @@
         <section class="view-pane single-view viewport-mode is-active active-view" data-mode-panel="preview" id="singleView">
           <div class="view-pane-head">
             <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-cancel" type="button" data-edit-cancel="single" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
             <select class="page-select" id="singlePageName" aria-label="Preview Page"></select>
             <div class="view-search" data-view-search="single" role="search">
               <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Preview"><span data-view-search-status aria-live="polite"></span>
@@ -326,6 +326,7 @@
           <section class="view-pane active-view" data-view-slot="left">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="left" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-cancel" type="button" data-edit-cancel="left" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="leftPageSelect"></select>
               <div class="view-search" data-view-search="left" role="search">
                 <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search left Compare view"><span data-view-search-status aria-live="polite"></span>
@@ -360,6 +361,7 @@
           <section class="view-pane" data-view-slot="right">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="right" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-cancel" type="button" data-edit-cancel="right" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="rightPageSelect"></select>
               <div class="view-search" data-view-search="right" role="search">
                 <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search right Compare view"><span data-view-search-status aria-live="polite"></span>
@@ -410,6 +412,7 @@
           <section class="view-pane active-view" data-view-slot="code-preview">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="codePreview" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-cancel" type="button" data-edit-cancel="codePreview" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="codePreviewSelect"></select>
               <div class="view-search" data-view-search="codePreview" role="search">
                 <span aria-hidden="true">⌕</span><input type="search" placeholder="Search" aria-label="Search Code preview"><span data-view-search-status aria-live="polite"></span>
@@ -461,6 +464,16 @@
             <div class="html-drop-zone code-drop-zone" data-drop-slot="codePage"><div class="drop-icon">⇩</div><strong>Drop Page here</strong><span>Load into Code View</span></div>
           </section>
         </div>
+
+        <section class="group-tile-view" id="groupTileView" aria-label="Group contents" hidden>
+          <div class="group-tile-head">
+            <span class="group-tile-title" id="groupTileTitle"></span>
+            <span class="group-tile-count" id="groupTileCount"></span>
+            <div class="spacer"></div>
+            <button class="group-tile-close" type="button" id="groupTileClose" title="Close tile view" aria-label="Close tile view">✕</button>
+          </div>
+          <div class="group-tile-grid" id="groupTileGrid"></div>
+        </section>
       </div>
     </main>
 
@@ -615,6 +628,18 @@
       <button class="btn" id="jiraExportCancel">Cancel</button>
       <button class="btn" id="jiraExportSave">Save Output</button>
       <button class="btn primary" id="jiraExportCopy">Copy</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="cancelEditModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cancelEditTitle">
+    <h3 id="cancelEditTitle">Discard edits?</h3>
+    <p id="cancelEditMessage">This Page changed while Edit was on. Leaving now restores it to how it was when Edit started.</p>
+    <div class="clear-html-target" id="cancelEditTarget"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelEditKeep">Keep editing</button>
+      <button class="btn danger" id="cancelEditConfirm">Discard and leave</button>
     </div>
   </div>
 </div>

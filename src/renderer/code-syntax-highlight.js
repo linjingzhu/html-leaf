@@ -182,7 +182,7 @@
         white-space:pre;
         tab-size:2;
         pointer-events:none;
-        color:var(--foreground);
+        color:var(--editor-foreground);
         font:12px/1.55 "SFMono-Regular",Consolas,"Liberation Mono",monospace;
       }
       .leaf-code-highlight code{font:inherit;white-space:inherit}
@@ -198,20 +198,20 @@
         background:color-mix(in srgb,var(--selection) 42%,transparent);
       }
       .leaf-code-syntax .line-rail{z-index:4}
-      .leaf-token.comment{color:#7d8590}
-      .leaf-token.doctype,.leaf-token.punctuation{color:#8b949e}
-      .leaf-token.tag-name{color:#ff7b72}
-      .leaf-token.attribute,.leaf-token.key{color:#79c0ff}
-      .leaf-token.operator{color:#8b949e}
-      .leaf-token.string{color:#a5d6ff}
-      .leaf-token.number{color:#ffa657}
-      .leaf-token.literal{color:#ff7b72}
-      .leaf-token.heading,.leaf-token.heading-mark{color:#d2a8ff;font-weight:700}
-      .leaf-token.quote,.leaf-token.quote-mark{color:#8b949e}
-      .leaf-token.list-mark{color:#ffa657}
-      .leaf-token.link{color:#7ee787}
-      .leaf-token.emphasis{color:#f2cc60}
-      .leaf-token.code,.leaf-token.code-fence{color:#a5d6ff}
+      .leaf-token.comment{color:var(--syntax-comment)}
+      .leaf-token.doctype,.leaf-token.punctuation{color:var(--syntax-punctuation)}
+      .leaf-token.tag-name{color:var(--syntax-tag)}
+      .leaf-token.attribute,.leaf-token.key{color:var(--syntax-attribute)}
+      .leaf-token.operator{color:var(--syntax-punctuation)}
+      .leaf-token.string{color:var(--syntax-string)}
+      .leaf-token.number{color:var(--syntax-number)}
+      .leaf-token.literal{color:var(--syntax-tag)}
+      .leaf-token.heading,.leaf-token.heading-mark{color:var(--syntax-heading);font-weight:700}
+      .leaf-token.quote,.leaf-token.quote-mark{color:var(--syntax-punctuation)}
+      .leaf-token.list-mark{color:var(--syntax-number)}
+      .leaf-token.link{color:var(--syntax-link)}
+      .leaf-token.emphasis{color:var(--syntax-emphasis)}
+      .leaf-token.code,.leaf-token.code-fence{color:var(--syntax-string)}
     `;
     document.head.appendChild(style);
   }

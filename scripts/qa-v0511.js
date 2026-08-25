@@ -13,8 +13,9 @@ check('Package and product names are Leaf',pkg.name==='leaf'&&pkg.build?.product
 check('Windows identity is registered for Leaf',pkg.build?.appId==='com.leaf.editor'&&main.includes("app.setAppUserModelId('com.leaf.editor')"));
 check('Electron runtime name is Leaf',main.includes("app.setName('Leaf')")&&main.includes('return `Leaf v${app.getVersion()}`')&&main.includes('title: appTitle()'));
 check('Renderer document is labelled Leaf without a menu-bar product mark',html.includes('<title>Leaf</title>')&&html.includes('aria-label="Application menu"')&&!html.includes('class="product-mark"'));
-check('Executable and installer artifacts use Leaf filenames',pkg.build?.win?.artifactName?.startsWith('Leaf-')&&pkg.build?.nsis?.artifactName?.startsWith('Leaf-Setup-'));
-check('Desktop and Start Menu shortcuts are named Leaf',pkg.build?.nsis?.shortcutName==='Leaf');
+check('Windows artifacts use Leaf filenames',pkg.build?.win?.artifactName?.startsWith('Leaf-')&&pkg.build?.productName==='Leaf');
+check('Windows ships portable only, with no installer target',
+  JSON.stringify(pkg.build?.win?.target)==='["zip"]'&&!pkg.build?.nsis&&!/nsis/.test(pkg.scripts?.['dist:win']||''));
 check('Leaf container dialogs use the Leaf product name',main.split("name: 'Leaf Project'").length===3||main.split("name: 'Leaf Document'").length===3);
 
 const prior=spawnSync(process.execPath,[path.join(__dirname,'qa-v0510.js')],{stdio:'inherit'});

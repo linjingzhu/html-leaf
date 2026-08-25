@@ -14,8 +14,8 @@ function check(name,condition){if(!condition){console.error(`FAIL ${name}`);proc
 
 check('Release retains v0.5.15+ hierarchy work',['0.5.15','0.5.16'].includes(pkg.version)&&['release-v0.5.15','release-v0.5.16'].includes(pkg.build.directories.output));
 check('Visible hierarchy is Project, Document, Page',
-  (html.includes('Open Leaf Project')||html.includes('Open Project'))&&html.includes('<span>Documents</span>')&&(html.includes('New Page <kbd>Ctrl+N</kbd>')||html.includes('New Page <kbd>Ctrl+Shift+N</kbd>'))&&
-  (html.includes('New Document…')||html.includes('data-action="new-document">New Document</button>'))&&!html.includes('<span>Projects</span>'));
+  (html.includes('Open Leaf Project')||html.includes('Open Project'))&&html.includes('data-left-tab="project">Documents</button>')&&(html.includes('New Page <kbd>Ctrl+N</kbd>')||html.includes('New Page <kbd>Ctrl+Shift+N</kbd>'))&&
+  (html.includes('New Document…')||html.includes('data-action="new-document">New Document</button>'))&&!html.includes('<span>Projects</span>')&&!html.includes('data-left-tab="project">Project</button>'));
 check('Default hierarchy is Untitled Leaf Project, Default Document, Empty Page',
   js.includes("projectName:'Untitled Leaf Project'")&&js.includes("name:'Default Document'")&&js.includes("name:'Empty Page'"));
 check('Leaf Project schema stores Documents',

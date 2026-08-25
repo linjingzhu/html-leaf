@@ -344,6 +344,57 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- CI triggers -----------------------------------------------------------
+// Every PR branch here is claude/** targeting stable. Listing claude/** under
+// push as well ran the whole Windows build twice per commit, and the publish
+// step fired on any push event, so each of those runs minted its own
+// windows-v<version> prerelease - 116 release tags before this was caught.
+const windowsWorkflow = read('.github/workflows/build-windows.yml');
+const windowsTriggers = windowsWorkflow.slice(0, windowsWorkflow.indexOf('\njobs:')).replace(/\r/g, '');
+const pushBranches = /\n {2}push:\n {4}branches:\n((?: {6}- .*\n)+)/.exec(windowsTriggers)?.[1] || '';
+check('Windows CI does not build PR branches twice per commit',
+  pushBranches.includes('"stable"') && !pushBranches.includes('claude/'),
+  `push branches: ${pushBranches.trim().replace(/\s+/g, ' ') || '(none found)'}`);
+check('Windows CI publishes a release only from stable, a tag, or a dispatch',
+  /if: startsWith\(github\.ref, 'refs\/tags\/v'\) \|\| github\.ref == 'refs\/heads\/stable' \|\| inputs\.publish_release/.test(windowsWorkflow)
+  && !windowsWorkflow.includes("github.event_name == 'push' || inputs.publish_release"));
+check('Superseded PR builds are cancelled, release builds are not',
+  /\nconcurrency:\n/.test(windowsTriggers)
+  && windowsTriggers.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+
+// --- Group Tile View -------------------------------------------------------
+checkIncludesAll('Group Tile View is wired into the tree and the viewport', renderer,
+  ['function renderGroupTileView(', 'function selectedGroupContext(', "found?.node?.type==='group'", 'function buildGroupTile(']);
+checkIncludesAll('Group Tile View markup exists in the viewport host', html,
+  ['id="groupTileView"', 'id="groupTileGrid"', 'id="groupTileTitle"', 'id="groupTileClose"']);
+checkIncludesAll('Tiles are rounded squares with the file name printed underneath', css,
+  ['.group-tile-thumb{', 'aspect-ratio:1/1', '.group-tile-name{']);
+
+// A Group can hold hundreds of Pages. Filling every tile on render would spawn
+// that many live documents at once - exactly the shape that froze the renderer
+// in the v0.5.16 defect family. The thumbnails must stay lazy.
+const tileSection = renderer.slice(
+  renderer.indexOf('const GROUP_TILE_LOGICAL_SIZE'),
+  renderer.indexOf('function setModePanelVisibility()')
+);
+check('Group Tile View section is present', tileSection.length > 500, `${tileSection.length} chars`);
+check('Group tile thumbnails are filled lazily, not all at once',
+  /new IntersectionObserver\(/.test(tileSection) && tileSection.includes('unobserve(entry.target)'));
+check('Group tile thumbnails run with scripts off and without same-origin access',
+  tileSection.includes("frame.setAttribute('sandbox','')")
+  && /buildPreviewSource\([^)]*allowScripts:false/.test(tileSection)
+  && !tileSection.includes('allow-scripts'));
+check('Group tile rebuilds are skipped when nothing about the Group changed',
+  tileSection.includes('groupTileSignature') && /if\(signature===groupTileSignature/.test(tileSection));
+check('Leaving a Group tears the tile observers down',
+  tileSection.includes('function teardownGroupTileObservers()')
+  && /groupTileIntersection\?\.disconnect\(\)/.test(tileSection)
+  && /groupTileResize\?\.disconnect\(\)/.test(tileSection));
+check('The Tile View hides the pane chrome it covers instead of stacking under it',
+  renderer.includes("classList.add('group-tiles-open')")
+  && renderer.includes("classList.remove('group-tiles-open')")
+  && css.includes('body.group-tiles-open .viewport-floating-controls{display:none}'));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;

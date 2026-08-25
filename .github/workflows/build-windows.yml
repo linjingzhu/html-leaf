@@ -17,12 +17,22 @@ on:
   push:
     branches:
       - "stable"
-      - "claude/**"
     tags:
       - "v*"
 
 permissions:
   contents: write
+
+# A PR branch here is always claude/** targeting stable, so listing claude/**
+# under push too ran this whole workflow twice per commit - and because the
+# publish step fired on any push event, each of those runs also minted its own
+# windows-v<version> prerelease. That is where 116 release tags came from. The
+# pull_request trigger already covers every push to a PR branch; workflow_dispatch
+# covers a branch that has no PR yet.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded PR builds are worth nothing; a release build must never be killed.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-windows:
@@ -75,7 +85,7 @@ jobs:
           npm run qa:theme-light
           npm run qa
 
-      - name: Build Windows installer + zip
+      - name: Build Windows portable zip
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           LEAF_BUILD_VERSION: ${{ inputs.build_version }}
@@ -90,7 +100,7 @@ jobs:
         run: |
           out="release-v${{ steps.meta.outputs.version }}"
           mkdir -p windows-artifacts
-          find "$out" -maxdepth 1 -type f \( -name '*.exe' -o -name '*.zip' \) -exec cp {} windows-artifacts/ \;
+          find "$out" -maxdepth 1 -type f -name '*.zip' -exec cp {} windows-artifacts/ \;
           cd windows-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -lh
@@ -104,7 +114,8 @@ jobs:
           if-no-files-found: error
 
       - name: Publish downloadable release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'push' || inputs.publish_release
+        # Releases come from stable, a version tag, or an explicit dispatch - never from validating a PR.
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/stable' || inputs.publish_release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -121,8 +132,7 @@ jobs:
 
           | File | Target |
           | --- | --- |
-          | \`Leaf-Setup-${version}-x64.exe\` | NSIS installer |
-          | \`Leaf-${version}-x64.zip\` | Portable app folder |
+          | \`Leaf-${version}-x64.zip\` | Portable app folder, no install |
 
           The build is not signed with a code-signing certificate, so SmartScreen may show
           "Windows protected your PC" on first run. Choose **More info -> Run anyway**.
