@@ -23,10 +23,12 @@ function removeCodexThemeCss(css) {
   const marker = '/* Codex-inspired application chrome.';
   const start = css.indexOf(marker);
   if (start < 0) return css;
-  const endMarker = '\n\n*{box-sizing:border-box}';
-  const end = css.indexOf(endMarker, start);
-  if (end < 0) throw new Error('src/renderer/styles.css: Codex theme block end marker not found.');
-  return `${css.slice(0, start).replace(/\n+$/, '\n')}${css.slice(end)}`;
+
+  const endMatch = css.slice(start).match(/\r?\n\r?\n\*\{box-sizing:border-box\}/);
+  if (!endMatch) throw new Error('src/renderer/styles.css: Codex theme block end marker not found.');
+
+  const end = start + endMatch.index;
+  return `${css.slice(0, start).replace(/[\r\n]+$/, '\n')}${css.slice(end)}`;
 }
 
 function removeCodexPreferenceButton(html) {
