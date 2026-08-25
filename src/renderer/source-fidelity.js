@@ -68,8 +68,40 @@
     loadExtensionScript('./scripted-html-edit.js');
   }
 
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadLeafExtensions,{once:true});
-  else loadLeafExtensions();
+  let extensionsLoaded=false;
+
+  function isRendererReady(){
+    return document.documentElement.dataset.leafReady==='true';
+  }
+
+  function loadLeafExtensionsOnce(){
+    if(extensionsLoaded)return;
+    extensionsLoaded=true;
+    loadLeafExtensions();
+  }
+
+  function waitForRendererReady(){
+    if(isRendererReady()){
+      loadLeafExtensionsOnce();
+      return;
+    }
+
+    const observer=new MutationObserver(()=>{
+      if(!isRendererReady())return;
+      observer.disconnect();
+      loadLeafExtensionsOnce();
+    });
+    observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-leaf-ready']});
+
+    setTimeout(()=>{
+      if(!extensionsLoaded&&!isRendererReady()){
+        console.warn('Leaf extensions are waiting for renderer readiness.');
+      }
+    },2500);
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',waitForRendererReady,{once:true});
+  else waitForRendererReady();
 
   window.SourceFidelity={stripEditorArtifactsFromDocument,editorArtifactReport,tryMinimalDirectTextPatch,tryInspectorMinimalPatch};
 })();
