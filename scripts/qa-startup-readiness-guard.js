@@ -163,9 +163,16 @@ function probeScriptedHtmlEditTransition() {
   };
 }
 
-check('Renderer restores persisted Leaf state before creating a fallback state',
-  renderer.includes('let state = normalizeState(loadState() || createDefaultState());') &&
-  !renderer.includes('let state = normalizeState(createDefaultState());'));
+// The project is a per-run workspace by request: startup no longer restores the
+// stored project. What startup must still guarantee is that it always ends up
+// with a usable state object - a fresh project, with the user's app settings
+// carried across - so the renderer can never boot into an undefined state.
+check('Renderer boots a fresh project without restoring the stored one',
+  renderer.includes('let state = startFreshProject(storedStateAtStartup);') &&
+  renderer.includes('function startFreshProject(stored){') &&
+  renderer.includes('const fresh=normalizeState(createDefaultState());') &&
+  renderer.includes('if(!stored) return fresh;') &&
+  !renderer.includes('let state = normalizeState(loadState() || createDefaultState());'));
 
 check('Only renderer bootstrap is allowed to set leafReady true',
   renderer.includes("document.documentElement.dataset.leafReady='true'") &&

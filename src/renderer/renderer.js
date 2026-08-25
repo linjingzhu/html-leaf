@@ -42,8 +42,17 @@
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
 
+  // The project is a per-run workspace: every launch opens a clean one, so the
+  // stored project is read only to salvage the parts that are app settings
+  // rather than project content. preferences and layout are the user's chrome -
+  // theme, UI scale, language, panel widths, split ratios - and wiping those on
+  // every start would be a different, unasked-for reset. This is the same split
+  // the "New Project" action already makes.
+  // Read before the reset, then drop the stored copy: the discarded project must
+  // not sit in storage until some later edit happens to overwrite it.
+  const storedStateAtStartup = loadState();
   resetPersistedEditorState();
-  let state = normalizeState(loadState() || createDefaultState());
+  let state = startFreshProject(storedStateAtStartup);
   let selectedTreeNode = state.selectedTreeNode || null;
   let activeSlots = state.activeSlots || { split:'left', code:'preview' };
   let selectedElement = null;
@@ -265,11 +274,22 @@
   function resetPersistedEditorState(){
     try{
       Object.keys(localStorage)
-        .filter(key=>/^hbe-(?:v[\d-]+|v0-[\d-]+)-state$/.test(key))
+        .filter(key=>key===stateKey||/^hbe-(?:v[\d-]+|v0-[\d-]+)-state$/.test(key))
         .forEach(key=>localStorage.removeItem(key));
     }catch(error){
       console.warn('Editor state reset skipped',error);
     }
+  }
+
+  function startFreshProject(stored){
+    const fresh=normalizeState(createDefaultState());
+    if(!stored) return fresh;
+    let carried=null;
+    try{ carried=normalizeState(stored); }catch{ return fresh; }
+    fresh.preferences=carried.preferences;
+    fresh.layout=carried.layout;
+    fresh.previewSizes=carried.previewSizes;
+    return fresh;
   }
 
   function loadState(){
