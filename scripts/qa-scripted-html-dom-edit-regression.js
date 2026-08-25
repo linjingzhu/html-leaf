@@ -6,6 +6,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 const fixture = read('tests/html-fixtures/11-scripted-dom-edit.html');
 const extension = read('src/renderer/scripted-html-edit.js');
+const renderer = read('src/renderer/renderer.js');
 const fidelity = read('src/renderer/source-fidelity.js');
 
 const checks = [];
@@ -49,7 +50,13 @@ includesAll('Edit switches active View to scripts-off selectable DOM', extension
   "frame.setAttribute('sandbox', 'allow-same-origin')",
   'frame.srcdoc = buildStaticEditSource(page)',
   "setRuntimeBadge(slot, 'scripts-off')",
-  'button.disabled = false'
+  "document.addEventListener('leaf-edit-runtime-transition'"
+]);
+
+includesAll('Renderer keeps scripted HTML Edit available before runtime conversion', renderer, [
+  'const scriptedHtmlAvailable=pageRequiresScripts(page)&&!!frame;',
+  "frame.dataset.previewRuntime!=='interactive-isolated'||scriptedHtmlAvailable",
+  "new CustomEvent('leaf-edit-runtime-transition'"
 ]);
 
 check('Transition path is explicitly represented in scripted edit source',
@@ -60,11 +67,16 @@ check('Transition path is explicitly represented in scripted edit source',
     'function restoreInteractivePreview(slot, page)',
     "frame.dataset.previewRuntime = 'interactive-isolated'",
     'frame.srcdoc = buildInteractiveSource(page, token)',
-    'function handleEditClick(event)',
-    'if (wasActive) restoreInteractivePreview(slot, page);',
-    'else enableStaticHtmlEdit(slot, page);'
+    'function handleEditRuntimeTransition(event)',
+    'if (enabled) enableStaticHtmlEdit(slot, page);',
+    'else restoreInteractivePreview(slot, page);'
   ]),
-  'Expected Edit click to route interactive Preview into scripts-off DOM Edit and back to interactive Preview.');
+  'Expected renderer Edit state to route interactive Preview into scripts-off DOM Edit and back.');
+
+check('Scripted Edit has no competing button observer or polling loop',
+  !/button\.disabled\s*=/.test(extension) &&
+  !extension.includes('new MutationObserver') &&
+  !extension.includes('setInterval('));
 
 includesAll('Authored DOM nodes remain selectable in scripts-off same-origin edit surface', extension + fixture, [
   "frame.setAttribute('sandbox', 'allow-same-origin')",
