@@ -131,6 +131,19 @@ check('Theme policy remains idle across repeated enforcement and observer callba
   themePolicyProbe.pass,
   themePolicyProbe.detail);
 
+const startupErrorReleaseCount = (html.match(
+  /startup\?\.classList\.remove\('is-complete'\);\r?\n\s*if \(startup\) startup\.style\.pointerEvents = 'auto';/g
+) || []).length;
+check('Inline startup error pointer release appears exactly once',
+  startupErrorReleaseCount === 1,
+  `Found ${startupErrorReleaseCount} copies`);
+
+includesAll('Roadmap cleanup normalizes startup error recovery idempotently', cleanup, [
+  "'startup error pointer release'",
+  "startup\\?\\.classList\\.remove\\('is-complete'\\)",
+  "startup\\?\\.classList\\.add\\('startup-error'\\)"
+]);
+
 check('Roadmap cleanup no longer rewrites QA files',
   !cleanup.includes('cleanupStaticQa') &&
   !cleanup.includes('cleanupStartupAdversarialQa') &&
