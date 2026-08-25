@@ -56,8 +56,11 @@
     document.body.appendChild(script);
   }
 
-  function loadLeafExtensions(){
+  function loadEarlyExtensions(){
     loadExtensionScript('./theme-policy.js');
+  }
+
+  function loadLeafExtensions(){
     loadExtensionScript('./preview-universal-edit.js');
     loadExtensionScript('./html-canvas-capability.js');
     loadExtensionScript('./canvas-lab.js');
@@ -100,8 +103,13 @@
     },2500);
   }
 
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',waitForRendererReady,{once:true});
-  else waitForRendererReady();
+  function installExtensions(){
+    loadEarlyExtensions();
+    waitForRendererReady();
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installExtensions,{once:true});
+  else installExtensions();
 
   window.SourceFidelity={stripEditorArtifactsFromDocument,editorArtifactReport,tryMinimalDirectTextPatch,tryInspectorMinimalPatch};
 })();
