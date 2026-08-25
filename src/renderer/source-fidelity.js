@@ -49,7 +49,7 @@
     if(document.querySelector(`script[data-leaf-extension="${src}"]`))return;
     const script=document.createElement('script');
     script.src=src;
-    script.async=true;
+    script.async=false;
     script.dataset.leafExtension=src;
     script.onerror=()=>console.warn(`Leaf extension failed to load: ${src}`);
     document.body.appendChild(script);
@@ -60,6 +60,7 @@
     loadExtensionScript('./preview-universal-edit.js');
     loadExtensionScript('./html-canvas-capability.js');
     loadExtensionScript('./canvas-lab.js');
+    loadExtensionScript('./image-widget-edit.js');
     loadExtensionScript('./view-drop-bridge.js');
     loadExtensionScript('./code-syntax-highlight.js');
     loadExtensionScript('./active-view-policy.js');
