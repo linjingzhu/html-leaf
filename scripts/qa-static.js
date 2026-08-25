@@ -272,8 +272,21 @@ checkIncludesAll('Application footer exposes version and live diagnostics', html
 checkIncludesAll('Footer occupies a stable non-overlapping app grid row', css,
   ['grid-template-rows:34px minmax(0,1fr) 22px', '.app-statusbar{', '.status-debug{',
    'body.document-view-only .app-statusbar', 'position:fixed;right:14px;bottom:30px']);
+// The version must reach the renderer, but NOT by reading a file: this preload
+// is sandboxed, so require() outside Electron's allowlist throws before
+// contextBridge runs and the renderer loses electronAPI entirely.
 checkIncludesAll('Packaged version is exposed through the sandboxed startup bridge', preload,
-  ["const { version: appVersion } = require('../package.json');", 'appVersion,', 'startupInfo: () => Promise.resolve(startupInfo())']);
+  ["ipcRenderer.invoke('app:version')", 'appVersion,', 'startupInfo: () => Promise.resolve(startupInfo())']);
+check('Main process serves the version the sandboxed preload asks for',
+  main.includes("ipcMain.handle('app:version'"),
+  main.includes("ipcMain.handle('app:version'") ? '' : 'no app:version handler');
+const preloadFileRequires = [...preload.matchAll(/require\((['"])([^'"]+)\1\)/g)]
+  .map(match => match[2]).filter(name => name.startsWith('.') || name.endsWith('.json'));
+check('Sandboxed preload requires nothing off Electron\'s allowlist',
+  preloadFileRequires.length === 0,
+  preloadFileRequires.length
+    ? `Throws before contextBridge runs: ${preloadFileRequires.join(', ')}`
+    : 'electron only.');
 checkIncludesAll('Startup diagnostics continuously update footer state', fidelity,
   ['function renderDebugFooter(', 'function applyRuntimeVersion(', 'footer.dataset.level=debugFooterLevel',
    'renderDebugFooter(line,debugFooterLevel(message,level))', 'applyRuntimeVersion(info?.appVersion)']);

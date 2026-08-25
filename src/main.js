@@ -487,6 +487,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
   ipcMain.handle('file:importPages', openDocumentFiles);
