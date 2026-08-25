@@ -31,7 +31,6 @@
 
   const FRAME_SLOT = new WeakMap();
   const boundFrameDocuments = new WeakSet();
-  let lastPreviewSyncAt = 0;
 
   const $ = selector => document.querySelector(selector);
 
@@ -114,7 +113,6 @@
     if (![...singleSelect.options].some(option => option.value === activePageId)) return false;
     if (singleSelect.value === activePageId) return true;
     singleSelect.value = activePageId;
-    lastPreviewSyncAt = Date.now();
     singleSelect.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   }
@@ -190,14 +188,21 @@
     bindPreviewModePolicy();
     bindFrameActivationPolicy();
     syncPreviewLabel();
-    if (activeMode() === 'preview' && Date.now() - lastPreviewSyncAt > 250) syncPreviewToActivePage();
   }
 
-  if (document.readyState === 'loading') {
+  function handleFrameRendered(event) {
+    const slot = event.detail?.slot;
+    if (slot && configForSlot(slot)?.frame) bindFrame(slot);
+  }
+
+  document.addEventListener('leaf-renderer-ready', install);
+  document.addEventListener('leaf-frame-rendered', handleFrameRendered);
+
+  if (document.documentElement.dataset.leafReady === 'true') {
+    install();
+  } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', install, { once: true });
   } else {
     install();
   }
-
-  new MutationObserver(install).observe(document.documentElement, { childList: true, subtree: true });
 })();

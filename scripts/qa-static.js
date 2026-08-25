@@ -28,6 +28,42 @@ function checkIncludesAll(name, text, parts) {
   check(name, missing.length === 0, missing.length ? `Missing: ${missing.join(', ')}` : '');
 }
 
+const rendererDir = path.join('src', 'renderer');
+const rendererScripts = fs.readdirSync(path.join(root, rendererDir)).filter(name => name.endsWith('.js')).sort();
+
+function observeCalls(text) {
+  const calls = [];
+  for (const match of text.matchAll(/\.observe\s*\(/g)) {
+    const start = match.index + match[0].length;
+    let end = start;
+    let depth = 1;
+    while (end < text.length && depth > 0) {
+      const char = text[end++];
+      if (char === '(' || char === '{' || char === '[') depth++;
+      else if (char === ')' || char === '}' || char === ']') depth--;
+    }
+    const args = text.slice(start, end - 1);
+    const split = args.indexOf(',');
+    calls.push({
+      target: (split < 0 ? args : args.slice(0, split)).replace(/\s+/g, ''),
+      options: split < 0 ? '' : args.slice(split + 1)
+    });
+  }
+  return calls;
+}
+// Only a bare `document.documentElement` / `document.body` target is the app shell renderer.js owns.
+// Page iframe documents (`doc.body`, `frame.contentDocument.body`) stay legal.
+function appShellSubtreeObservers(text) {
+  return observeCalls(text).filter(call =>
+    /^document\.(?:documentElement|body)$/.test(call.target) &&
+    /childList\s*:\s*true/.test(call.options) &&
+    /subtree\s*:\s*true/.test(call.options));
+}
+function amplifiedInstallCallbacks(text) {
+  const framed = new Set([...text.matchAll(/requestAnimationFrame\(\s*([A-Za-z_$][\w$]*)\s*\)/g)].map(match => match[1]));
+  return [...framed].filter(name => new RegExp(`setTimeout\\(\\s*${name}\\s*,`).test(text));
+}
+
 const forbiddenFrameworks = ['react', 'react-dom', 'vite', 'tailwindcss', '@radix-ui/react-dialog'];
 check('No framework migration dependency',
   !forbiddenFrameworks.some(name => pkg.dependencies?.[name] || pkg.devDependencies?.[name]),
@@ -110,6 +146,71 @@ checkIncludesAll('Image widget edit extension is loaded with source-fidelity gua
   ["loadExtensionScript('./image-widget-edit.js')", 'script.async=false']);
 checkIncludesAll('Leaf extension bundle waits for renderer readiness before touching View DOM', fidelity,
   ["function waitForRendererReady(){", "document.documentElement.dataset.leafReady==='true'", "attributeFilter:['data-leaf-ready']", 'loadLeafExtensionsOnce();']);
+
+// Mixed line endings are a recurring defect source here, not a cosmetic issue:
+// the QA suites assert on source text, and multi-line literals silently stop
+// matching when a file is CRLF. Windows runners check out with core.autocrlf,
+// so this only reproduces in CI unless .gitattributes pins the working tree.
+const textDirs = ['src/renderer', 'src/', 'scripts', '.github/workflows'];
+const textExtensions = ['.js', '.html', '.css', '.json', '.yml', '.md'];
+const trackedTextFiles = [...new Set(textDirs.flatMap(dir => {
+  const abs = path.join(root, dir);
+  if (!fs.existsSync(abs)) return [];
+  return fs.readdirSync(abs, { withFileTypes: true })
+    .filter(entry => entry.isFile() && textExtensions.some(ext => entry.name.endsWith(ext)))
+    .map(entry => path.join(dir, entry.name));
+}))].sort();
+const crlfFiles = trackedTextFiles.filter(file => read(file).includes('\r'));
+check('No tracked text file carries CR line endings',
+  crlfFiles.length === 0,
+  crlfFiles.length ? `CRLF: ${crlfFiles.join(', ')}` : `${trackedTextFiles.length} text files scanned.`);
+const attributes = read('.gitattributes');
+const unprotectedBinaryTypes = ['exe', 'dll', 'node', 'zip', 'dmg', 'icns', 'ico', 'png', 'jpg', 'jpeg', 'gif', 'pdf']
+  .filter(ext => !new RegExp(`^\\*\\.${ext}\\s+binary$`, 'm').test(attributes));
+check('gitattributes pins LF working trees and shields every binary type',
+  /^\*\s+text=auto\s+eol=lf$/m.test(attributes) && unprotectedBinaryTypes.length === 0,
+  unprotectedBinaryTypes.length ? `Unshielded: ${unprotectedBinaryTypes.join(', ')}` : 'text=auto eol=lf with binaries shielded.');
+
+const shellSubtreeObserverFiles = rendererScripts.filter(name =>
+  name !== 'source-fidelity.js' && appShellSubtreeObservers(read(path.join(rendererDir, name))).length);
+check('No renderer script observes the app shell with a document-wide subtree childList observer',
+  shellSubtreeObserverFiles.length === 0,
+  shellSubtreeObserverFiles.length
+    ? `Offenders: ${shellSubtreeObserverFiles.join(', ')} - subscribe to the renderer lifecycle events instead.`
+    : `${rendererScripts.length} renderer scripts scanned.`);
+check('Startup script observer is the only app-shell subtree observer and it disconnects at readiness',
+  appShellSubtreeObservers(fidelity).length === 1 &&
+  fidelity.includes('function disconnectRendererScriptObserver(reason)') &&
+  /function loadLeafExtensionsOnce\(\)\{[^}]*disconnectRendererScriptObserver\(/.test(fidelity),
+  `source-fidelity.js app-shell observers: ${appShellSubtreeObservers(fidelity).length}`);
+const extensionScripts = [...fidelity.matchAll(/loadExtensionScript\('\.\/([\w-]+\.js)'\)/g)]
+  .map(match => match[1]).filter(name => rendererScripts.includes(name));
+const amplifiedExtensions = extensionScripts.filter(name => amplifiedInstallCallbacks(read(path.join(rendererDir, name))).length);
+const workflowFiles = fs.readdirSync(path.join(root, '.github', 'workflows')).filter(name => name.endsWith('.yml')).sort();
+// The whole chain is plain Node - no Electron, no display - so CI runs `qa` too.
+const runnableQaScripts = Object.keys(pkg.scripts).filter(name => name === 'qa' || name.startsWith('qa:')).sort();
+const workflowQaSuites = workflowFiles.flatMap(name => {
+  // Windows runners check out with autocrlf, so normalize before matching.
+  const text = read(path.join('.github', 'workflows', name)).replace(/\r\n/g, '\n');
+  return [...text.matchAll(/- name: [^\n]*QA[^\n]*\n\s*run: \|\n((?:[ \t]*npm run [^\n]*\n)+)/g)]
+    .map(match => ({
+      workflow: name,
+      suites: [...match[1].matchAll(/npm run (qa(?::[\w:-]+)?)(?=\s|$)/gm)].map(entry => entry[1]).sort().join(' ')
+    }));
+});
+const distinctSuiteSets = [...new Set(workflowQaSuites.map(entry => entry.suites))];
+check('Every workflow QA step runs the identical suite set',
+  workflowQaSuites.length >= 4 && distinctSuiteSets.length === 1,
+  distinctSuiteSets.length === 1
+    ? `${workflowQaSuites.length} QA steps across ${workflowFiles.length} workflows`
+    : `Diverged: ${workflowQaSuites.map(entry => `${entry.workflow}[${entry.suites}]`).join(' | ')}`);
+const uncoveredQaScripts = runnableQaScripts.filter(name => !(distinctSuiteSets[0] || '').split(' ').includes(name));
+check('CI covers every runnable qa:* script',
+  uncoveredQaScripts.length === 0,
+  uncoveredQaScripts.length ? `Not run by CI: ${uncoveredQaScripts.join(', ')}` : `${runnableQaScripts.length} suites covered.`);
+check('Leaf extensions never amplify one change into rAF plus timer reinstalls',
+  extensionScripts.length >= 6 && amplifiedExtensions.length === 0,
+  amplifiedExtensions.length ? `Amplified: ${amplifiedExtensions.join(', ')}` : `${extensionScripts.length} extension scripts scanned.`);
 checkIncludesAll('Scripted HTML Edit converts interactive previews into scripts-off selectable DOM', scriptedHtmlEdit,
   ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
    "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)", "setRuntimeBadge(slot, 'scripts-off')"]);
@@ -174,16 +275,16 @@ checkIncludesAll('Startup diagnostics cannot leave an invisible pointer-blocking
 
 const semanticTokens = ['--background', '--foreground', '--panel', '--panel-secondary', '--border', '--border-subtle', '--muted', '--accent', '--selection', '--focus-ring', '--success', '--warning', '--error'];
 check('Semantic design tokens present', semanticTokens.every(token => css.includes(token)), semanticTokens.join(', '));
-check('Dark, Light, and Carbon themes are exposed without legacy Codex source',
-  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
-  !html.includes('data-pref-theme="codex"') &&
-  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&
-  !css.includes('body[data-theme="codex"]'));
+check('Dark and Light are the only exposed themes',
+  ['dark', 'light'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
+  ['codex', 'carbon'].every(theme => !html.includes(`data-pref-theme="${theme}"`)) &&
+  css.includes(':root{') && css.includes('body[data-theme="light"]') &&
+  ['codex', 'carbon'].every(theme => !css.includes(`body[data-theme="${theme}"]`)));
 check('Light is the default preference theme',
   renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&
   !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));
 check('Theme CSS does not leak into Page iframes',
-  !css.includes('body[data-theme="carbon"] iframe') && !css.includes('body[data-theme="codex"] iframe'));
+  !/body\[data-theme="[^"]+"\][^{]*iframe/.test(css));
 
 checkIncludesAll('Zoom controls live outside the scrolling canvas', renderer,
   ["layer.className='viewport-floating-controls'", 'layer.append(control,fit);pane?.appendChild(layer)']);

@@ -1,1 +1,24 @@
-*.pdf binary
+# Line endings are normalized to LF in the repository AND in every working tree.
+#
+# eol=lf is deliberate, not cosmetic: GitHub's Windows runners check out with
+# core.autocrlf=true, so without it the same file is LF on macOS/Linux and CRLF
+# on Windows. The QA suites assert on source text, and several of them match
+# multi-line literals - those silently stop matching under CRLF. That mismatch
+# has produced real CI failures and a legacy QA chain that cannot pass on any
+# platform. Pinning the working tree to LF removes the whole class.
+* text=auto eol=lf
+
+# Binaries must never be touched by that normalization.
+*.exe   binary
+*.dll   binary
+*.node  binary
+*.zip   binary
+*.dmg   binary
+*.icns  binary
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.pdf   binary

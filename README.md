@@ -27,7 +27,7 @@ Project (.prj)                       Ctrl+N
 - Edit uses a 3px red outline, and View title/search rows are 20% taller.
 - Every vertical and horizontal splitter reserves an 8px neutral gutter, leaving clear breathing room between adjacent panes while retaining the centered drag guide.
 - New Document, New Page, and New Section create immediately in the Project tree without opening a naming dialog. Repeated items receive collision-safe numbered names and remain available for later F2 rename.
-- Preference now offers a third `Carbon` appearance beside Dark and Light. Carbon translates the supplied black-metal reference into five monochrome surface levels, silver focus and selection states, off-white typography, and tighter industrial corner geometry without affecting Page content.
+- Preference offers Dark and Light appearances, with Light as the default. The former `Carbon` appearance is retired; stored `carbon` and legacy `codex` preferences migrate to Light on load.
 - The application bar now includes a left-panel toggle. It hides both the Project/Object/Used area and Hierarchy splitter, expands the document View immediately, and restores the panel independently from Inspector visibility.
 - Selecting an HTML table cell in Edit mode now opens an in-document toolbar for adding or deleting the selected row/column, merging right, and splitting a merged cell. Structural actions preserve selection, support Undo/Redo, and understand `colspan` while keeping editor controls out of saved HTML.
 - Document zoom now scales Page content without visually scaling its internal scrollbar. Preview scrollbars retain an 8px target at 5–200% zoom, including Compare and direct Markdown/JSON editing, and the runtime compensation never enters saved Page source.

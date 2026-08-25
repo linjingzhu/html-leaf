@@ -39,10 +39,15 @@ jobs:
       - name: Run static QA
         run: |
           npm run source:cleanup
+          npm run qa:startup-readiness
+          npm run qa:startup-adversarial
           npm run qa:static
+          npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version
+          npm run qa:zoom-scrollbar
           npm run qa:theme-light
+          npm run qa
 
       - name: Build macOS dmg + zip
         env:

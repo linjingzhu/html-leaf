@@ -65,7 +65,7 @@ function cleanupRenderer() {
   next = next.replace(/\n\s*\$\$\('\.theme-codex'\)\.forEach\([^\n]+\);/, '');
   next = next.replace(
     'state.preferences.theme=button.dataset.prefTheme;',
-    "state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';"
+    "state.preferences.theme=['dark','light'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';"
   );
   next = replaceRequired(
     next,

@@ -210,6 +210,7 @@
     s.projectFilePath=typeof s.projectFilePath==='string'?s.projectFilePath:(typeof s.documentFilePath==='string'?s.documentFilePath:null);
     s.mode=['preview','split','code'].includes(s.mode) ? s.mode : 'preview';
     s.preferences={...fallback.preferences,...(s.preferences||{})};
+    s.preferences.theme=['dark','light'].includes(s.preferences.theme)?s.preferences.theme:'light';
     s.layout={
       splitRatio:Number.isFinite(Number(s.layout?.splitRatio)) ? Math.min(.85,Math.max(.15,Number(s.layout.splitRatio))) : .5,
       codeRatio:Number.isFinite(Number(s.layout?.codeRatio)) ? Math.min(.85,Math.max(.15,Number(s.layout.codeRatio))) : .5,
@@ -273,10 +274,38 @@
       return v ? JSON.parse(v) : null;
     } catch { return null; }
   }
+  let persistTimer=null,persistWroteOnce=false;
+  function writePersistedState(){
+    try{
+      localStorage.setItem(stateKey, JSON.stringify(state));
+      persistWroteOnce=true;
+    }catch(error){
+      console.warn('Leaf state persist failed',error);
+      try{ showToast(error?.name==='QuotaExceededError'?'Storage limit reached - state was not saved':'State could not be saved'); }catch{}
+    }
+  }
+  // Serializing the whole project costs ~100ms at QA fixture scale, so bursts of
+  // persist() coalesce into one write. Anything that reads the stored state back
+  // (unload, edit-runtime handoff to the extensions) must flushPersist() first.
   function persist(){
     state.selectedTreeNode = selectedTreeNode;
     state.activeSlots = activeSlots;
-    localStorage.setItem(stateKey, JSON.stringify(state));
+    if(persistTimer!==null) return;
+    persistTimer=setTimeout(()=>{persistTimer=null;writePersistedState();},250);
+  }
+  function flushPersist(){
+    if(persistTimer===null) return;
+    clearTimeout(persistTimer);persistTimer=null;
+    // The startup "Reset state" action deletes this key and reloads; the unload
+    // flush must not resurrect what the user just cleared.
+    if(persistWroteOnce&&!Object.prototype.hasOwnProperty.call(localStorage,stateKey)) return;
+    writePersistedState();
+  }
+  window.addEventListener('beforeunload',flushPersist);
+  window.addEventListener('pagehide',flushPersist);
+
+  function emitLifecycle(name,detail){
+    try{ document.dispatchEvent(new CustomEvent(name,{detail:detail||{}})); }catch(error){ console.warn('Leaf lifecycle event failed',name,error); }
   }
 
   function documentById(id){ return state.documents.find(p=>p.id===id) || null; }
@@ -326,7 +355,6 @@
     $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
-    $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -434,7 +462,7 @@
   });
   $$('[data-pref-theme]').forEach(button=>{
     button.addEventListener('click',()=>{
-      state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';
+      state.preferences.theme=['dark','light'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';
       applyPreferences(); persist(); closeAllMenus();
     });
   });
@@ -1054,6 +1082,7 @@
       refs.tree.appendChild(card);
     });
     if(!refs.tree.children.length&&refs.projectSearch?.value.trim())refs.tree.innerHTML='<div class="used-component-empty">No matching documents.</div>';
+    emitLifecycle('leaf-tree-rendered',{});
   }
 
   refs.projectSearch?.addEventListener('input',renderTree);
@@ -2486,6 +2515,7 @@
     setTimeout(renderHierarchy,0);
     renderTree();
     renderCrumbs();
+    emitLifecycle('leaf-view-mode-changed',{mode:state.mode});
   }
 
   $$('#viewSeg button[data-mode]').forEach(button=>{
@@ -2564,6 +2594,7 @@
         });
       };
     });
+    emitLifecycle('leaf-page-selects-rendered',{});
   }
 
   function currentActivePageId(){
@@ -2834,6 +2865,11 @@
   }
 
   function renderFrame(frame,pageId){
+    renderFrameContent(frame,pageId);
+    emitLifecycle('leaf-frame-rendered',{frameId:frame?.id||null,pageId:pageId||null,slot:previewSlotForFrame(frame)});
+  }
+
+  function renderFrameContent(frame,pageId){
     const page=pageById(pageId);
     const pane=frame.closest('.view-pane');
     const empty=!pageHasRenderableContent(page);
@@ -3591,6 +3627,7 @@
     const rerenderDirect=isDirectSourceType(affectedPage)&&!!affectedFrame;
     if(!enabled&&affectedFrame?.dataset.directSourceToken)directSourceUndoTokens.delete(affectedFrame.dataset.directSourceToken);
     if(affectedSlot){
+      flushPersist();
       document.dispatchEvent(new CustomEvent('leaf-edit-runtime-transition',{detail:{
         enabled:!!enabled,
         slot:affectedSlot,
@@ -6209,5 +6246,6 @@
     document.documentElement.dataset.leafReady='true';
     const startup=$('#appStartup');startup?.classList.add('is-complete');
     setTimeout(()=>startup?.remove(),220);
+    emitLifecycle('leaf-renderer-ready',{});
   },0);
 })();

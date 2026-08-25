@@ -19,7 +19,7 @@ check('Fit hides unnecessary scrollbars',css.includes('.preview-canvas.is-fit{ov
 check('Static iframe captures Ctrl wheel in the loaded document',js.includes("doc?.addEventListener('wheel'")&&js.includes('previewSlotForFrame(frame)'));
 check('Interactive iframe forwards Ctrl wheel through a validated token bridge',js.includes('__hbeViewportInput:true')&&js.includes("data.token!==frame.dataset.snapshotToken")&&js.includes("kind:'zoom'"));
 check('Viewport becomes active on pointer down',js.includes("addEventListener('pointerdown',()=>activateViewportSlot(slot),true)")&&js.includes('function activateViewportSlot(slot)'));
-check('Startup discards persisted editing sessions',js.includes('resetPersistedEditorState();')&&!js.includes('normalizeState(loadState() || createDefaultState())'));
+check('Startup clears the editing session but restores the saved project',js.includes('resetPersistedEditorState();')&&js.includes('normalizeState(loadState() || createDefaultState())')&&!js.includes('normalizeState(createDefaultState());'));
 check('Default container starts with only an empty page',(js.includes("name:'Default Document'")||js.includes("name:'Default Project'"))&&js.includes("name:'Empty Page'")&&!js.includes('function coverHtml()')&&!js.includes('function chapterHtml()'));
 check('Inspector Preview UI is removed and preview is forced on',!html.includes('inspectorPreviewToggle')&&js.includes('let inspectorPreviewEnabled = true')&&js.includes('state.preferences.inspectorPreview=true'));
 check('4K preview is contained inside the center workspace',css.includes('contain:layout paint')&&css.includes('.workspace{')&&css.includes('overflow:hidden'));
