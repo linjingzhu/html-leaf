@@ -2,8 +2,17 @@
   'use strict';
   const EDITOR_CLASS_NAMES=new Set(['table-cell-selected','viewport-object-drop-target']);
   const STARTUP_STATE_KEY='leaf-v0-5-16-state';
-  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v2';
-  const STARTUP_DEBUG_LIMIT=90;
+  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v3';
+  const STARTUP_DEBUG_LIMIT=120;
+  const RENDERER_BOOTSTRAP_RETRY_MS=120;
+  const RENDERER_BOOTSTRAP_MAX_WAIT_MS=2200;
+  const RENDERER_BOOTSTRAP_REQUIRED_IDS=['appRoot','workspace','tree','sourceEditor','singleFrame','leftFrame','rightFrame','codePreviewFrame'];
+  const RENDERER_BOOTSTRAP_DEPENDENCIES=[
+    {src:'./widget-registry.js',global:'WidgetRegistry'},
+    {src:'./jira-compat.js',global:'JiraCompatibility'},
+    {src:'./semantic-document.js',global:'SemanticDocument'},
+    {src:'./jira-export.js',global:'JiraExport'}
+  ];
   const startupDebugStartedAt=Number.isFinite(window.__leafStartupDebugStartedAt)
     ? window.__leafStartupDebugStartedAt
     : (performance?.now?.()||Date.now());
@@ -30,6 +39,7 @@
   function ensureStartupDebugPanel(){
     const startup=document.getElementById('appStartup');
     if(!startup)return null;
+    startup.style.pointerEvents='auto';
     let panel=document.getElementById('appStartupDebug');
     if(panel)return panel;
     panel=document.createElement('pre');
@@ -53,7 +63,8 @@
       'font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace',
       'white-space:pre-wrap',
       'word-break:break-word',
-      'cursor:text'
+      'cursor:text',
+      'pointer-events:auto'
     ].join(';');
     startup.appendChild(panel);
     return panel;
@@ -87,7 +98,10 @@
       'color:#eceff3',
       'font:12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif',
       'padding:7px 10px',
-      'cursor:pointer'
+      'cursor:pointer',
+      'pointer-events:auto',
+      'position:relative',
+      'z-index:2'
     ].join(';');
   }
 
@@ -104,50 +118,132 @@
     }
   }
 
+  function fallbackCopyStartupDebugLog(text){
+    try{
+      const area=document.createElement('textarea');
+      area.value=text;
+      area.setAttribute('readonly','');
+      area.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(area);
+      area.select();
+      const ok=document.execCommand?.('copy');
+      area.remove();
+      recordStartupDebug(ok?'debug log copied with textarea fallback':'debug log textarea copy unavailable');
+      return !!ok;
+    }catch(error){
+      recordStartupDebug('debug log textarea copy failed',startupErrorDetail(error));
+      return false;
+    }
+  }
+
   function copyStartupDebugLog(){
     const text=(window.__leafStartupDebugLog||[]).join('\n')||'Leaf startup debug log is empty.';
+    if(window.electronAPI?.writeTextClipboard){
+      Promise.resolve(window.electronAPI.writeTextClipboard(text))
+        .then(()=>recordStartupDebug('debug log copied through Electron clipboard'))
+        .catch(error=>{
+          recordStartupDebug('debug log Electron clipboard copy failed',startupErrorDetail(error));
+          if(!navigator.clipboard?.writeText)fallbackCopyStartupDebugLog(text);
+        });
+      return;
+    }
     if(navigator.clipboard?.writeText){
       navigator.clipboard.writeText(text)
         .then(()=>recordStartupDebug('debug log copied to clipboard'))
-        .catch(error=>recordStartupDebug('debug log clipboard copy failed',startupErrorDetail(error)));
+        .catch(error=>{
+          recordStartupDebug('debug log clipboard copy failed',startupErrorDetail(error));
+          fallbackCopyStartupDebugLog(text);
+        });
       return;
     }
-    recordStartupDebug('debug log clipboard API unavailable');
+    fallbackCopyStartupDebugLog(text);
+  }
+
+  function hideStartupOverlay(reason='manual'){
+    recordStartupDebug('startup overlay hide requested',reason);
+    document.documentElement.dataset.leafReady='true';
+    const startup=document.getElementById('appStartup');
+    if(!startup)return;
+    startup.style.pointerEvents='none';
+    startup.classList.add('is-complete');
+    setTimeout(()=>startup?.remove(),120);
+  }
+
+  function handleStartupAction(action){
+    if(action==='continue'){
+      hideStartupOverlay('manual continue');
+      return;
+    }
+    if(action==='reset'){
+      clearLegacyStateKeys();
+      recordStartupDebug('startup reset reload requested');
+      location.reload();
+      return;
+    }
+    if(action==='copy'){
+      copyStartupDebugLog();
+    }
+  }
+
+  function startupActionButtonFromTarget(target){
+    const element=target?.nodeType===1?target:target?.parentElement;
+    const button=element?.closest?.('[data-leaf-startup-action]');
+    if(!button||!document.getElementById('leafStartupActions')?.contains(button))return null;
+    return button;
+  }
+
+  function handleStartupActionEvent(event){
+    const button=startupActionButtonFromTarget(event.target);
+    if(!button)return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleStartupAction(button.dataset.leafStartupAction);
+  }
+
+  function installStartupActionCapture(){
+    if(window.__leafStartupActionCaptureInstalled)return;
+    Object.defineProperty(window,'__leafStartupActionCaptureInstalled',{value:true,configurable:false});
+    document.addEventListener('pointerup',handleStartupActionEvent,true);
+    document.addEventListener('click',handleStartupActionEvent,true);
+    document.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      handleStartupActionEvent(event);
+    },true);
+    recordStartupDebug('startup action capture installed');
   }
 
   function ensureStartupActions(){
     const copy=document.querySelector('.app-startup-copy');
     if(!copy||document.getElementById('leafStartupActions'))return;
+    const startup=document.getElementById('appStartup');
+    if(startup){
+      startup.style.pointerEvents='auto';
+      startup.style.cursor='default';
+    }
     const actions=document.createElement('div');
     actions.id='leafStartupActions';
-    actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px';
+    actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;pointer-events:auto;position:relative;z-index:2';
 
     const continueButton=document.createElement('button');
     continueButton.textContent='Continue';
+    continueButton.dataset.leafStartupAction='continue';
     continueButton.title='Hide the startup overlay if the editor already rendered behind it.';
     styleStartupButton(continueButton);
-    continueButton.addEventListener('click',()=>{
-      recordStartupDebug('manual continue clicked');
-      document.documentElement.dataset.leafReady='true';
-      const startup=document.getElementById('appStartup');
-      startup?.classList.add('is-complete');
-      setTimeout(()=>startup?.remove(),120);
-    });
+    continueButton.addEventListener('click',()=>handleStartupAction('continue'));
 
     const resetButton=document.createElement('button');
     resetButton.textContent='Reset state';
+    resetButton.dataset.leafStartupAction='reset';
     resetButton.title='Clear local Leaf startup state and reload.';
     styleStartupButton(resetButton,'danger');
-    resetButton.addEventListener('click',()=>{
-      clearLegacyStateKeys();
-      location.reload();
-    });
+    resetButton.addEventListener('click',()=>handleStartupAction('reset'));
 
     const copyButton=document.createElement('button');
     copyButton.textContent='Copy debug';
+    copyButton.dataset.leafStartupAction='copy';
     copyButton.title='Copy the visible startup diagnostics.';
     styleStartupButton(copyButton);
-    copyButton.addEventListener('click',copyStartupDebugLog);
+    copyButton.addEventListener('click',()=>handleStartupAction('copy'));
 
     actions.append(continueButton,resetButton,copyButton);
     copy.appendChild(actions);
@@ -187,13 +283,151 @@
     }
   }
 
+  function rendererScriptSrc(script){
+    return script?.getAttribute?.('src')||script?.src||'';
+  }
+
+  function isRendererScript(script){
+    return /renderer\.js(?:$|[?#])/i.test(rendererScriptSrc(script));
+  }
+
+  function hasRendererBootstrapScript(){
+    return [...document.querySelectorAll('script')].some(isRendererScript);
+  }
+
+  function rendererBootstrapMissing(){
+    const missing=[];
+    if(!document.body)missing.push('document.body');
+    for(const id of RENDERER_BOOTSTRAP_REQUIRED_IDS){
+      if(!document.getElementById(id))missing.push(`#${id}`);
+    }
+    return missing;
+  }
+
+  function startupDependencyReady(dep){
+    return !dep.global||!!window[dep.global];
+  }
+
+  function loadStartupDependencyScript(dep){
+    if(startupDependencyReady(dep)){
+      recordStartupDebug('renderer startup dependency already ready',dep.global||dep.src);
+      return Promise.resolve('ready');
+    }
+    if(document.querySelector(`script[data-leaf-startup-dependency="${dep.src}"]`)){
+      recordStartupDebug('renderer startup dependency already queued',dep.src);
+      return Promise.resolve('queued');
+    }
+    return new Promise(resolve=>{
+      const script=document.createElement('script');
+      let settled=false;
+      const finish=status=>{
+        if(settled)return;
+        settled=true;
+        recordStartupDebug(`renderer startup dependency ${status}`,{src:dep.src,global:dep.global,ready:startupDependencyReady(dep)});
+        resolve(status);
+      };
+      script.src=dep.src;
+      script.async=false;
+      script.dataset.leafStartupDependency=dep.src;
+      script.onload=()=>finish('loaded');
+      script.onerror=()=>finish('error');
+      setTimeout(()=>finish('timeout'),900);
+      recordStartupDebug('renderer startup dependency queued',dep.src);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function loadRendererScriptFromStartupRecovery(reason='startup-recovery'){
+    if(isRendererReady()){
+      recordStartupDebug('renderer startup recovery skipped; renderer already ready');
+      return true;
+    }
+    if(hasRendererBootstrapScript()){
+      recordStartupDebug('renderer startup recovery skipped; renderer script already present');
+      return true;
+    }
+    const missing=rendererBootstrapMissing();
+    if(missing.length){
+      recordStartupDebug('renderer startup recovery missing DOM anchors',missing);
+      return false;
+    }
+    if(window.__leafRendererBootstrapStarted){
+      recordStartupDebug('renderer startup recovery already started');
+      return true;
+    }
+
+    Object.defineProperty(window,'__leafRendererBootstrapStarted',{value:true,configurable:false});
+    recordStartupDebug('renderer startup recovery loading dependencies',{reason});
+    for(const dep of RENDERER_BOOTSTRAP_DEPENDENCIES){
+      await loadStartupDependencyScript(dep);
+    }
+    if(isRendererReady()){
+      recordStartupDebug('renderer startup recovery skipped after dependencies; renderer ready');
+      return true;
+    }
+    if(hasRendererBootstrapScript()){
+      recordStartupDebug('renderer startup recovery skipped after dependencies; renderer script appeared');
+      return true;
+    }
+
+    const script=document.createElement('script');
+    script.src='./renderer.js';
+    script.async=true;
+    script.dataset.leafRendererRecovery=reason;
+    script.onload=()=>recordStartupDebug('renderer startup recovery load event fired');
+    script.onerror=()=>reportStartupError('renderer.js failed to load from startup recovery.','renderer-recovery-load');
+    recordStartupDebug('renderer startup recovery appended renderer.js',{reason});
+    document.body.appendChild(script);
+    return true;
+  }
+
+  function ensureRendererBootstrapRecovery(){
+    if(window.__leafRendererBootstrapRecoveryInstalled)return;
+    Object.defineProperty(window,'__leafRendererBootstrapRecoveryInstalled',{value:true,configurable:false});
+    const startedAt=performance?.now?.()||Date.now();
+    let lastMissing='';
+    const tick=()=>{
+      if(isRendererReady()){
+        recordStartupDebug('renderer startup recovery stopped; renderer ready');
+        return;
+      }
+      if(hasRendererBootstrapScript()){
+        recordStartupDebug('renderer startup recovery stopped; renderer script observed');
+        return;
+      }
+      const missing=rendererBootstrapMissing();
+      const waited=(performance?.now?.()||Date.now())-startedAt;
+      if(!missing.length){
+        void loadRendererScriptFromStartupRecovery('startup-recovery');
+        return;
+      }
+      const signature=missing.join(',');
+      if(signature!==lastMissing){
+        lastMissing=signature;
+        recordStartupDebug('renderer startup recovery waiting for DOM anchors',missing);
+      }
+      if(waited>=RENDERER_BOOTSTRAP_MAX_WAIT_MS){
+        reportStartupError(`Renderer recovery could not start because DOM anchors are missing: ${missing.join(', ')}`,'renderer-recovery-dom');
+        return;
+      }
+      setTimeout(tick,RENDERER_BOOTSTRAP_RETRY_MS);
+    };
+    setTimeout(tick,160);
+    recordStartupDebug('renderer startup recovery armed',{retryMs:RENDERER_BOOTSTRAP_RETRY_MS,maxWaitMs:RENDERER_BOOTSTRAP_MAX_WAIT_MS});
+  }
+
   const observedRendererScripts=new WeakSet();
   function observeRendererScript(script){
     if(!script||observedRendererScripts.has(script))return;
-    const src=script.getAttribute('src')||script.src||'';
+    const src=rendererScriptSrc(script);
     if(!/renderer\.js(?:$|[?#])/i.test(src))return;
+    if(window.__leafRendererBootstrapStarted&&!script.dataset.leafRendererRecovery){
+      recordStartupDebug('duplicate renderer.js script removed after startup recovery',{src});
+      script.remove();
+      return;
+    }
     observedRendererScripts.add(script);
-    recordStartupDebug('renderer.js script element detected',{src,async:script.async});
+    recordStartupDebug('renderer.js script element detected',{src,async:script.async,recovery:script.dataset.leafRendererRecovery||null});
     script.addEventListener('load',()=>recordStartupDebug('renderer.js load event fired'),{once:true});
     script.addEventListener('error',()=>reportStartupError('renderer.js failed to load.','renderer-load'),{once:true});
   }
@@ -220,10 +454,14 @@
       reportError:reportStartupError,
       clearLegacyStateKeys,
       record:recordStartupDebug,
+      continue:()=>handleStartupAction('continue'),
+      resetState:()=>handleStartupAction('reset'),
+      copyDebug:()=>handleStartupAction('copy'),
       getDebugLog:()=>Array.from(window.__leafStartupDebugLog||[])
     };
     window.__leafStartupDiagnosticsVersion=STARTUP_DEBUG_VERSION;
     ensureStartupDebugPanel();
+    installStartupActionCapture();
     ensureStartupActions();
     recordStartupDebug('startup diagnostics active',{
       version:STARTUP_DEBUG_VERSION,
@@ -233,6 +471,7 @@
     });
     installStartupInfoProbe();
     installRendererScriptObserver();
+    ensureRendererBootstrapRecovery();
     if(window.__leafStartupDiagnosticsInstalledBySourceFidelity)return;
     Object.defineProperty(window,'__leafStartupDiagnosticsInstalledBySourceFidelity',{value:true,configurable:false});
     window.addEventListener('error',event=>{
@@ -408,10 +647,17 @@
     waitForRendererReady();
   }
 
-  if(document.readyState==='loading'){
+  function canInstallExtensionsImmediately(){
+    return !!document.body&&!!document.getElementById('appRoot');
+  }
+
+  if(document.readyState==='loading'&&!canInstallExtensionsImmediately()){
     recordStartupDebug('document still loading; deferring extensions to DOMContentLoaded');
     document.addEventListener('DOMContentLoaded',installExtensions,{once:true});
-  }else installExtensions();
+  }else{
+    if(document.readyState==='loading')recordStartupDebug('document still loading; app shell parsed; installing extensions before DOMContentLoaded');
+    installExtensions();
+  }
 
   window.SourceFidelity={stripEditorArtifactsFromDocument,editorArtifactReport,tryMinimalDirectTextPatch,tryInspectorMinimalPatch};
   recordStartupDebug('SourceFidelity API exposed');
