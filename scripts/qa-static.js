@@ -14,6 +14,7 @@ const fidelity = read('src/renderer/source-fidelity.js');
 const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
 const htmlCanvasCapability = read('src/renderer/html-canvas-capability.js');
 const registry = read('src/renderer/widget-registry.js');
+const imageWidgetEdit = read('src/renderer/image-widget-edit.js');
 
 const checks = [];
 function check(name, condition, detail = '') {
@@ -87,6 +88,8 @@ checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity gu
   ["loadExtensionScript('./scripted-html-edit.js')"]);
 checkIncludesAll('HTML-in-Canvas capability extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./html-canvas-capability.js')", "loadExtensionScript('./canvas-lab.js')"]);
+checkIncludesAll('Image widget edit extension is loaded with source-fidelity guards', fidelity,
+  ["loadExtensionScript('./image-widget-edit.js')", 'script.async=false']);
 checkIncludesAll('HTML-in-Canvas experiment is gated before Electron ready', main,
   ["const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement'", "const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS)",
    "app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE)", "ipcMain.handle('runtime:config', () => runtimeConfig())"]);
@@ -156,6 +159,12 @@ check('Preview fallback surfaces use the canvas token',
 
 checkIncludesAll('Objects palette includes practical content, form, and layout controls', registry,
   ["type:'button'", "type:'link'", "type:'form'", "type:'textInput'", "type:'table'", "type:'columns'", "type:'hero'"]);
+checkIncludesAll('Image widget starts as an editable picker placeholder', registry,
+  ['data-hbe-image-widget', 'data-hbe-image-frame', 'data-hbe-image-label', 'Click to insert image', 'Image caption']);
+checkIncludesAll('Image widget supports picker, paste, drop, crop, and proportional resize', imageWidgetEdit,
+  ['const ACCEPT', 'chooseImageAsset', 'handlePasteAsset', "doc.addEventListener('drop'", 'toggleCropMode', 'beginAspectResize', 'commitFrameSource', 'JPG, PNG, SVG, GIF, WEBP']);
+check('Image widget edit path stays in the renderer sandbox',
+  !imageWidgetEdit.includes('ipcRenderer') && !imageWidgetEdit.includes('require('));
 checkIncludesAll('Overlay components establish a free-positioning context', registry,
   ['position:relative;display:block;min-height:240px']);
 checkIncludesAll('Viewport placement preview handles palette, Used, and existing objects', renderer,

@@ -6,6 +6,7 @@
     if(!doc) return doc;
     doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime]').forEach(n=>n.remove());
     doc.querySelectorAll('[data-editor-element-id]').forEach(n=>n.removeAttribute('data-editor-element-id'));
+    doc.querySelectorAll('[data-leaf-image-drag]').forEach(n=>n.removeAttribute('data-leaf-image-drag'));
     doc.querySelectorAll('*').forEach(node=>{
       if(!node.classList) return;
       EDITOR_CLASS_NAMES.forEach(name=>node.classList.remove(name));
@@ -18,7 +19,7 @@
 
   function editorArtifactReport(html){
     const text=String(html||'');
-    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','table-cell-selected','viewport-object-drop-target'];
+    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','data-leaf-image-drag','table-cell-selected','viewport-object-drop-target'];
     return patterns.map(pattern=>({pattern,count:(text.match(new RegExp(pattern,'g'))||[]).length})).filter(x=>x.count>0);
   }
 
@@ -49,7 +50,7 @@
     if(document.querySelector(`script[data-leaf-extension="${src}"]`))return;
     const script=document.createElement('script');
     script.src=src;
-    script.async=true;
+    script.async=false;
     script.dataset.leafExtension=src;
     script.onerror=()=>console.warn(`Leaf extension failed to load: ${src}`);
     document.body.appendChild(script);
@@ -60,6 +61,7 @@
     loadExtensionScript('./preview-universal-edit.js');
     loadExtensionScript('./html-canvas-capability.js');
     loadExtensionScript('./canvas-lab.js');
+    loadExtensionScript('./image-widget-edit.js');
     loadExtensionScript('./view-drop-bridge.js');
     loadExtensionScript('./code-syntax-highlight.js');
     loadExtensionScript('./active-view-policy.js');
