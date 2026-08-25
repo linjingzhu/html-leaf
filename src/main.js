@@ -7,7 +7,6 @@ const { pathToFileURL, fileURLToPath } = require('node:url');
 let mainWindow;
 let sessionTempDir = null;
 const initialHtmlSnapshots = new Map();
-const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement';
 
 function appTitle() {
   return `Leaf v${app.getVersion()}`;
@@ -16,25 +15,6 @@ function appTitle() {
 function syncAppTitle() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.setTitle(appTitle());
-}
-
-function boolEnv(value) {
-  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
-}
-
-const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS);
-
-if (htmlCanvasExperimentEnabled) {
-  app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE);
-}
-
-function runtimeConfig() {
-  return {
-    htmlCanvas: {
-      enabled: htmlCanvasExperimentEnabled,
-      blinkFeature: HTML_CANVAS_BLINK_FEATURE
-    }
-  };
 }
 
 app.setName('Leaf');
@@ -507,7 +487,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('runtime:config', () => runtimeConfig());
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
   ipcMain.handle('file:importPages', openDocumentFiles);

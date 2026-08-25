@@ -13,7 +13,6 @@ function startupInfo() {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  runtimeConfig: () => ipcRenderer.invoke('runtime:config'),
   startupInfo: () => Promise.resolve(startupInfo()),
   importHtml: () => ipcRenderer.invoke('file:importHtml'),
   readHtmlPath: (filePath) => ipcRenderer.invoke('file:readHtmlPath', filePath),

@@ -41,7 +41,6 @@ jobs:
           npm run source:cleanup
           npm run qa:static
           npm run qa:scripted-html-edit
-          npm run qa:html-canvas
           npm run qa:release-version
           npm run qa:theme-light
 

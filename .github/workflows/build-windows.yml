@@ -69,7 +69,6 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:scripted-html-edit
-          npm run qa:html-canvas
           npm run qa:release-version
           npm run qa:theme-light
 

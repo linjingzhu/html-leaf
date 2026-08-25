@@ -2,7 +2,7 @@
   'use strict';
   const EDITOR_CLASS_NAMES=new Set(['table-cell-selected','viewport-object-drop-target']);
   const STARTUP_STATE_KEY='leaf-v0-5-16-state';
-  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v3';
+  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v4';
   const STARTUP_DEBUG_LIMIT=120;
   const RENDERER_BOOTSTRAP_RETRY_MS=120;
   const RENDERER_BOOTSTRAP_MAX_WAIT_MS=2200;
@@ -276,11 +276,6 @@
         .then(info=>recordStartupDebug('app startup info',info))
         .catch(error=>recordStartupDebug('app startup info failed',startupErrorDetail(error)));
     }
-    if(api?.runtimeConfig){
-      Promise.resolve(api.runtimeConfig())
-        .then(config=>recordStartupDebug('runtime config',config))
-        .catch(error=>recordStartupDebug('runtime config failed',startupErrorDetail(error)));
-    }
   }
 
   function rendererScriptSrc(script){
@@ -530,7 +525,7 @@
 
   function stripEditorArtifactsFromDocument(doc){
     if(!doc) return doc;
-    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime],[data-leaf-html-canvas-runtime]').forEach(n=>n.remove());
+    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime]').forEach(n=>n.remove());
     doc.querySelectorAll('[data-editor-element-id]').forEach(n=>n.removeAttribute('data-editor-element-id'));
     doc.querySelectorAll('[data-leaf-image-drag]').forEach(n=>n.removeAttribute('data-leaf-image-drag'));
     doc.querySelectorAll('*').forEach(node=>{
@@ -545,7 +540,7 @@
 
   function editorArtifactReport(html){
     const text=String(html||'');
-    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','data-leaf-html-canvas-runtime','data-leaf-image-drag','table-cell-selected','viewport-object-drop-target'];
+    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','data-leaf-image-drag','table-cell-selected','viewport-object-drop-target'];
     return patterns.map(pattern=>({pattern,count:(text.match(new RegExp(pattern,'g'))||[]).length})).filter(x=>x.count>0);
   }
 
@@ -595,8 +590,6 @@
   function loadLeafExtensions(){
     recordStartupDebug('loading post-ready extensions');
     loadExtensionScript('./preview-universal-edit.js');
-    loadExtensionScript('./html-canvas-capability.js');
-    loadExtensionScript('./canvas-lab.js');
     loadExtensionScript('./image-widget-edit.js');
     loadExtensionScript('./view-drop-bridge.js');
     loadExtensionScript('./code-syntax-highlight.js');

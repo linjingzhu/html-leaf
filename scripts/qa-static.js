@@ -12,7 +12,6 @@ const css = read('src/renderer/styles.css');
 const html = read('src/renderer/index.html');
 const fidelity = read('src/renderer/source-fidelity.js');
 const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
-const htmlCanvasCapability = read('src/renderer/html-canvas-capability.js');
 const registry = read('src/renderer/widget-registry.js');
 const imageWidgetEdit = read('src/renderer/image-widget-edit.js');
 
@@ -86,21 +85,31 @@ checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
    "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
 checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./scripted-html-edit.js')"]);
-checkIncludesAll('HTML-in-Canvas capability extension is loaded with source-fidelity guards', fidelity,
-  ["loadExtensionScript('./html-canvas-capability.js')", "loadExtensionScript('./canvas-lab.js')"]);
+const removedCanvasExperimentFiles = [
+  path.join('src', 'renderer', ['html', 'canvas', 'capability.js'].join('-')),
+  path.join('src', 'renderer', ['canvas', 'lab.js'].join('-')),
+  path.join('scripts', ['qa', 'html', 'canvas', 'v0516.js'].join('-')),
+  path.join('docs', ['HTML', 'IN', 'CANVAS', 'UX', 'PLAN.md'].join('_'))
+];
+const removedCanvasRuntimeTerms = [
+  ['Canvas', 'Draw', 'Element'].join(''),
+  ['LEAF', 'ENABLE', 'HTML', 'CANVAS'].join('_'),
+  ['LEAF', 'EXPERIMENTAL', 'HTML', 'CANVAS'].join('_'),
+  ['runtime', 'config'].join(':'),
+  ['runtime', 'Config'].join(''),
+  ['html', 'canvas', 'capability'].join('-'),
+  ['canvas', 'lab'].join('-'),
+  ['data', 'leaf', 'html', 'canvas', 'runtime'].join('-')
+];
+check('Experimental canvas renderer is fully removed',
+  removedCanvasExperimentFiles.every(file => !fs.existsSync(path.join(root, file))) &&
+  !pkg.scripts?.[['qa', 'html', 'canvas'].join(':')] &&
+  removedCanvasRuntimeTerms.every(term => !main.includes(term) && !preload.includes(term) && !fidelity.includes(term)),
+  'No runtime, preload bridge, QA script, docs, or extension loader should remain.');
 checkIncludesAll('Image widget edit extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./image-widget-edit.js')", 'script.async=false']);
-checkIncludesAll('HTML-in-Canvas experiment is gated before Electron ready', main,
-  ["const HTML_CANVAS_BLINK_FEATURE = 'CanvasDrawElement'", "const htmlCanvasExperimentEnabled = boolEnv(process.env.LEAF_ENABLE_HTML_CANVAS) || boolEnv(process.env.LEAF_EXPERIMENTAL_HTML_CANVAS)",
-   "app.commandLine.appendSwitch('enable-blink-features', HTML_CANVAS_BLINK_FEATURE)", "ipcMain.handle('runtime:config', () => runtimeConfig())"]);
-check('Preload exposes renderer runtime config through the narrow bridge',
-  preload.includes("runtimeConfig: () => ipcRenderer.invoke('runtime:config')"));
-checkIncludesAll('Renderer detects HTML-in-Canvas capability before exposing badge states', htmlCanvasCapability,
-  ["typeof ctx?.drawElementImage === 'function'", 'window.LeafHtmlCanvasCapability', "label: 'Canvas'", "label: 'Fallback'", "label: 'Unavailable'"]);
 checkIncludesAll('Leaf extension bundle waits for renderer readiness before touching View DOM', fidelity,
   ["function waitForRendererReady(){", "document.documentElement.dataset.leafReady==='true'", "attributeFilter:['data-leaf-ready']", 'loadLeafExtensionsOnce();']);
-checkIncludesAll('HTML-in-Canvas observer waits for Leaf readiness before installing', htmlCanvasCapability,
-  ['let installed = false;', 'function isLeafReady() {', "document.documentElement.dataset.leafReady === 'true'", 'if (document.body && isLeafReady()) {']);
 checkIncludesAll('Scripted HTML Edit converts interactive previews into scripts-off selectable DOM', scriptedHtmlEdit,
   ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
    "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)", "setRuntimeBadge(slot, 'scripts-off')"]);
