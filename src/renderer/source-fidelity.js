@@ -112,7 +112,8 @@
     panel.scrollTop=panel.scrollHeight;
   }
 
-  function recordStartupDebug(message,detail,level){
+  function recordStartupDebug(message,detail){
+    const level=arguments[2];
     const elapsed=Math.max(0,Math.round((performance?.now?.()||Date.now())-startupDebugStartedAt));
     const detailText=serializeStartupDebugValue(detail);
     const line=`[+${elapsed}ms] ${message}${detailText?' '+detailText:''}`;
