@@ -40,6 +40,35 @@
     return !!startup&&(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'));
   }
 
+  function debugFooterLevel(message,explicitLevel){
+    if(['info','success','warning','error'].includes(explicitLevel))return explicitLevel;
+    const normalized=String(message||'').toLowerCase();
+    if(/failed|error|blocked|unsafe/.test(normalized))return 'error';
+    if(/issue|missing|timeout|skipped|waiting/.test(normalized))return 'warning';
+    if(/ready|released|loaded|copied|active/.test(normalized))return 'success';
+    return 'info';
+  }
+
+  function renderDebugFooter(line,level='info'){
+    const footer=document.getElementById('appStatusBar');
+    const message=document.getElementById('appDebugMessage');
+    if(!footer||!message)return;
+    const text=String(line||'Leaf diagnostics ready');
+    footer.dataset.level=debugFooterLevel(text,level);
+    message.textContent=text;
+    message.title=text;
+  }
+
+  function applyRuntimeVersion(version){
+    const value=String(version||'').trim();
+    if(!value)return;
+    const footerVersion=document.getElementById('appVersion');
+    const aboutVersion=document.getElementById('aboutVersion');
+    if(footerVersion)footerVersion.textContent=`Leaf v${value}`;
+    if(aboutVersion)aboutVersion.textContent=`Version ${value}`;
+    document.documentElement.dataset.appVersion=value;
+  }
+
   function ensureStartupDebugPanel(){
     const startup=document.getElementById('appStartup');
     if(!startup)return null;
@@ -83,7 +112,7 @@
     panel.scrollTop=panel.scrollHeight;
   }
 
-  function recordStartupDebug(message,detail){
+  function recordStartupDebug(message,detail,level){
     const elapsed=Math.max(0,Math.round((performance?.now?.()||Date.now())-startupDebugStartedAt));
     const detailText=serializeStartupDebugValue(detail);
     const line=`[+${elapsed}ms] ${message}${detailText?' '+detailText:''}`;
@@ -92,6 +121,7 @@
       window.__leafStartupDebugLog.splice(0,window.__leafStartupDebugLog.length-STARTUP_DEBUG_LIMIT);
     }
     renderStartupDebugLog();
+    renderDebugFooter(line,debugFooterLevel(message,level));
     try{console.info(`[Leaf startup debug] ${message}`,detail??'');}catch{}
   }
 
@@ -274,7 +304,7 @@
       recordStartupDebug(`startup issue (${context})`,`${detail} (existing ${existing.context}: ${existing.detail})`);
     }else{
       window.__leafStartupError={context,detail,at:new Date().toISOString()};
-      recordStartupDebug(`startup issue (${context})`,detail);
+      recordStartupDebug(`startup issue (${context})`,detail,'error');
     }
     console.error(`[Leaf startup] ${context}: ${detail}`,error);
     const message=document.getElementById('appStartupMessage');
@@ -296,8 +326,11 @@
     recordStartupDebug('preload bridge probe',{hasElectronAPI:!!api,keys:api?Object.keys(api).sort():[]});
     if(api?.startupInfo){
       Promise.resolve(api.startupInfo())
-        .then(info=>recordStartupDebug('app startup info',info))
-        .catch(error=>recordStartupDebug('app startup info failed',startupErrorDetail(error)));
+        .then(info=>{
+          applyRuntimeVersion(info?.appVersion);
+          recordStartupDebug('app startup info',info);
+        })
+        .catch(error=>recordStartupDebug('app startup info failed',startupErrorDetail(error),'error'));
     }
   }
 
