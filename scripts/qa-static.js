@@ -151,6 +151,22 @@ checkIncludesAll('Leaf extension bundle waits for renderer readiness before touc
 // the QA suites assert on source text, and multi-line literals silently stop
 // matching when a file is CRLF. Windows runners check out with core.autocrlf,
 // so this only reproduces in CI unless .gitattributes pins the working tree.
+// In-iframe input never reaches the parent document, so active-view-policy
+// synthesizes a pointerdown to tell the renderer which pane is active. That
+// forged gesture must carry why it fired: focus-driven activation is not a
+// click, and treating it as one cancelled every inline text edit on start.
+const activePolicy = read(path.join(rendererDir, 'active-view-policy.js'));
+check('Synthesized pane activation states whether a pointer or focus caused it',
+  /function dispatchPaneActivation\(slot, reason = 'pointer'\)/.test(activePolicy) &&
+  activePolicy.includes('event.leafActivationReason = reason;') &&
+  activePolicy.includes("dispatchPaneActivation(slot, 'pointer')") &&
+  !/dispatchPaneActivation\(slot\)/.test(activePolicy) &&
+  renderer.includes("if(event.leafActivationReason==='focus')return;"));
+check('Inline text edit setup cannot be torn down by its own focus',
+  renderer.includes('let inlineTextEditStarting = false;') &&
+  renderer.includes('if(inlineTextEditStarting) return;') &&
+  /const \{element,frame,page,listeners\}=session;[\s\S]{0,200}?if\(listeners\)\{/.test(renderer));
+
 const textDirs = ['src/renderer', 'src/', 'scripts', '.github/workflows'];
 const textExtensions = ['.js', '.html', '.css', '.json', '.yml', '.md'];
 const trackedTextFiles = [...new Set(textDirs.flatMap(dir => {

@@ -83,7 +83,7 @@
     return frame?.dataset?.snapshotPageId || frame?.dataset?.directSourcePageId || '';
   }
 
-  function dispatchPaneActivation(slot) {
+  function dispatchPaneActivation(slot, reason = 'pointer') {
     const pane = paneForSlot(slot);
     if (!pane) return false;
     let event;
@@ -101,6 +101,11 @@
         cancelable: true
       });
     }
+    // In-iframe input never reaches the parent document, so this synthesized
+    // pointerdown is the renderer's only signal. It must still say what caused
+    // it: focus-driven activation is not a click, and treating it as one ends
+    // an inline text edit the instant focus enters the element.
+    event.leafActivationReason = reason;
     pane.dispatchEvent(event);
     return true;
   }
@@ -141,8 +146,8 @@
     }
     if (!doc || boundFrameDocuments.has(doc)) return false;
     boundFrameDocuments.add(doc);
-    doc.addEventListener('pointerdown', () => dispatchPaneActivation(slot), true);
-    doc.addEventListener('focusin', () => dispatchPaneActivation(slot), true);
+    doc.addEventListener('pointerdown', () => dispatchPaneActivation(slot, 'pointer'), true);
+    doc.addEventListener('focusin', () => dispatchPaneActivation(slot, 'focus'), true);
     return true;
   }
 
@@ -158,7 +163,7 @@
       setTimeout(() => bindFrameDocument(frame, slot), 0);
       setTimeout(() => bindFrameDocument(frame, slot), 80);
     });
-    frame.addEventListener('focus', () => dispatchPaneActivation(slot), true);
+    frame.addEventListener('focus', () => dispatchPaneActivation(slot, 'focus'), true);
     bindFrameDocument(frame, slot);
   }
 
@@ -166,7 +171,7 @@
     const active = document.activeElement;
     if (!active || active.tagName !== 'IFRAME') return;
     const slot = FRAME_SLOT.get(active) || Object.keys(SLOT_CONFIG).find(key => frameForSlot(key) === active);
-    if (slot) dispatchPaneActivation(slot);
+    if (slot) dispatchPaneActivation(slot, 'focus');
   }
 
   function bindFrameActivationPolicy() {
