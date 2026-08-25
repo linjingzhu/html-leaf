@@ -22,8 +22,20 @@ function countMatches(text, pattern) {
   return (String(text || '').match(pattern) || []).length;
 }
 
-const footer = '  waitForLeafReady();\n})();';
-const instrumented = extension.replace(footer, `  globalThis.__scriptedHtmlEditApi = {\n    hasRenderableContent,\n    isScriptedHtmlPage,\n    buildStaticEditSource,\n    buildInteractiveSource,\n    runtimePreviewScrollbarCss\n  };\n})();`);
+const lineEnding = extension.includes('\r\n') ? '\r\n' : '\n';
+const instrumented = extension.replace(
+  /  waitForLeafReady\(\);\r?\n\}\);\s*$/,
+  [
+    '  globalThis.__scriptedHtmlEditApi = {',
+    '    hasRenderableContent,',
+    '    isScriptedHtmlPage,',
+    '    buildStaticEditSource,',
+    '    buildInteractiveSource,',
+    '    runtimePreviewScrollbarCss',
+    '  };',
+    '})();'
+  ].join(lineEnding)
+);
 check('Scripted HTML Edit extension can be QA-instrumented without changing source', instrumented !== extension);
 
 let api = null;
