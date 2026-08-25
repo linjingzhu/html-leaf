@@ -42,8 +42,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run static QA
-        run: npm run qa:static && npm run qa:scripted-html-edit && npm run qa:theme-light
+      - name: Run adversarial startup QA and static QA
+        run: |
+          npm run qa:startup-adversarial
+          npm run qa:static
+          npm run qa:scripted-html-edit
+          npm run qa:theme-light
 
       - name: Build Windows installer + zip
         env:

@@ -155,9 +155,13 @@
 
   function reportStartupError(error,context='startup'){
     const detail=startupErrorDetail(error);
-    if(window.__leafStartupError&&context==='timeout')return;
-    window.__leafStartupError={context,detail,at:new Date().toISOString()};
-    recordStartupDebug(`startup issue (${context})`,detail);
+    const existing=window.__leafStartupError;
+    if(existing&&context==='timeout'){
+      recordStartupDebug(`startup issue (${context})`,`${detail} (existing ${existing.context}: ${existing.detail})`);
+    }else{
+      window.__leafStartupError={context,detail,at:new Date().toISOString()};
+      recordStartupDebug(`startup issue (${context})`,detail);
+    }
     console.error(`[Leaf startup] ${context}: ${detail}`,error);
     const message=document.getElementById('appStartupMessage');
     if(message)message.textContent=`Startup issue (${context}): ${detail}`;
@@ -213,8 +217,8 @@
     const previous=window.LeafStartup||{};
     window.LeafStartup={
       ...previous,
-      reportError:previous.reportError||reportStartupError,
-      clearLegacyStateKeys:previous.clearLegacyStateKeys||clearLegacyStateKeys,
+      reportError:reportStartupError,
+      clearLegacyStateKeys,
       record:recordStartupDebug,
       getDebugLog:()=>Array.from(window.__leafStartupDebugLog||[])
     };
