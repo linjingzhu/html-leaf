@@ -48,6 +48,7 @@
     state: 'dom',
     blinkFeature: 'CanvasDrawElement'
   };
+  let refreshScheduled = false;
 
   function injectBadgeStyle() {
     if (document.getElementById('leaf-html-canvas-capability-style')) return;
@@ -80,6 +81,26 @@
       }
     `;
     document.head.appendChild(style);
+  }
+
+  function setTextIfChanged(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
+  function setTitleIfChanged(element, title) {
+    if (element && element.title !== title) element.title = title;
+  }
+
+  function setDatasetIfChanged(element, key, value) {
+    if (element && element.dataset[key] !== value) element.dataset[key] = value;
+  }
+
+  function setHiddenIfChanged(element, hidden) {
+    if (element && element.hidden !== hidden) element.hidden = hidden;
+  }
+
+  function setDocumentDatasetIfChanged(key, value) {
+    if (document.documentElement.dataset[key] !== value) document.documentElement.dataset[key] = value;
   }
 
   function readState() {
@@ -152,8 +173,8 @@
       shouldRunScripts,
       canDomEdit
     };
-    document.documentElement.dataset.htmlCanvasExperiment = runtime.enabled ? 'on' : 'off';
-    document.documentElement.dataset.htmlCanvasSupport = runtime.supported ? 'supported' : 'unsupported';
+    setDocumentDatasetIfChanged('htmlCanvasExperiment', runtime.enabled ? 'on' : 'off');
+    setDocumentDatasetIfChanged('htmlCanvasSupport', runtime.supported ? 'supported' : 'unsupported');
   }
 
   function badgeStateForSlot(slot) {
@@ -171,16 +192,23 @@
     return 'dom';
   }
 
+  function syncBadgeClass(badge, className) {
+    const needsClassUpdate = !badge.classList.contains(className) ||
+      BADGE_CLASSES.some(name => name !== className && badge.classList.contains(name));
+    if (!needsClassUpdate) return;
+    BADGE_CLASSES.forEach(name => badge.classList.remove(name));
+    badge.classList.add(className);
+  }
+
   function setBadge(slot, state) {
     const badge = document.querySelector(`[data-runtime-badge="${slot}"]`);
     const config = BADGE_STATES[state];
     if (!badge || !config) return;
-    badge.hidden = false;
-    badge.textContent = config.label;
-    badge.title = config.title;
-    badge.dataset.runtimeState = state;
-    BADGE_CLASSES.forEach(name => badge.classList.remove(name));
-    badge.classList.add(config.className);
+    setHiddenIfChanged(badge, false);
+    setTextIfChanged(badge, config.label);
+    setTitleIfChanged(badge, config.title);
+    setDatasetIfChanged(badge, 'runtimeState', state);
+    syncBadgeClass(badge, config.className);
   }
 
   function refreshRuntimeBadges() {
@@ -194,26 +222,22 @@
     const status = document.getElementById('canvasLabStatus');
     const apiBadge = document.getElementById('canvasLabApiBadge');
     const apiName = document.getElementById('canvasLabApiName');
-    if (status) {
-      status.textContent = runtime.enabled
-        ? (runtime.supported ? 'HTML-in-Canvas Ready' : 'HTML-in-Canvas Unavailable')
-        : 'HTML-in-Canvas gated off';
-      status.dataset.htmlCanvasState = runtime.state;
-      status.title = runtime.enabled
-        ? `Blink feature: ${runtime.blinkFeature}`
-        : 'Set LEAF_ENABLE_HTML_CANVAS=1 before launching Leaf to enable the Chromium feature gate.';
-    }
-    if (apiBadge) {
-      apiBadge.textContent = runtime.enabled
-        ? (runtime.supported ? 'Canvas' : 'Unavailable')
-        : 'DOM';
-      apiBadge.dataset.htmlCanvasState = runtime.state;
-    }
-    if (apiName) {
-      apiName.textContent = runtime.enabled
-        ? (runtime.supported ? 'Canvas' : 'Unavailable')
-        : 'DOM';
-    }
+    const statusText = runtime.enabled
+      ? (runtime.supported ? 'HTML-in-Canvas Ready' : 'HTML-in-Canvas Unavailable')
+      : 'HTML-in-Canvas gated off';
+    const badgeText = runtime.enabled
+      ? (runtime.supported ? 'Canvas' : 'Unavailable')
+      : 'DOM';
+    const statusTitle = runtime.enabled
+      ? `Blink feature: ${runtime.blinkFeature}`
+      : 'Set LEAF_ENABLE_HTML_CANVAS=1 before launching Leaf to enable the Chromium feature gate.';
+
+    setTextIfChanged(status, statusText);
+    setDatasetIfChanged(status, 'htmlCanvasState', runtime.state);
+    setTitleIfChanged(status, statusTitle);
+    setTextIfChanged(apiBadge, badgeText);
+    setDatasetIfChanged(apiBadge, 'htmlCanvasState', runtime.state);
+    setTextIfChanged(apiName, badgeText);
   }
 
   function refresh() {
@@ -224,21 +248,30 @@
       window.LeafHtmlCanvasCapability.supported = runtime.supported;
       window.LeafHtmlCanvasCapability.state = runtime.state;
     }
-    document.documentElement.dataset.htmlCanvasSupport = runtime.supported ? 'supported' : 'unsupported';
+    setDocumentDatasetIfChanged('htmlCanvasSupport', runtime.supported ? 'supported' : 'unsupported');
     refreshRuntimeBadges();
     refreshCanvasLabCapability();
   }
 
+  function scheduleRefresh() {
+    if (refreshScheduled) return;
+    refreshScheduled = true;
+    requestAnimationFrame(() => {
+      refreshScheduled = false;
+      refresh();
+    });
+  }
+
   function install() {
     injectBadgeStyle();
-    refreshRuntimeConfig().then(refresh);
-    new MutationObserver(refresh).observe(document.body, {
+    refreshRuntimeConfig().then(scheduleRefresh);
+    new MutationObserver(scheduleRefresh).observe(document.body, {
       subtree: true,
       childList: true,
       attributes: true,
       attributeFilter: ['data-preview-runtime', 'class', 'aria-pressed', 'hidden']
     });
-    setInterval(refresh, 1000);
+    setInterval(scheduleRefresh, 1000);
   }
 
   function waitForLeafReady() {
