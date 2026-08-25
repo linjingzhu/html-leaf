@@ -67,18 +67,18 @@ function cleanupRenderer() {
     'state.preferences.theme=button.dataset.prefTheme;',
     "state.preferences.theme=['dark','light'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';"
   );
-  next = replaceRequired(
-    next,
-    'let state = normalizeState(createDefaultState());',
-    'let state = normalizeState(loadState() || createDefaultState());',
-    file,
-    'saved state restoration'
-  );
   if (next.includes("theme:'codex'") || next.includes("state.preferences.theme || 'codex'")) {
     throw new Error(`${file}: legacy Codex theme defaults remain after cleanup.`);
   }
-  if (next.includes('let state = normalizeState(createDefaultState());')) {
-    throw new Error(`${file}: renderer still discards saved state during startup.`);
+  // The project is a per-run workspace by request: startup opens a clean one
+  // instead of restoring the stored project, so the rule that used to rewrite
+  // startup into loadState() restoration is retired. What still has to hold is
+  // that the reset keeps the user's app settings, which is not project content.
+  if (!next.includes('let state = startFreshProject(storedStateAtStartup);')) {
+    throw new Error(`${file}: renderer no longer opens a fresh project at startup.`);
+  }
+  if (!next.includes('fresh.preferences=carried.preferences;') || !next.includes('fresh.layout=carried.layout;')) {
+    throw new Error(`${file}: startup reset would drop the user's app settings.`);
   }
   write(file, next);
 }
@@ -173,4 +173,4 @@ cleanupRenderer();
 cleanupIndex();
 cleanupStyles();
 cleanupSourceFidelityStartup();
-console.log('Roadmap source cleanup applied: Light default, renderer-owned startup readiness, saved-state restore, Codex theme source removed.');
+console.log('Roadmap source cleanup applied: Light default, renderer-owned startup readiness, clean project at startup, Codex theme source removed.');

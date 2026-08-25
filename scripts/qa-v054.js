@@ -19,7 +19,11 @@ check('Fit hides unnecessary scrollbars',css.includes('.preview-canvas.is-fit{ov
 check('Static iframe captures Ctrl wheel in the loaded document',js.includes("doc?.addEventListener('wheel'")&&js.includes('previewSlotForFrame(frame)'));
 check('Interactive iframe forwards Ctrl wheel through a validated token bridge',js.includes('__hbeViewportInput:true')&&js.includes("data.token!==frame.dataset.snapshotToken")&&js.includes("kind:'zoom'"));
 check('Viewport becomes active on pointer down',js.includes("addEventListener('pointerdown',()=>activateViewportSlot(slot),true)")&&js.includes('function activateViewportSlot(slot)'));
-check('Startup clears the editing session but restores the saved project',js.includes('resetPersistedEditorState();')&&js.includes('normalizeState(loadState() || createDefaultState())')&&!js.includes('normalizeState(createDefaultState());'));
+// The requirement changed by user request: the project is now a per-run
+// workspace that starts clean on every launch. The assertion below still pins
+// startup behaviour - it just pins the behaviour that is now wanted, and adds
+// the half that keeps the reset honest: app settings must survive it.
+check('Startup opens a clean project but keeps the user app settings',js.includes('resetPersistedEditorState();')&&js.includes('let state = startFreshProject(storedStateAtStartup);')&&js.includes('function startFreshProject(stored)')&&js.includes('fresh.preferences=carried.preferences;')&&js.includes('fresh.layout=carried.layout;')&&!js.includes('normalizeState(loadState() || createDefaultState())'));
 check('Default container starts with only an empty page',(js.includes("name:'Default Document'")||js.includes("name:'Default Project'"))&&js.includes("name:'Empty Page'")&&!js.includes('function coverHtml()')&&!js.includes('function chapterHtml()'));
 check('Inspector Preview UI is removed and preview is forced on',!html.includes('inspectorPreviewToggle')&&js.includes('let inspectorPreviewEnabled = true')&&js.includes('state.preferences.inspectorPreview=true'));
 check('4K preview is contained inside the center workspace',css.includes('contain:layout paint')&&css.includes('.workspace{')&&css.includes('overflow:hidden'));

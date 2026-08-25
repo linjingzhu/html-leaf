@@ -344,6 +344,28 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Startup project reset -------------------------------------------------
+// The project is a per-run workspace: every launch opens a clean one. The
+// reset must not take the user's app settings with it - theme, UI scale,
+// language, panel widths and split ratios live in the same stored object as
+// the project, so a blanket wipe would silently reset the whole app chrome.
+check('Startup opens a clean project instead of restoring the stored one',
+  renderer.includes('let state = startFreshProject(storedStateAtStartup);')
+  && !renderer.includes('normalizeState(loadState() || createDefaultState())'));
+check('The startup reset carries the user app settings across',
+  renderer.includes('function startFreshProject(stored){')
+  && renderer.includes('fresh.preferences=carried.preferences;')
+  && renderer.includes('fresh.layout=carried.layout;')
+  && renderer.includes('fresh.previewSizes=carried.previewSizes;'));
+check('A corrupt stored state still yields a usable fresh project',
+  /catch\{ return fresh; \}/.test(renderer));
+// The discarded project must not linger in storage waiting for some later edit
+// to overwrite it - but it has to be read for its settings before it is dropped.
+check('The discarded project is cleared from storage at startup, after it is read',
+  renderer.includes('const storedStateAtStartup = loadState();')
+  && renderer.indexOf('const storedStateAtStartup = loadState();') < renderer.indexOf('resetPersistedEditorState();\n  let state')
+  && renderer.includes('.filter(key=>key===stateKey||'));
+
 // --- CI triggers -----------------------------------------------------------
 // Every PR branch here is claude/** targeting stable. Listing claude/** under
 // push as well ran the whole Windows build twice per commit, and the publish
