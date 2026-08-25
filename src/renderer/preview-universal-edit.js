@@ -367,27 +367,15 @@ body{margin:0;background:#fff;color:#20242a;font:14px/1.6 system-ui,-apple-syste
     INSTALL_DELAYS.forEach(delay => setTimeout(() => installVisualAdapter(slot), delay));
   }
 
-  function keepEditButtonsAvailable() {
-    document.querySelectorAll('[data-edit-slot]').forEach(button => {
-      const slot = button.dataset.editSlot;
-      const page = pageForSlot(slot);
-      if (!page || page.isEmpty) return;
-      if (['html', 'markdown', 'json', 'pdf'].includes(page.documentType)) {
-        button.disabled = false;
-        if (SUPPORTED_VISUAL_TYPES.has(page.documentType)) {
-          button.title = `Enable visual ${page.documentType.toUpperCase()} editing in this View`;
-        }
-      }
-    });
-  }
-
   function install() {
     injectShellStyle();
-    document.addEventListener('click', event => {
-      const button = event.target.closest?.('[data-edit-slot]');
-      if (!button) return;
-      scheduleVisualAdapter(button.dataset.editSlot);
-    }, true);
+    document.addEventListener('leaf-edit-runtime-transition', event => {
+      const { enabled, slot, pageId } = event.detail || {};
+      if (!enabled || !slot) return;
+      const page = pageForSlot(slot);
+      if (!page || (pageId && page.id !== pageId) || !SUPPORTED_VISUAL_TYPES.has(page.documentType)) return;
+      scheduleVisualAdapter(slot);
+    });
 
     [document.getElementById('singleFrame'), document.getElementById('leftFrame'), document.getElementById('rightFrame'), document.getElementById('codePreviewFrame')]
       .filter(Boolean)
@@ -397,10 +385,6 @@ body{margin:0;background:#fff;color:#20242a;font:14px/1.6 system-ui,-apple-syste
         if (frame.dataset.previewRuntime !== 'visual-preview-editor') frame.closest('.view-pane')?.classList.remove('visual-preview-edit-active');
       }));
 
-    const observer = new MutationObserver(keepEditButtonsAvailable);
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['disabled', 'data-preview-runtime', 'class'] });
-    setInterval(keepEditButtonsAvailable, 1000);
-    keepEditButtonsAvailable();
   }
 
   function waitForLeafReady() {

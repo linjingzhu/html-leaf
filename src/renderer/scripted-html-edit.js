@@ -262,43 +262,25 @@
     return true;
   }
 
-  function refreshEditButtons() {
-    document.querySelectorAll('[data-edit-slot]').forEach(button => {
-      const slot = button.dataset.editSlot;
-      const page = pageForSlot(slot);
-      if (!isScriptedHtmlPage(page) || !hasRenderableContent(page) || !frameForSlot(slot)) return;
-      button.disabled = false;
-      button.title = button.classList.contains('active')
-        ? 'Disable Edit for this Window'
-        : 'Enable scripts-off DOM Edit for this scripted Page';
-      const frame = frameForSlot(slot);
-      if (frame?.dataset.previewRuntime === 'static-editable-scripts-off') updateInspectorScriptsOffCopy(slot);
-    });
+  function syncScriptedInspector(slot) {
+    const frame = frameForSlot(slot);
+    if (frame?.dataset.previewRuntime === 'static-editable-scripts-off') updateInspectorScriptsOffCopy(slot);
   }
 
-  function handleEditClick(event) {
-    const button = event.target.closest?.('[data-edit-slot]');
-    if (!button) return;
-    const slot = button.dataset.editSlot;
+  function handleEditRuntimeTransition(event) {
+    const { enabled, slot, pageId } = event.detail || {};
+    if (!slot) return;
     const page = pageForSlot(slot);
-    if (!isScriptedHtmlPage(page)) return;
-    const wasActive = button.classList.contains('active') || button.getAttribute('aria-pressed') === 'true';
-    setTimeout(() => {
-      if (wasActive) restoreInteractivePreview(slot, page);
-      else enableStaticHtmlEdit(slot, page);
-      refreshEditButtons();
-    }, 0);
+    if (!isScriptedHtmlPage(page) || (pageId && page.id !== pageId)) return;
+    if (enabled) enableStaticHtmlEdit(slot, page);
+    else restoreInteractivePreview(slot, page);
   }
 
   function install() {
-    document.addEventListener('click', handleEditClick, true);
+    document.addEventListener('leaf-edit-runtime-transition', handleEditRuntimeTransition);
     Object.keys(SLOTS).forEach(slot => {
-      frameForSlot(slot)?.addEventListener('load', () => setTimeout(refreshEditButtons, 0));
+      frameForSlot(slot)?.addEventListener('load', () => setTimeout(() => syncScriptedInspector(slot), 0));
     });
-    const observer = new MutationObserver(refreshEditButtons);
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'data-preview-runtime', 'aria-pressed'] });
-    setInterval(refreshEditButtons, 1000);
-    refreshEditButtons();
   }
 
   function waitForLeafReady() {
