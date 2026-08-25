@@ -1027,6 +1027,14 @@
     return{query,projectMatch,visible};
   }
 
+  const VIEW_CHIPS=[
+    {slot:'single',letter:'P',title:'Loaded in Preview'},
+    {slot:'left',letter:'L',title:'Loaded in Compare left'},
+    {slot:'right',letter:'R',title:'Loaded in Compare right'},
+    {slot:'codePreview',letter:'V',title:'Loaded in Code preview'},
+    {slot:'codePage',letter:'C',title:'Loaded in the Code editor'}
+  ];
+
   function renderTree(){
     refs.tree.innerHTML='';
     state.documents.forEach((project)=>{
@@ -1109,11 +1117,15 @@
       if(node.id===state.views.right) row.classList.add('view-right');
       if(node.id===state.views.codePreview) row.classList.add('view-code-preview');
       if(node.id===state.views.codePage) row.classList.add('view-code-editor');
+      // A Page can sit in several Views at once. These used to be one ::after,
+      // so only the last matching rule's letter showed and the rest were hidden.
+      const viewChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot])
+        .map(chip=>`<span class="view-chip view-chip-${chip.slot}" title="${esc(chip.title)}">${chip.letter}</span>`).join('');
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
       const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':'◇';
-      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span><button class="tree-row-add" type="button" title="Add child">＋</button>`;
+      row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span>${viewChips}<button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
         if(e.target.closest('.tree-row-add'))return;
@@ -6292,8 +6304,10 @@
     if(!['preview','editor'].includes(activeSlots.code)) activeSlots.code='preview';
   }
   function renderCrumbs(){
-    const name=state.projectName||'Leaf Project';
-    refs.crumbs.innerHTML=`<button type="button" class="crumb crumb-project" data-crumb-kind="project">${esc(name)}</button>`;
+    const project=state.projectName||'Leaf Project';
+    const document_=activeDocument()?.name||'No Document';
+    refs.crumbs.innerHTML=`<button type="button" class="crumb crumb-project" data-crumb-kind="project">${esc(project)}</button>`+
+      `<span class="crumb-sep">/</span><span class="crumb-document">${esc(document_)}</span>`;
   }
 
   refs.crumbs?.addEventListener('click',event=>{
@@ -6311,7 +6325,7 @@
     repairViews();
     renderViewMode();
     updateClearButtons();
-    $('#workspaceTitle').textContent=`${state.projectName||'Leaf Project'} / ${activeDocument()?.name||'No Document'}`;
+    renderCrumbs();
   }
 
   $$('[data-edit-cancel]').forEach(button=>button.addEventListener('click',event=>{
