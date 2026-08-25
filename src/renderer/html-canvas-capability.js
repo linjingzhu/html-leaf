@@ -49,6 +49,7 @@
     blinkFeature: 'CanvasDrawElement'
   };
   let refreshScheduled = false;
+  let installed = false;
 
   function injectBadgeStyle() {
     if (document.getElementById('leaf-html-canvas-capability-style')) return;
@@ -263,6 +264,8 @@
   }
 
   function install() {
+    if (installed) return;
+    installed = true;
     injectBadgeStyle();
     refreshRuntimeConfig().then(scheduleRefresh);
     new MutationObserver(scheduleRefresh).observe(document.body, {
@@ -274,8 +277,12 @@
     setInterval(scheduleRefresh, 1000);
   }
 
+  function isLeafReady() {
+    return document.documentElement.dataset.leafReady === 'true';
+  }
+
   function waitForLeafReady() {
-    if (document.body) {
+    if (document.body && isLeafReady()) {
       install();
       return;
     }
