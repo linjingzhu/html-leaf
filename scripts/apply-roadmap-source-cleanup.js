@@ -140,13 +140,9 @@ function cleanupSourceFidelityStartup() {
     "    startup?.classList.add('startup-error');\n    startup?.setAttribute('data-error-context',context);",
     "    if(startup){\n      startup.classList.remove('is-complete');\n      startup.style.pointerEvents='auto';\n      startup.style.opacity='1';\n      startup.classList.add('startup-error');\n    }\n    startup?.setAttribute('data-error-context',context);"
   );
-  next = replaceRequired(
+  next = replaceRequiredPattern(
     next,
-    `  function hideStartupOverlay(reason='manual'){
-    recordStartupDebug('startup overlay hide requested',reason);
-    document.documentElement.dataset.leafReady='true';
-    releaseStartupPointerBarrier(reason);
-  }`,
+    /  function hideStartupOverlay\(reason='manual'\)\{\r?\n\s*recordStartupDebug\('startup overlay hide requested',reason\);\r?\n\s*document\.documentElement\.dataset\.leafReady='true';\r?\n\s*releaseStartupPointerBarrier\(reason\);\r?\n\s*\}/,
     `  function hideStartupOverlay(reason='manual'){
     recordStartupDebug('startup overlay hide requested',reason);
     if(!isRendererReady()){
