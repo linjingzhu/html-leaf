@@ -38,7 +38,7 @@ includesAll('Synthetic fixture covers script-driven document UI behavior', fixtu
   "item.dataset.runtimeItem = 'true'"
 ]);
 
-includesAll('Preview starts as isolated interactive runtime', extension, [
+includesAll('Interactive Preview path is isolated and script-enabled', extension, [
   "frame.dataset.previewRuntime = 'interactive-isolated'",
   "frame.setAttribute('sandbox', 'allow-scripts')",
   'frame.srcdoc = buildInteractiveSource(page, token)'
@@ -54,12 +54,17 @@ includesAll('Edit switches active View to scripts-off selectable DOM', extension
 
 check('Transition path is explicitly represented in scripted edit source',
   ordered(extension, [
-    "frame.dataset.previewRuntime = 'interactive-isolated'",
+    'function enableStaticHtmlEdit(slot, page)',
     "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
+    'frame.srcdoc = buildStaticEditSource(page)',
     'function restoreInteractivePreview(slot, page)',
-    "frame.dataset.previewRuntime = 'interactive-isolated'"
+    "frame.dataset.previewRuntime = 'interactive-isolated'",
+    'frame.srcdoc = buildInteractiveSource(page, token)',
+    'function handleEditClick(event)',
+    'if (wasActive) restoreInteractivePreview(slot, page);',
+    'else enableStaticHtmlEdit(slot, page);'
   ]),
-  'Expected interactive-isolated -> static-editable-scripts-off -> interactive-isolated order.');
+  'Expected Edit click to route interactive Preview into scripts-off DOM Edit and back to interactive Preview.');
 
 includesAll('Authored DOM nodes remain selectable in scripts-off same-origin edit surface', extension + fixture, [
   "frame.setAttribute('sandbox', 'allow-same-origin')",
