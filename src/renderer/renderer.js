@@ -274,10 +274,11 @@
       return v ? JSON.parse(v) : null;
     } catch { return null; }
   }
-  let persistTimer=null;
+  let persistTimer=null,persistWroteOnce=false;
   function writePersistedState(){
     try{
       localStorage.setItem(stateKey, JSON.stringify(state));
+      persistWroteOnce=true;
     }catch(error){
       console.warn('Leaf state persist failed',error);
       try{ showToast(error?.name==='QuotaExceededError'?'Storage limit reached - state was not saved':'State could not be saved'); }catch{}
@@ -295,6 +296,9 @@
   function flushPersist(){
     if(persistTimer===null) return;
     clearTimeout(persistTimer);persistTimer=null;
+    // The startup "Reset state" action deletes this key and reloads; the unload
+    // flush must not resurrect what the user just cleared.
+    if(persistWroteOnce&&!Object.prototype.hasOwnProperty.call(localStorage,stateKey)) return;
     writePersistedState();
   }
   window.addEventListener('beforeunload',flushPersist);

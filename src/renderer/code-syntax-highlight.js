@@ -2,10 +2,14 @@
   'use strict';
 
   const TYPE_CLASS_PREFIX = 'leaf-syntax-type-';
+  const REFRESH_MS = 300;
   let overlay = null;
   let code = null;
   let lastText = null;
   let lastType = null;
+  let frameHandle = 0;
+  let refreshTimer = 0;
+  let viewMode = '';
 
   function esc(value) {
     return String(value ?? '')
@@ -29,6 +33,10 @@
 
   function codePageSelect() {
     return document.querySelector('#codePageSelect');
+  }
+
+  function activeMode() {
+    return document.querySelector('#viewSeg button.active[data-mode]')?.dataset.mode || '';
   }
 
   function selectedLabel() {
@@ -246,23 +254,52 @@
     syncScroll();
   }
 
-  function install() {
-    const editor = sourceEditor();
-    const select = codePageSelect();
-    if (!editor || editor.dataset.leafCodeSyntax === 'true') {
+  function scheduleHighlight() {
+    if (viewMode !== 'code') return;
+    if (frameHandle) cancelAnimationFrame(frameHandle);
+    frameHandle = requestAnimationFrame(() => {
+      frameHandle = 0;
       updateHighlight();
-      return;
-    }
-    editor.dataset.leafCodeSyntax = 'true';
-    editor.addEventListener('input', updateHighlight);
-    editor.addEventListener('scroll', syncScroll, { passive: true });
-    select?.addEventListener('change', () => setTimeout(updateHighlight, 0));
-    updateHighlight();
-    setInterval(updateHighlight, 300);
+    });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
-  else install();
+  function setViewMode(mode) {
+    viewMode = mode || '';
+    if (viewMode === 'code') {
+      // The renderer writes #sourceEditor.value directly from inspector and
+      // preview-frame edits (loadCodePage) with no lifecycle event to observe,
+      // so a low-rate refresh is needed while the Code view is on screen.
+      if (!refreshTimer) refreshTimer = setInterval(scheduleHighlight, REFRESH_MS);
+      scheduleHighlight();
+      return;
+    }
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = 0;
+    }
+    if (frameHandle) {
+      cancelAnimationFrame(frameHandle);
+      frameHandle = 0;
+    }
+  }
 
-  new MutationObserver(install).observe(document.documentElement, { childList: true, subtree: true });
+  function install() {
+    const editor = sourceEditor();
+    if (!editor) return;
+    if (editor.dataset.leafCodeSyntax !== 'true') {
+      editor.dataset.leafCodeSyntax = 'true';
+      editor.addEventListener('input', scheduleHighlight);
+      editor.addEventListener('scroll', syncScroll, { passive: true });
+      codePageSelect()?.addEventListener('change', scheduleHighlight);
+    }
+    setViewMode(activeMode());
+  }
+
+  document.addEventListener('leaf-view-mode-changed', event => setViewMode(event.detail?.mode));
+  document.addEventListener('leaf-page-selects-rendered', scheduleHighlight);
+  document.addEventListener('leaf-renderer-ready', install);
+
+  if (document.documentElement.dataset.leafReady === 'true') install();
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+  else install();
 })();

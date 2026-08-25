@@ -28,6 +28,42 @@ function checkIncludesAll(name, text, parts) {
   check(name, missing.length === 0, missing.length ? `Missing: ${missing.join(', ')}` : '');
 }
 
+const rendererDir = path.join('src', 'renderer');
+const rendererScripts = fs.readdirSync(path.join(root, rendererDir)).filter(name => name.endsWith('.js')).sort();
+
+function observeCalls(text) {
+  const calls = [];
+  for (const match of text.matchAll(/\.observe\s*\(/g)) {
+    const start = match.index + match[0].length;
+    let end = start;
+    let depth = 1;
+    while (end < text.length && depth > 0) {
+      const char = text[end++];
+      if (char === '(' || char === '{' || char === '[') depth++;
+      else if (char === ')' || char === '}' || char === ']') depth--;
+    }
+    const args = text.slice(start, end - 1);
+    const split = args.indexOf(',');
+    calls.push({
+      target: (split < 0 ? args : args.slice(0, split)).replace(/\s+/g, ''),
+      options: split < 0 ? '' : args.slice(split + 1)
+    });
+  }
+  return calls;
+}
+// Only a bare `document.documentElement` / `document.body` target is the app shell renderer.js owns.
+// Page iframe documents (`doc.body`, `frame.contentDocument.body`) stay legal.
+function appShellSubtreeObservers(text) {
+  return observeCalls(text).filter(call =>
+    /^document\.(?:documentElement|body)$/.test(call.target) &&
+    /childList\s*:\s*true/.test(call.options) &&
+    /subtree\s*:\s*true/.test(call.options));
+}
+function amplifiedInstallCallbacks(text) {
+  const framed = new Set([...text.matchAll(/requestAnimationFrame\(\s*([A-Za-z_$][\w$]*)\s*\)/g)].map(match => match[1]));
+  return [...framed].filter(name => new RegExp(`setTimeout\\(\\s*${name}\\s*,`).test(text));
+}
+
 const forbiddenFrameworks = ['react', 'react-dom', 'vite', 'tailwindcss', '@radix-ui/react-dialog'];
 check('No framework migration dependency',
   !forbiddenFrameworks.some(name => pkg.dependencies?.[name] || pkg.devDependencies?.[name]),
@@ -110,6 +146,25 @@ checkIncludesAll('Image widget edit extension is loaded with source-fidelity gua
   ["loadExtensionScript('./image-widget-edit.js')", 'script.async=false']);
 checkIncludesAll('Leaf extension bundle waits for renderer readiness before touching View DOM', fidelity,
   ["function waitForRendererReady(){", "document.documentElement.dataset.leafReady==='true'", "attributeFilter:['data-leaf-ready']", 'loadLeafExtensionsOnce();']);
+
+const shellSubtreeObserverFiles = rendererScripts.filter(name =>
+  name !== 'source-fidelity.js' && appShellSubtreeObservers(read(path.join(rendererDir, name))).length);
+check('No renderer script observes the app shell with a document-wide subtree childList observer',
+  shellSubtreeObserverFiles.length === 0,
+  shellSubtreeObserverFiles.length
+    ? `Offenders: ${shellSubtreeObserverFiles.join(', ')} - subscribe to the renderer lifecycle events instead.`
+    : `${rendererScripts.length} renderer scripts scanned.`);
+check('Startup script observer is the only app-shell subtree observer and it disconnects at readiness',
+  appShellSubtreeObservers(fidelity).length === 1 &&
+  fidelity.includes('function disconnectRendererScriptObserver(reason)') &&
+  /function loadLeafExtensionsOnce\(\)\{[^}]*disconnectRendererScriptObserver\(/.test(fidelity),
+  `source-fidelity.js app-shell observers: ${appShellSubtreeObservers(fidelity).length}`);
+const extensionScripts = [...fidelity.matchAll(/loadExtensionScript\('\.\/([\w-]+\.js)'\)/g)]
+  .map(match => match[1]).filter(name => rendererScripts.includes(name));
+const amplifiedExtensions = extensionScripts.filter(name => amplifiedInstallCallbacks(read(path.join(rendererDir, name))).length);
+check('Leaf extensions never amplify one change into rAF plus timer reinstalls',
+  extensionScripts.length >= 6 && amplifiedExtensions.length === 0,
+  amplifiedExtensions.length ? `Amplified: ${amplifiedExtensions.join(', ')}` : `${extensionScripts.length} extension scripts scanned.`);
 checkIncludesAll('Scripted HTML Edit converts interactive previews into scripts-off selectable DOM', scriptedHtmlEdit,
   ["function isScriptedHtmlPage(page)", "frame.dataset.previewRuntime = 'static-editable-scripts-off'",
    "frame.setAttribute('sandbox', 'allow-same-origin')", "frame.srcdoc = buildStaticEditSource(page)", "setRuntimeBadge(slot, 'scripts-off')"]);
