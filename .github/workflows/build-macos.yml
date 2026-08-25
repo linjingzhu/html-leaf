@@ -7,15 +7,6 @@ on:
         description: "Publish the built artifacts to a downloadable GitHub prerelease"
         type: boolean
         default: true
-  pull_request:
-    branches:
-      - "stable"
-  push:
-    branches:
-      - "stable"
-      - "claude/**"
-    tags:
-      - "v*"
 
 permissions:
   contents: write
