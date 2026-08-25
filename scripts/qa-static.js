@@ -147,6 +147,30 @@ checkIncludesAll('Image widget edit extension is loaded with source-fidelity gua
 checkIncludesAll('Leaf extension bundle waits for renderer readiness before touching View DOM', fidelity,
   ["function waitForRendererReady(){", "document.documentElement.dataset.leafReady==='true'", "attributeFilter:['data-leaf-ready']", 'loadLeafExtensionsOnce();']);
 
+// Mixed line endings are a recurring defect source here, not a cosmetic issue:
+// the QA suites assert on source text, and multi-line literals silently stop
+// matching when a file is CRLF. Windows runners check out with core.autocrlf,
+// so this only reproduces in CI unless .gitattributes pins the working tree.
+const textDirs = ['src/renderer', 'src/', 'scripts', '.github/workflows'];
+const textExtensions = ['.js', '.html', '.css', '.json', '.yml', '.md'];
+const trackedTextFiles = [...new Set(textDirs.flatMap(dir => {
+  const abs = path.join(root, dir);
+  if (!fs.existsSync(abs)) return [];
+  return fs.readdirSync(abs, { withFileTypes: true })
+    .filter(entry => entry.isFile() && textExtensions.some(ext => entry.name.endsWith(ext)))
+    .map(entry => path.join(dir, entry.name));
+}))].sort();
+const crlfFiles = trackedTextFiles.filter(file => read(file).includes('\r'));
+check('No tracked text file carries CR line endings',
+  crlfFiles.length === 0,
+  crlfFiles.length ? `CRLF: ${crlfFiles.join(', ')}` : `${trackedTextFiles.length} text files scanned.`);
+const attributes = read('.gitattributes');
+const unprotectedBinaryTypes = ['exe', 'dll', 'node', 'zip', 'dmg', 'icns', 'ico', 'png', 'jpg', 'jpeg', 'gif', 'pdf']
+  .filter(ext => !new RegExp(`^\\*\\.${ext}\\s+binary$`, 'm').test(attributes));
+check('gitattributes pins LF working trees and shields every binary type',
+  /^\*\s+text=auto\s+eol=lf$/m.test(attributes) && unprotectedBinaryTypes.length === 0,
+  unprotectedBinaryTypes.length ? `Unshielded: ${unprotectedBinaryTypes.join(', ')}` : 'text=auto eol=lf with binaries shielded.');
+
 const shellSubtreeObserverFiles = rendererScripts.filter(name =>
   name !== 'source-fidelity.js' && appShellSubtreeObservers(read(path.join(rendererDir, name))).length);
 check('No renderer script observes the app shell with a document-wide subtree childList observer',
