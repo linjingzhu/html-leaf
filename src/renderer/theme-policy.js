@@ -52,10 +52,17 @@
     document.querySelectorAll('.theme-codex').forEach(mark => mark.remove());
   }
 
+  function setThemeCheck(selector, checked) {
+    const next = checked ? '✓' : '';
+    document.querySelectorAll(selector).forEach(mark => {
+      if (mark.textContent !== next) mark.textContent = next;
+    });
+  }
+
   function syncThemeChecks(theme) {
-    document.querySelectorAll('.theme-dark').forEach(mark => { mark.textContent = theme === 'dark' ? '✓' : ''; });
-    document.querySelectorAll('.theme-light').forEach(mark => { mark.textContent = theme === 'light' ? '✓' : ''; });
-    document.querySelectorAll('.theme-carbon').forEach(mark => { mark.textContent = theme === 'carbon' ? '✓' : ''; });
+    setThemeCheck('.theme-dark', theme === 'dark');
+    setThemeCheck('.theme-light', theme === 'light');
+    setThemeCheck('.theme-carbon', theme === 'carbon');
   }
 
   function enforceThemePolicy() {
@@ -77,13 +84,15 @@
       event.stopPropagation();
       enforceThemePolicy();
     }, true);
+
+    // Only the body theme attribute is relevant. Observing childList here can
+    // recursively observe syncThemeChecks() and starve the renderer event loop.
     const observer = new MutationObserver(enforceThemePolicy);
-    observer.observe(document.documentElement, {
-      subtree: true,
-      childList: true,
+    observer.observe(document.body, {
       attributes: true,
       attributeFilter: ['data-theme']
     });
+
     let ticks = 0;
     const timer = setInterval(() => {
       enforceThemePolicy();
@@ -95,3 +104,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
   else install();
 })();
+
