@@ -177,7 +177,10 @@
 
   function hideStartupOverlay(reason='manual'){
     recordStartupDebug('startup overlay hide requested',reason);
-    document.documentElement.dataset.leafReady='true';
+    if(!isRendererReady()){
+      reportStartupError('Cannot continue before renderer signals ready.','manual-continue-before-ready');
+      return;
+    }
     releaseStartupPointerBarrier(reason);
   }
 

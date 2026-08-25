@@ -63,9 +63,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run adversarial startup QA and static QA
+      - name: Run adversarial startup QA and static QA with readiness guard
         run: |
-          npm run source:cleanup
+          npm run qa:startup-readiness
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:scripted-html-edit
