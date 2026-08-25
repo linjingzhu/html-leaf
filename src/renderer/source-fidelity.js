@@ -1,6 +1,127 @@
 (() => {
   'use strict';
   const EDITOR_CLASS_NAMES=new Set(['table-cell-selected','viewport-object-drop-target']);
+  const STARTUP_STATE_KEY='leaf-v0-5-16-state';
+
+  function startupErrorDetail(error){
+    if(!error)return 'Unknown startup error';
+    if(typeof error==='string')return error;
+    const name=error.name||'';
+    const message=error.message||'';
+    const detail=[name,message].filter(Boolean).join(': ');
+    return detail||String(error);
+  }
+
+  function styleStartupButton(button,kind='default'){
+    button.type='button';
+    button.style.cssText=[
+      'border:1px solid rgba(255,255,255,.22)',
+      'border-radius:5px',
+      'background:'+ (kind==='danger'?'rgba(216,107,114,.14)':'rgba(255,255,255,.08)'),
+      'color:#eceff3',
+      'font:12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif',
+      'padding:7px 10px',
+      'cursor:pointer'
+    ].join(';');
+  }
+
+  function clearLegacyStateKeys(){
+    try{
+      localStorage.removeItem(STARTUP_STATE_KEY);
+      Object.keys(localStorage)
+        .filter(key=>/^hbe-(?:v[\d-]+|v0-[\d-]+)-state$/.test(key))
+        .forEach(key=>localStorage.removeItem(key));
+    }catch(error){
+      console.warn('Leaf startup state reset skipped',error);
+    }
+  }
+
+  function ensureStartupActions(){
+    const copy=document.querySelector('.app-startup-copy');
+    if(!copy||document.getElementById('leafStartupActions'))return;
+    const actions=document.createElement('div');
+    actions.id='leafStartupActions';
+    actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px';
+
+    const continueButton=document.createElement('button');
+    continueButton.textContent='Continue';
+    continueButton.title='Hide the startup overlay if the editor already rendered behind it.';
+    styleStartupButton(continueButton);
+    continueButton.addEventListener('click',()=>{
+      document.documentElement.dataset.leafReady='true';
+      const startup=document.getElementById('appStartup');
+      startup?.classList.add('is-complete');
+      setTimeout(()=>startup?.remove(),120);
+    });
+
+    const resetButton=document.createElement('button');
+    resetButton.textContent='Reset state';
+    resetButton.title='Clear local Leaf startup state and reload.';
+    styleStartupButton(resetButton,'danger');
+    resetButton.addEventListener('click',()=>{
+      clearLegacyStateKeys();
+      location.reload();
+    });
+
+    actions.append(continueButton,resetButton);
+    copy.appendChild(actions);
+  }
+
+  function reportStartupError(error,context='startup'){
+    const detail=startupErrorDetail(error);
+    if(window.__leafStartupError&&context==='timeout')return;
+    window.__leafStartupError={context,detail,at:new Date().toISOString()};
+    console.error(`[Leaf startup] ${context}: ${detail}`,error);
+    const message=document.getElementById('appStartupMessage');
+    if(message)message.textContent=`Startup issue (${context}): ${detail}`;
+    const startup=document.getElementById('appStartup');
+    startup?.classList.add('startup-error');
+    startup?.setAttribute('data-error-context',context);
+    startup?.setAttribute('title',detail);
+    ensureStartupActions();
+  }
+
+  function installStartupDiagnostics(){
+    if(window.LeafStartup?.reportError)return;
+    window.LeafStartup={reportError:reportStartupError,clearLegacyStateKeys};
+    window.addEventListener('error',event=>{
+      reportStartupError(event.error||event.message,'runtime');
+    });
+    window.addEventListener('unhandledrejection',event=>{
+      reportStartupError(event.reason,'promise');
+    });
+    setTimeout(()=>{
+      if(document.documentElement.dataset.leafReady!=='true'){
+        reportStartupError('Renderer did not signal ready within 12 seconds.','timeout');
+      }
+    },12000);
+  }
+
+  function installStartupStorageGuard(){
+    try{
+      if(window.__leafStartupStorageGuard)return;
+      const StorageApi=window.Storage;
+      if(!StorageApi?.prototype?.setItem)return;
+      const nativeSetItem=StorageApi.prototype.setItem;
+      Object.defineProperty(window,'__leafStartupStorageGuard',{value:true,configurable:false});
+      StorageApi.prototype.setItem=function(key,value){
+        try{return nativeSetItem.call(this,key,value);}
+        catch(error){
+          if(this===window.localStorage&&String(key)===STARTUP_STATE_KEY){
+            console.warn('Leaf state persist skipped during startup',error);
+            reportStartupError(error,'state-persist');
+            return undefined;
+          }
+          throw error;
+        }
+      };
+    }catch(error){
+      console.warn('Leaf startup storage guard not installed',error);
+    }
+  }
+
+  installStartupDiagnostics();
+  installStartupStorageGuard();
 
   function stripEditorArtifactsFromDocument(doc){
     if(!doc) return doc;
