@@ -7,6 +7,10 @@ on:
         description: "Publish the built artifacts to a downloadable GitHub prerelease"
         type: boolean
         default: true
+      build_version:
+        description: "Optional exact semver to use for this platform build"
+        type: string
+        default: ""
   pull_request:
     branches:
       - "stable"
@@ -32,6 +36,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -39,19 +45,38 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Apply roadmap source cleanup
+        run: npm run source:cleanup
+
+      - name: Commit generated source cleanup to PR branch
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git status --short
+            git add -A
+            git commit -m "Apply roadmap source cleanup"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
+
       - name: Install dependencies
         run: npm ci
 
       - name: Run adversarial startup QA and static QA
         run: |
+          npm run source:cleanup
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:scripted-html-edit
+          npm run qa:html-canvas
+          npm run qa:release-version
           npm run qa:theme-light
 
       - name: Build Windows installer + zip
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          LEAF_BUILD_VERSION: ${{ inputs.build_version }}
           LEAF_BUILD_NUMBER: ${{ github.run_number }}
         run: npm run dist:win
 
