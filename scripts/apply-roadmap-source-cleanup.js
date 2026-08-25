@@ -112,9 +112,14 @@ function cleanupIndex() {
     file,
     'manual startup continue readiness guard'
   );
-  next = next.replace(
-    "      startup?.classList.add('startup-error');",
-    "      startup?.classList.remove('is-complete');\n      if (startup) startup.style.pointerEvents = 'auto';\n      startup?.classList.add('startup-error');"
+  next = replaceRequiredPattern(
+    next,
+    /(?:      startup\?\.classList\.remove\('is-complete'\);\r?\n      if \(startup\) startup\.style\.pointerEvents = 'auto';\r?\n)*      startup\?\.classList\.add\('startup-error'\);/,
+    `      startup?.classList.remove('is-complete');
+      if (startup) startup.style.pointerEvents = 'auto';
+      startup?.classList.add('startup-error');`,
+    file,
+    'startup error pointer release'
   );
   if (next.includes("document.documentElement.dataset.leafReady = 'true';")) {
     throw new Error(`${file}: inline startup fallback can still fake renderer readiness.`);
