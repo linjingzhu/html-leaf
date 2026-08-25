@@ -247,15 +247,40 @@
       }, 180);
     }
 
+    function toggleInlineCode() {
+      const selection = getSelection();
+      if (!selection || !selection.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const existing = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement)?.closest?.('code');
+      if (existing) {
+        const parent = existing.parentNode;
+        while (existing.firstChild) parent.insertBefore(existing.firstChild, existing);
+        parent.removeChild(existing);
+        return;
+      }
+      if (selection.isCollapsed) return;
+      const code = document.createElement('code');
+      try {
+        range.surroundContents(code);
+      } catch {
+        code.textContent = range.toString();
+        range.deleteContents();
+        range.insertNode(code);
+      }
+    }
+
     document.querySelectorAll('[data-command]').forEach(button => {
       button.addEventListener('click', () => {
         const command = button.dataset.command;
-        if (command === 'heading') document.execCommand('formatBlock', false, 'h2');
-        else if (command === 'paragraph') document.execCommand('formatBlock', false, 'p');
+        const BLOCKS = { h1: 'h1', h2: 'h2', h3: 'h3', heading: 'h2', paragraph: 'p', quote: 'blockquote', codeblock: 'pre' };
+        if (BLOCKS[command]) document.execCommand('formatBlock', false, BLOCKS[command]);
         else if (command === 'link') {
           const href = prompt('Link URL');
           if (href) document.execCommand('createLink', false, href);
-        } else document.execCommand(command, false, null);
+        } else if (command === 'hr') document.execCommand('insertHorizontalRule', false, null);
+        else if (command === 'inlinecode') toggleInlineCode();
+        else document.execCommand(command, false, null);
         editor.focus();
         commitSoon();
       });
@@ -310,9 +335,11 @@
 <style>
 html{color-scheme:light;background:#fff}
 body{margin:0;background:#fff;color:#20242a;font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-.leaf-visual-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;border-bottom:1px solid #d9dde3;background:#f8fafc;color:#344054}
+.leaf-visual-head{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-height:38px;padding:5px 10px;border-bottom:1px solid #d9dde3;background:#f8fafc;color:#344054}
 .leaf-visual-head strong{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#172033}
-.leaf-visual-head button{height:24px;border:1px solid #cfd5df;border-radius:4px;background:#fff;color:#172033;font:12px system-ui;cursor:pointer}
+.leaf-visual-head button{height:24px;padding:0 7px;border:1px solid #cfd5df;border-radius:4px;background:#fff;color:#172033;font:12px system-ui;cursor:pointer}
+.leaf-visual-head button[data-command="bold"]{font-weight:700}
+.leaf-visual-head .leaf-sep{width:1px;height:16px;background:#d9dde3}
 .leaf-visual-head button:hover{background:#eef3fb}
 #leafVisualEditor{max-width:920px;margin:0 auto;padding:34px 46px;outline:0;min-height:calc(100vh - 39px)}
 #leafVisualEditor:focus{box-shadow:inset 0 0 0 2px rgba(66,104,214,.22)}
@@ -330,12 +357,23 @@ body{margin:0;background:#fff;color:#20242a;font:14px/1.6 system-ui,-apple-syste
 <body>
 <div class="leaf-visual-head">
 <strong>${title}</strong>
-<button type="button" data-command="heading">H2</button>
+${type === 'json' ? '' : `<button type="button" data-command="h1">H1</button>
+<button type="button" data-command="h2">H2</button>
+<button type="button" data-command="h3">H3</button>
+<span class="leaf-sep"></span>
 <button type="button" data-command="paragraph">P</button>
+<button type="button" data-command="quote">Quote</button>
+<button type="button" data-command="codeblock">Code</button>
+<span class="leaf-sep"></span>
 <button type="button" data-command="bold">B</button>
-<button type="button" data-command="italic">I</button>
+<button type="button" data-command="italic"><em>I</em></button>
+<button type="button" data-command="inlinecode" title="Inline code">&lt;&gt;</button>
+<span class="leaf-sep"></span>
 <button type="button" data-command="insertUnorderedList">List</button>
+<button type="button" data-command="insertOrderedList">1. List</button>
+<span class="leaf-sep"></span>
 <button type="button" data-command="link">Link</button>
+<button type="button" data-command="hr" title="Horizontal rule">HR</button>`}
 <span class="leaf-selected">Selected: <span id="leafSelectedLabel">Document</span></span>
 <span class="leaf-status" id="leafVisualStatus"></span>
 </div>

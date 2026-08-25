@@ -48,6 +48,19 @@
   --splitter-hit:8px;
   --view-outline-gutter:2px;
 
+  /* Code view surface and syntax palette */
+  --editor:#14171c;
+  --editor-foreground:#dce1e9;
+  --syntax-comment:#7d8590;
+  --syntax-punctuation:#8b949e;
+  --syntax-tag:#ff7b72;
+  --syntax-attribute:#79c0ff;
+  --syntax-string:#a5d6ff;
+  --syntax-number:#ffa657;
+  --syntax-heading:#d2a8ff;
+  --syntax-link:#7ee787;
+  --syntax-emphasis:#f2cc60;
+
   /* Elevation only for floating UI */
   --shadow-popup:0 10px 24px rgba(0,0,0,.28);
 }
@@ -79,6 +92,18 @@ body[data-theme="light"]{
   --success:#318667;
   --warning:#9e7336;
   --error:#b94f58;
+
+  --editor:#fbfbfc;
+  --editor-foreground:#242a31;
+  --syntax-comment:#6e7781;
+  --syntax-punctuation:#57606a;
+  --syntax-tag:#116329;
+  --syntax-attribute:#0550ae;
+  --syntax-string:#0a3069;
+  --syntax-number:#953800;
+  --syntax-heading:#8250df;
+  --syntax-link:#0a3069;
+  --syntax-emphasis:#953800;
 
   --shadow-popup:0 10px 24px rgba(20,24,32,.14);
 }
@@ -392,14 +417,13 @@ iframe{width:100%;height:100%;border:0;background:var(--canvas);color-scheme:dar
 .code-drop-zone{inset:var(--view-head-h) 0 0}
 
 /* Code */
-.code-area{min-height:0;flex:1;position:relative;background:var(--editor,#14171c)}
+.code-area{min-height:0;flex:1;position:relative;background:var(--editor)}
 .code-area textarea{
   width:100%;height:100%;resize:none;border:0;outline:0;padding:10px 12px 28px 48px;
-  background:#14171c;color:#dce1e9;font:12px/1.55 "SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  background:var(--editor);color:var(--editor-foreground);font:12px/1.55 "SFMono-Regular",Consolas,"Liberation Mono",monospace;
   tab-size:2;white-space:pre;overflow:auto
 }
 .code-area textarea.read-only{color:var(--muted);font-style:italic}
-body[data-theme="light"] .code-area textarea{background:#fbfbfc;color:#242a31}
 .line-rail{
   position:absolute;left:0;top:0;bottom:0;z-index:2;width:38px;overflow:hidden;
   border-right:1px solid var(--border-subtle);background:color-mix(in srgb,var(--canvas) 88%,var(--panel));
