@@ -78,7 +78,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           LEAF_BUILD_VERSION: ${{ inputs.build_version }}
           LEAF_BUILD_NUMBER: ${{ github.run_number }}
-        run: npm run dist:win
+        run: npm run dist:win -- --publish never
 
       - name: Read app version
         id: meta
