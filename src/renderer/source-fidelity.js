@@ -291,7 +291,7 @@
 
   function stripEditorArtifactsFromDocument(doc){
     if(!doc) return doc;
-    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime]').forEach(n=>n.remove());
+    doc.querySelectorAll('[data-editor-overlay],[data-adf-marker],[data-hbe-drop-line],[data-leaf-scrollbar-runtime],[data-leaf-html-canvas-runtime]').forEach(n=>n.remove());
     doc.querySelectorAll('[data-editor-element-id]').forEach(n=>n.removeAttribute('data-editor-element-id'));
     doc.querySelectorAll('[data-leaf-image-drag]').forEach(n=>n.removeAttribute('data-leaf-image-drag'));
     doc.querySelectorAll('*').forEach(node=>{
@@ -306,7 +306,7 @@
 
   function editorArtifactReport(html){
     const text=String(html||'');
-    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','data-leaf-image-drag','table-cell-selected','viewport-object-drop-target'];
+    const patterns=['data-editor-overlay','data-adf-marker','data-hbe-drop-line','data-editor-element-id','data-leaf-scrollbar-runtime','data-leaf-html-canvas-runtime','data-leaf-image-drag','table-cell-selected','viewport-object-drop-target'];
     return patterns.map(pattern=>({pattern,count:(text.match(new RegExp(pattern,'g'))||[]).length})).filter(x=>x.count>0);
   }
 
