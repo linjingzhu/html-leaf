@@ -61,11 +61,13 @@ check('Transition path is explicitly represented in scripted edit source',
   ]),
   'Expected interactive-isolated -> static-editable-scripts-off -> interactive-isolated order.');
 
-includesAll('Inspector and hierarchy stay available for authored DOM nodes', extension, [
-  'document.addEventListener(\'click\'',
-  'canInspectFrame(frame)',
-  'SelectionManager',
-  'data-edit-target'
+includesAll('Authored DOM nodes remain selectable in scripts-off same-origin edit surface', extension + fixture, [
+  "frame.setAttribute('sandbox', 'allow-same-origin')",
+  'frame.srcdoc = buildStaticEditSource(page)',
+  'data-edit-target="language-toolbar"',
+  'data-edit-target="hero"',
+  'data-edit-target="api-section"',
+  'data-edit-target="runtime-list"'
 ]);
 
 includesAll('Script tags are preserved and runtime artifacts are stripped before save', fidelity, [
