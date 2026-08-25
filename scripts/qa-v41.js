@@ -10,8 +10,8 @@ c('Zoom indicator exists in Split Left',html.includes('data-preview-zoom="left"'
 c('Zoom indicator exists in Split Right',html.includes('data-preview-zoom="right"'));
 c('Zoom indicator exists in Code Preview',html.includes('data-preview-zoom="codePreview"'));
 c('Zoom state defaults to 100',js.includes('state.previewZoom[slot]=100'));
-c('Zoom indicator text is synchronized',js.includes('indicator.textContent=`${zoom}%`'));
+c('Zoom indicator text is synchronized',js.includes('indicator.value=`${zoom}%`')&&js.includes('indicator.title=`Viewport zoom: ${zoom}%`'));
 c('Zoom is refreshed with preview sizing',js.includes('updatePreviewZoomIndicator(slot);'));
-c('Zoom indicator is fixed to lower-right of canvas',css.includes('.viewport-zoom-indicator')&&css.includes('right:10px')&&css.includes('bottom:9px'));
+c('Zoom indicator sits in the floating controls layer outside the canvas',css.includes('.viewport-zoom-indicator')&&css.includes('.viewport-zoom-control{')&&css.includes('position:static')&&js.includes("layer.className='viewport-floating-controls'"));
 console.log(`\n${p}/${p+f} checks passed.`);
 process.exit(f?1:0);

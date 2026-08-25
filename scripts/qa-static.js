@@ -187,15 +187,15 @@ const extensionScripts = [...fidelity.matchAll(/loadExtensionScript\('\.\/([\w-]
   .map(match => match[1]).filter(name => rendererScripts.includes(name));
 const amplifiedExtensions = extensionScripts.filter(name => amplifiedInstallCallbacks(read(path.join(rendererDir, name))).length);
 const workflowFiles = fs.readdirSync(path.join(root, '.github', 'workflows')).filter(name => name.endsWith('.yml')).sort();
-// `qa` needs Electron and a display, so CI cannot run it; every other qa:* script must be covered.
-const runnableQaScripts = Object.keys(pkg.scripts).filter(name => name.startsWith('qa:')).sort();
+// The whole chain is plain Node - no Electron, no display - so CI runs `qa` too.
+const runnableQaScripts = Object.keys(pkg.scripts).filter(name => name === 'qa' || name.startsWith('qa:')).sort();
 const workflowQaSuites = workflowFiles.flatMap(name => {
   // Windows runners check out with autocrlf, so normalize before matching.
   const text = read(path.join('.github', 'workflows', name)).replace(/\r\n/g, '\n');
   return [...text.matchAll(/- name: [^\n]*QA[^\n]*\n\s*run: \|\n((?:[ \t]*npm run [^\n]*\n)+)/g)]
     .map(match => ({
       workflow: name,
-      suites: [...match[1].matchAll(/npm run (qa:[\w:-]+)/g)].map(entry => entry[1]).sort().join(' ')
+      suites: [...match[1].matchAll(/npm run (qa(?::[\w:-]+)?)(?=\s|$)/gm)].map(entry => entry[1]).sort().join(' ')
     }));
 });
 const distinctSuiteSets = [...new Set(workflowQaSuites.map(entry => entry.suites))];

@@ -70,6 +70,7 @@ jobs:
           npm run qa:release-version
           npm run qa:zoom-scrollbar
           npm run qa:theme-light
+          npm run qa
 
       - name: Build Windows installer + zip
         env:
@@ -145,6 +146,7 @@ jobs:
           npm run qa:release-version
           npm run qa:zoom-scrollbar
           npm run qa:theme-light
+          npm run qa
 
       - name: Build macOS dmg + zip
         env:

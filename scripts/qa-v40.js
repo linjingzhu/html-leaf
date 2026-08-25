@@ -10,7 +10,7 @@ c('Registry validates containers',reg.includes('function canContain(element)'));
 c('Palette drop is consumed in viewport',js.includes("application/x-hbe-object-template")&&js.includes("doc.addEventListener('drop'"));
 c('Palette drop is consumed in hierarchy',js.includes('handleHierarchyDrop'));
 c('Hierarchy existing node move supported',js.includes('application/x-hbe-existing-element'));
-c('DOM mutation commits source',js.includes('function commitDomMutation')&&js.includes('syncFrameToPage(frame,page)'));
+c('DOM mutation commits source',js.includes('function commitDomMutation')&&js.includes('syncFrameToPage(frame,page,{mutationKind:source})'));
 c('Hierarchy expand/collapse exists',js.includes('hierarchyExpanded')&&js.includes('data-twisty'));
 c('Selection manager exists',js.includes('const SelectionManager='));
 c('Common splitter supports horizontal axis',js.includes("aria-orientation')==='horizontal'?'y':'x'"));
