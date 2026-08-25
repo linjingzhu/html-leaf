@@ -56,8 +56,17 @@ function cleanupRenderer() {
 function cleanupIndex() {
   const file = 'src/renderer/index.html';
   const source = read(file);
-  const next = removeCodexPreferenceButton(source)
+  let next = removeCodexPreferenceButton(source)
     .replace('Light <span class="check theme-light"></span>', 'Light <span class="check theme-light">✓</span>');
+
+  next = next.replace(
+    '<div class="app-startup" id="appStartup" role="status" aria-live="polite">',
+    '<div class="app-startup is-complete" id="appStartup" role="status" aria-live="polite">'
+  );
+  next = next.replace(
+    "      startup?.classList.add('startup-error');",
+    "      startup?.classList.remove('is-complete');\n      if (startup) startup.style.pointerEvents = 'auto';\n      startup?.classList.add('startup-error');"
+  );
   write(file, next);
 }
 
@@ -67,15 +76,56 @@ function cleanupStyles() {
   write(file, removeCodexThemeCss(source));
 }
 
+function cleanupSourceFidelityStartup() {
+  const file = 'src/renderer/source-fidelity.js';
+  const source = read(file);
+  let next = source;
+  next = next.replace(
+    "startup.style.pointerEvents='auto';\n    let panel=document.getElementById('appStartupDebug');",
+    "if(!startup.classList.contains('is-complete'))startup.style.pointerEvents='auto';\n    let panel=document.getElementById('appStartupDebug');"
+  );
+  next = next.replace(
+    "if(startup){\n      startup.style.pointerEvents='auto';\n      startup.style.cursor='default';\n    }",
+    "if(startup&&!startup.classList.contains('is-complete')){\n      startup.style.pointerEvents='auto';\n      startup.style.cursor='default';\n    }"
+  );
+  next = next.replace(
+    "    startup?.classList.add('startup-error');\n    startup?.setAttribute('data-error-context',context);",
+    "    if(startup){\n      startup.classList.remove('is-complete');\n      startup.style.pointerEvents='auto';\n      startup.style.opacity='1';\n      startup.classList.add('startup-error');\n    }\n    startup?.setAttribute('data-error-context',context);"
+  );
+  write(file, next);
+}
+
 function cleanupStaticQa() {
   const file = 'scripts/qa-static.js';
   const source = read(file);
-  if (source.includes('without legacy Codex source')) return;
-  let next = source.replace(
-    /check\('Dark, Light, Carbon, and Codex themes are exposed',[\s\S]*?check\('Theme CSS does not leak into Page iframes'/,
-    `check('Dark, Light, and Carbon themes are exposed without legacy Codex source',\n  ['dark', 'light', 'carbon'].every(theme => html.includes(\`data-pref-theme="\${theme}"\`)) &&\n  !html.includes('data-pref-theme="codex"') &&\n  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&\n  !css.includes('body[data-theme="codex"]'));\ncheck('Light is the default preference theme',\n  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&\n  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));\ncheck('Theme CSS does not leak into Page iframes'`
+  let next = source;
+  if (!next.includes('without legacy Codex source')) {
+    next = next.replace(
+      /check\('Dark, Light, Carbon, and Codex themes are exposed',[\s\S]*?check\('Theme CSS does not leak into Page iframes'/,
+      `check('Dark, Light, and Carbon themes are exposed without legacy Codex source',\n  ['dark', 'light', 'carbon'].every(theme => html.includes(\`data-pref-theme="\${theme}"\`)) &&\n  !html.includes('data-pref-theme="codex"') &&\n  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&\n  !css.includes('body[data-theme="codex"]'));\ncheck('Light is the default preference theme',\n  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&\n  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));\ncheck('Theme CSS does not leak into Page iframes'`
+    );
+    if (next === source) throw new Error(`${file}: failed to rewrite legacy Codex QA checks.`);
+  }
+
+  next = next.replace(
+    "checkIncludesAll('Startup status paints before renderer bootstrap', html,\n  ['id=\"appStartup\"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);",
+    "checkIncludesAll('Startup diagnostics are hidden by default while the main app enters immediately', html,\n  ['id=\"appStartup\"', 'class=\"app-startup is-complete\"', 'Starting Leaf', 'Preparing the editor and document views', 'setTimeout(loadRenderer, 80)']);"
   );
-  if (next === source) throw new Error(`${file}: failed to rewrite legacy Codex QA checks.`);
+  write(file, next);
+}
+
+function cleanupStartupAdversarialQa() {
+  const file = 'scripts/qa-startup-adversarial.js';
+  const source = read(file);
+  let next = source;
+  next = next.replace(
+    "    'id=\"appStartupMessage\"',\n    'setTimeout(loadRenderer, 80)'",
+    "    'id=\"appStartupMessage\"',\n    'class=\"app-startup is-complete\"',\n    'setTimeout(loadRenderer, 80)'"
+  );
+  next = next.replace(
+    "    \"startup.style.pointerEvents='auto'\",\n    \"'pointer-events:auto'\",\n    'window.electronAPI?.writeTextClipboard',\n    'fallbackCopyStartupDebugLog(text)',\n    \"startup.style.pointerEvents='none'\"",
+    "    \"if(!startup.classList.contains('is-complete'))startup.style.pointerEvents='auto'\",\n    \"if(startup&&!startup.classList.contains('is-complete'))\",\n    \"startup.classList.remove('is-complete')\",\n    \"'pointer-events:auto'\",\n    'window.electronAPI?.writeTextClipboard',\n    'fallbackCopyStartupDebugLog(text)',\n    \"startup.style.pointerEvents='none'\""
+  );
   write(file, next);
 }
 
@@ -97,7 +147,9 @@ function removeHistoricalCodexQa() {
 cleanupRenderer();
 cleanupIndex();
 cleanupStyles();
+cleanupSourceFidelityStartup();
 cleanupStaticQa();
+cleanupStartupAdversarialQa();
 cleanupThemeLightQa();
 removeHistoricalCodexQa();
-console.log('Roadmap source cleanup applied: Light default, Codex theme source removed.');
+console.log('Roadmap source cleanup applied: Light default, non-blocking startup diagnostics, Codex theme source removed.');
