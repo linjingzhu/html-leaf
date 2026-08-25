@@ -62,7 +62,9 @@
         break;
       case 'image':
         el=setCommon(doc.createElement('figure'),type,'Image');
-        el.innerHTML='<div style="min-height:96px;display:grid;place-items:center;border:1px dashed currentColor;opacity:.55">Image</div>';
+        el.setAttribute('data-hbe-image-widget','empty');
+        el.style.cssText='display:grid;gap:8px;margin:0;max-width:100%;width:min(100%,480px);';
+        el.innerHTML='<div data-hbe-image-frame="1" style="position:relative;display:grid;place-items:center;min-height:160px;aspect-ratio:16/9;overflow:hidden;border:1px dashed currentColor;border-radius:6px;background:rgba(127,127,127,.08);box-sizing:border-box"><span data-hbe-image-label="1" role="button" tabindex="0" style="display:inline-flex;align-items:center;justify-content:center;min-width:132px;min-height:36px;padding:8px 12px;border:1px solid currentColor;border-radius:4px;background:rgba(255,255,255,.72);color:inherit;cursor:pointer;font:13px/1.3 system-ui,-apple-system,Segoe UI,sans-serif;text-align:center">Click to insert image</span></div><figcaption data-hbe-image-caption="1" style="font-size:.875em;opacity:.72">Image caption</figcaption>';
         break;
       case 'video':
         el=setCommon(doc.createElement('figure'),type,'Video');
