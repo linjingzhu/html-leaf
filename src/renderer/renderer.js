@@ -22,6 +22,7 @@
     viewportSizeModal: $('#viewportSizeModal'), viewportWidthInput: $('#viewportWidthInput'),
     viewportHeightInput: $('#viewportHeightInput'),
     clearHtmlModal: $('#clearHtmlModal'), clearHtmlTarget: $('#clearHtmlTarget'),
+    cancelEditModal: $('#cancelEditModal'), cancelEditTarget: $('#cancelEditTarget'),
     replaceHtmlModal: $('#replaceHtmlModal'), replaceHtmlTarget: $('#replaceHtmlTarget'), replaceHtmlMessage: $('#replaceHtmlMessage'),
     replaceHtmlOpenNew: $('#replaceHtmlOpenNew'),
     jiraExportModal: $('#jiraExportModal'), jiraExportSource: $('#jiraExportSource'),
@@ -3577,6 +3578,8 @@
       button.setAttribute('aria-pressed',active?'true':'false');
       button.disabled=unavailable;
       button.textContent=active?'Apply':'Edit';
+      const cancelButton=document.querySelector(`[data-edit-cancel="${slot}"]`);
+      if(cancelButton)cancelButton.hidden=!active;
       const standardEditTitle=active?'Apply changes and leave Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
         ?'Edit is unavailable for this Page in the current View'
@@ -3649,6 +3652,44 @@
     });
   }
 
+  let editSessionSnapshot=null;
+  let pendingEditCancel=null;
+
+  function editSessionIsDirty(){
+    if(!editSessionSnapshot)return false;
+    const page=pageById(editSessionSnapshot.pageId);
+    return !!page&&String(page.source||'')!==editSessionSnapshot.source;
+  }
+
+  function restoreEditSessionSnapshot(){
+    const snapshot=editSessionSnapshot;
+    if(!snapshot)return;
+    const page=pageById(snapshot.pageId);
+    if(page&&String(page.source||'')!==snapshot.source){
+      pushUndo(page);
+      page.source=snapshot.source;
+      markJiraCheckStale();
+      persist();
+      renderVisibleFramesForPage(page.id,null);
+      if(state.mode==='code'&&state.views.codePage===page.id)loadCodePage();
+    }
+  }
+
+  function cancelHtmlEdit(slot){
+    if(!(htmlEditEnabled&&editOwnerSlot===slot))return;
+    if(editSessionIsDirty()){
+      pendingEditCancel=slot;
+      const page=pageById(editSessionSnapshot.pageId);
+      if(refs.cancelEditTarget)refs.cancelEditTarget.textContent=page?.name||page?.fileName||'';
+      refs.cancelEditModal?.classList.add('show');
+      setTimeout(()=>$('#cancelEditKeep')?.focus(),0);
+      return;
+    }
+    setHtmlEditEnabled(false,slot);
+  }
+
+  function closeCancelEditDialog(){refs.cancelEditModal?.classList.remove('show');pendingEditCancel=null;}
+
   function setHtmlEditEnabled(enabled,slot=editOwnerSlot){
     const affectedSlot=slot||editOwnerSlot;
     const affectedFrame=frameForEditSlot(affectedSlot);
@@ -3656,6 +3697,8 @@
     const rerenderDirect=isDirectSourceType(affectedPage)&&!!affectedFrame;
     if(!enabled&&affectedFrame?.dataset.directSourceToken)directSourceUndoTokens.delete(affectedFrame.dataset.directSourceToken);
     if(affectedSlot){
+      if(enabled&&affectedPage)editSessionSnapshot={slot:affectedSlot,pageId:affectedPage.id,source:String(affectedPage.source||'')};
+      else if(!enabled)editSessionSnapshot=null;
       flushPersist();
       document.dispatchEvent(new CustomEvent('leaf-edit-runtime-transition',{detail:{
         enabled:!!enabled,
@@ -6249,15 +6292,45 @@
     if(!['preview','editor'].includes(activeSlots.code)) activeSlots.code='preview';
   }
   function renderCrumbs(){
-    const page=pageById(currentActivePageId());if(!page){refs.crumbs.textContent='No page selected';return;}
-    const x=nodeById(page.id);const names=[page.name];let parent=page.parentId;while(parent){const p=x.project.nodes.find(n=>n.id===parent);if(!p)break;names.unshift(p.name);parent=p.parentId;}names.unshift(x.project.name);refs.crumbs.textContent=names.join(' / ');
+    const name=state.projectName||'Leaf Project';
+    refs.crumbs.innerHTML=`<button type="button" class="crumb crumb-project" data-crumb-kind="project">${esc(name)}</button>`;
   }
+
+  refs.crumbs?.addEventListener('click',event=>{
+    if(!event.target.closest?.('.crumb-project'))return;
+    withUnsavedInspectorGuard(()=>{
+      selectedTreeNode=null;
+      clearInspector();
+      renderTree();
+      renderCrumbs();
+      refs.tree?.focus({preventScroll:true});
+      persist();
+    });
+  });
   function renderAll(){
     repairViews();
     renderViewMode();
     updateClearButtons();
     $('#workspaceTitle').textContent=`${state.projectName||'Leaf Project'} / ${activeDocument()?.name||'No Document'}`;
   }
+
+  $$('[data-edit-cancel]').forEach(button=>button.addEventListener('click',event=>{
+    event.preventDefault();event.stopPropagation();
+    cancelHtmlEdit(button.dataset.editCancel);
+  }));
+  $('#cancelEditKeep')?.addEventListener('click',closeCancelEditDialog);
+  $('#cancelEditConfirm')?.addEventListener('click',()=>{
+    const slot=pendingEditCancel;
+    closeCancelEditDialog();
+    if(!slot)return;
+    restoreEditSessionSnapshot();
+    setHtmlEditEnabled(false,slot);
+    showToast('Edits discarded');
+  });
+  refs.cancelEditModal?.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.cancelEditModal,event);
+    if(event.key==='Escape')closeCancelEditDialog();
+  });
 
   $('#quickAddDocument').onclick=newDocument;
   clearInspector();

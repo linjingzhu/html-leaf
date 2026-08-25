@@ -335,6 +335,16 @@ body.is-resizing .resize-shield{display:block}
 .seg button:hover:not(.active){color:var(--text-secondary);background:transparent}
 .seg button.active{color:var(--accent);background:transparent}
 .seg button:focus-visible{outline:1px solid var(--focus-ring);outline-offset:1px}
+/* Crumbs read as text but behave as buttons. */
+.crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.crumbs .crumb{
+  padding:1px 3px;border:0;border-radius:3px;background:transparent;
+  color:inherit;font:inherit;cursor:pointer
+}
+.crumbs .crumb:hover{color:var(--foreground);text-decoration:underline}
+.crumbs .crumb-project{color:var(--foreground);font-weight:600}
+.crumbs .crumb:focus-visible{outline:1px solid var(--focus-ring);outline-offset:1px}
+.crumbs .crumb-sep{color:var(--muted);user-select:none}
 .viewport-host{min-width:0;min-height:0;max-width:100%;position:relative;overflow:hidden;contain:layout paint;background:var(--canvas);padding:var(--view-outline-gutter)}
 .viewport-mode{min-width:0;min-height:0;max-width:100%;overflow:hidden;display:none!important}
 .viewport-mode.is-active.single-view{display:flex!important}
@@ -467,6 +477,13 @@ iframe{width:100%;height:100%;border:0;background:var(--canvas);color-scheme:dar
   box-shadow:0 0 0 1px rgba(239,77,77,.3)
 }
 .viewport-edit-toggle:disabled{opacity:.38;cursor:default}
+.viewport-edit-cancel{
+  height:24px;min-width:26px;padding:0 6px;border:1px solid var(--border);border-radius:4px;
+  background:color-mix(in srgb,var(--error) 20%,var(--panel-secondary));
+  color:color-mix(in srgb,var(--error) 88%,white);font-size:11px;font-weight:700;cursor:pointer
+}
+.viewport-edit-cancel:hover{background:color-mix(in srgb,var(--error) 32%,var(--panel-secondary));color:white}
+.viewport-edit-cancel[hidden]{display:none}
 .document-fullscreen-toggle{
   width:26px;height:24px;padding:0;display:grid;place-items:center;border:1px solid var(--border);
   border-radius:4px;background:transparent;color:var(--muted);font-size:14px
