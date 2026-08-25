@@ -72,11 +72,12 @@ includesAll('macOS workflow accepts the same explicit build_version override', m
   'LEAF_BUILD_NUMBER: ${{ github.run_number }}'
 ]);
 
-includesAll('Pull-request verification remains non-publishing', windows, [
+includesAll('Pull-request verification still uploads non-publishing build artifacts', windows, [
   'pull_request:',
-  '--publish never',
+  'npm run dist:win',
   'Upload build artifacts'
 ]);
+check('Windows dist build disables electron-builder auto-publish', pkg.scripts?.['dist:win']?.includes('--publish=never'));
 
 console.log('\nLeaf release version QA');
 console.log('=======================');

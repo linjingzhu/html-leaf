@@ -20,7 +20,7 @@
     "qa:theme-light": "node scripts/qa-theme-light-v0516.js",
     "version:build": "node scripts/bump-build-version.js",
     "icons:build": "python scripts/build-icons.py build/icon.png .",
-    "dist:win": "npm run version:build && electron-builder --win nsis zip --x64 --publish never",
+    "dist:win": "npm run version:build && electron-builder --win nsis zip --x64 --publish=never",
     "dist:mac": "node scripts/build-macos-sequential.js",
     "dist:mac:arm64": "npm run version:build && electron-builder --mac dmg zip --arm64 --publish never",
     "dist:mac:x64": "npm run version:build && electron-builder --mac dmg zip --x64 --publish never"
