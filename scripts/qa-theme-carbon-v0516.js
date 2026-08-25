@@ -24,7 +24,7 @@ check('Carbon uses tighter industrial geometry',
 check('Carbon keeps semantic status colors distinct',
   css.includes('--success:#9eaaa2')&&css.includes('--warning:#b5aa98')&&css.includes('--error:#cf7478'));
 check('Carbon theme is selected and persisted through the shared theme handler',
-  js.includes('state.preferences.theme=button.dataset.prefTheme')&&js.includes('applyPreferences(); persist(); closeAllMenus()'));
+  js.includes("state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light'")&&js.includes('applyPreferences(); persist(); closeAllMenus()'));
 check('Carbon affects app chrome without styling document iframe content',
   css.includes('body[data-theme="carbon"] .menubar')&&!css.includes('body[data-theme="carbon"] iframe'));
 check('Dark and Light theme definitions remain intact',

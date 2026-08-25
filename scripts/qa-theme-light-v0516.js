@@ -34,11 +34,17 @@ check('Theme policy makes Light the effective default body theme',
   themePolicy.includes('document.body.dataset.theme = nextTheme') &&
   themePolicy.includes('syncThemeChecks(nextTheme)'));
 
-check('Renderer theme writes are guarded by the policy extension',
+// The policy extension no longer intercepts localStorage.setItem: re-parsing the
+// whole project payload on every write cost more than the clamp it enforced.
+// The same guarantee now comes from clamping both renderer write paths and
+// normalizing any value already on disk once at startup.
+check('Renderer theme writes are clamped on every path that reaches stored state',
   js.includes("state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light'") &&
   !js.includes('state.preferences.theme=button.dataset.prefTheme') &&
-  themePolicy.includes('patchLocalStorageWrites') &&
-  themePolicy.includes('localStorage.setItem = (key, value) =>'));
+  js.includes("s.preferences.theme=['dark','light','carbon'].includes(s.preferences.theme)?s.preferences.theme:'light'") &&
+  themePolicy.includes('function patchStoredStateOnce()') &&
+  themePolicy.includes('patchStoredStateOnce();') &&
+  !themePolicy.includes('localStorage.setItem = (key, value) =>'));
 
 check('Light theme CSS is present and isolated from Page iframe content',
   css.includes('body[data-theme="light"]') &&
