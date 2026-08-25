@@ -34,7 +34,7 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
     'setTimeout(loadRenderer, 80)'
   ]),
   assertIncludes('visible debug panel is created by the early fidelity bundle', fidelity, [
-    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5'",
+    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v6'",
     "panel.id='appStartupDebug'",
     'startup.appendChild(panel)',
     'function recordStartupDebug(message,detail)',
@@ -51,9 +51,11 @@ addPass('2. Startup debug actions remain clickable without blocking the rendered
     "resetButton.dataset.leafStartupAction='reset'",
     "copyButton.dataset.leafStartupAction='copy'"
   ]),
-  assertIncludes('startup buttons force pointer events only while the overlay is visible', fidelity, [
-    "if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
-    "startup.style.pointerEvents='auto'",
+  assertIncludes('startup overlay captures pointer input only when visible or errored', fidelity, [
+    'function startupOverlayShouldCapturePointer(startup)',
+    "return !!startup&&(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
+    'if(startupOverlayShouldCapturePointer(startup))',
+    "startup.removeAttribute('aria-hidden')",
     "'pointer-events:auto'",
     'window.electronAPI?.writeTextClipboard',
     'fallbackCopyStartupDebugLog(text)'

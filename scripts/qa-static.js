@@ -150,8 +150,10 @@ checkIncludesAll('Startup status paints before renderer bootstrap', html,
 checkIncludesAll('Startup status closes deterministically', renderer,
   ["performance.measure('leaf-renderer-bootstrap'", "document.documentElement.dataset.leafReady='true'", "startup?.classList.add('is-complete')"]);
 checkIncludesAll('Startup diagnostics cannot leave an invisible pointer-blocking overlay', fidelity,
-  ["const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5'",
-   "if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
+  ["const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v6'",
+   'function startupOverlayShouldCapturePointer(startup)',
+   "return !!startup&&(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'))",
+   'if(startupOverlayShouldCapturePointer(startup))',
    'function releaseStartupPointerBarrier(',
    "startup.setAttribute('aria-hidden','true')",
    "releaseStartupPointerBarrier('renderer ready')"]);

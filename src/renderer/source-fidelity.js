@@ -2,7 +2,7 @@
   'use strict';
   const EDITOR_CLASS_NAMES=new Set(['table-cell-selected','viewport-object-drop-target']);
   const STARTUP_STATE_KEY='leaf-v0-5-16-state';
-  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v5';
+  const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v6';
   const STARTUP_DEBUG_LIMIT=120;
   const RENDERER_BOOTSTRAP_RETRY_MS=120;
   const RENDERER_BOOTSTRAP_MAX_WAIT_MS=2200;
@@ -36,10 +36,14 @@
     catch{return String(value);}
   }
 
+  function startupOverlayShouldCapturePointer(startup){
+    return !!startup&&(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error'));
+  }
+
   function ensureStartupDebugPanel(){
     const startup=document.getElementById('appStartup');
     if(!startup)return null;
-    if(!startup.classList.contains('is-complete')||startup.classList.contains('startup-error')){
+    if(startupOverlayShouldCapturePointer(startup)){
       startup.style.pointerEvents='auto';
     }
     let panel=document.getElementById('appStartupDebug');
@@ -225,8 +229,10 @@
     if(!copy||document.getElementById('leafStartupActions'))return;
     const startup=document.getElementById('appStartup');
     if(startup){
-      startup.style.pointerEvents='auto';
-      startup.removeAttribute('aria-hidden');
+      if(startupOverlayShouldCapturePointer(startup)){
+        startup.style.pointerEvents='auto';
+        startup.removeAttribute('aria-hidden');
+      }
       startup.style.cursor='default';
     }
     const actions=document.createElement('div');
