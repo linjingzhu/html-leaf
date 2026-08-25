@@ -2,7 +2,8 @@
   'use strict';
 
   const STATE_KEY = 'leaf-v0-5-16-state';
-  const ALLOWED_THEMES = new Set(['dark', 'light', 'carbon']);
+  const ALLOWED_THEMES = new Set(['dark', 'light']);
+  const RETIRED_THEMES = ['codex', 'carbon'];
 
   function normalizeTheme(theme) {
     return ALLOWED_THEMES.has(theme) ? theme : 'light';
@@ -31,15 +32,19 @@
       const current = localStorage.getItem(STATE_KEY);
       if (!current) return;
       // Escaped page sources cannot produce this unescaped key/value pair.
-      if (/"theme":"(?:dark|light|carbon)"/.test(current)) return;
+      if (/"theme":"(?:dark|light)"/.test(current)) return;
       const normalized = normalizeSerializedState(current);
       if (normalized !== current) localStorage.setItem(STATE_KEY, normalized);
     } catch {}
   }
 
-  function removeCodexControls() {
-    document.querySelectorAll('[data-pref-theme="codex"]').forEach(control => control.remove());
-    document.querySelectorAll('.theme-codex').forEach(mark => mark.remove());
+  // A build that retired a theme can still meet a menu rendered by an older
+  // shell, so the controls are stripped rather than merely ignored.
+  function removeRetiredThemeControls() {
+    RETIRED_THEMES.forEach(theme => {
+      document.querySelectorAll(`[data-pref-theme="${theme}"]`).forEach(control => control.remove());
+      document.querySelectorAll(`.theme-${theme}`).forEach(mark => mark.remove());
+    });
   }
 
   function setThemeCheck(selector, checked) {
@@ -52,11 +57,10 @@
   function syncThemeChecks(theme) {
     setThemeCheck('.theme-dark', theme === 'dark');
     setThemeCheck('.theme-light', theme === 'light');
-    setThemeCheck('.theme-carbon', theme === 'carbon');
   }
 
   function enforceThemePolicy() {
-    removeCodexControls();
+    removeRetiredThemeControls();
     if (!document.body) return;
     const nextTheme = normalizeTheme(document.body.dataset.theme);
     if (document.body.dataset.theme !== nextTheme) document.body.dataset.theme = nextTheme;
@@ -67,8 +71,8 @@
     patchStoredStateOnce();
     enforceThemePolicy();
     document.addEventListener('click', event => {
-      const codexThemeControl = event.target.closest?.('[data-pref-theme="codex"]');
-      if (!codexThemeControl) return;
+      const retiredThemeControl = RETIRED_THEMES.some(theme => event.target.closest?.(`[data-pref-theme="${theme}"]`));
+      if (!retiredThemeControl) return;
       event.preventDefault();
       event.stopPropagation();
       enforceThemePolicy();

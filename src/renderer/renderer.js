@@ -210,7 +210,7 @@
     s.projectFilePath=typeof s.projectFilePath==='string'?s.projectFilePath:(typeof s.documentFilePath==='string'?s.documentFilePath:null);
     s.mode=['preview','split','code'].includes(s.mode) ? s.mode : 'preview';
     s.preferences={...fallback.preferences,...(s.preferences||{})};
-    s.preferences.theme=['dark','light','carbon'].includes(s.preferences.theme)?s.preferences.theme:'light';
+    s.preferences.theme=['dark','light'].includes(s.preferences.theme)?s.preferences.theme:'light';
     s.layout={
       splitRatio:Number.isFinite(Number(s.layout?.splitRatio)) ? Math.min(.85,Math.max(.15,Number(s.layout.splitRatio))) : .5,
       codeRatio:Number.isFinite(Number(s.layout?.codeRatio)) ? Math.min(.85,Math.max(.15,Number(s.layout.codeRatio))) : .5,
@@ -355,7 +355,6 @@
     $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
-    $$('.theme-carbon').forEach(e=>e.textContent=state.preferences.theme==='carbon'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -463,7 +462,7 @@
   });
   $$('[data-pref-theme]').forEach(button=>{
     button.addEventListener('click',()=>{
-      state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';
+      state.preferences.theme=['dark','light'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';
       applyPreferences(); persist(); closeAllMenus();
     });
   });

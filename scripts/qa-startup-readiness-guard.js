@@ -46,8 +46,7 @@ function probeThemePolicyEventLoop() {
   };
   const marks = {
     '.theme-dark': [mark('')],
-    '.theme-light': [mark('✓')],
-    '.theme-carbon': [mark('')]
+    '.theme-light': [mark('✓')]
   };
   const document = {
     body: { dataset: {} },

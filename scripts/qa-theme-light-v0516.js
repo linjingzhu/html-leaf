@@ -16,18 +16,18 @@ function check(name, condition) {
 }
 
 check('Preference exposes supported themes in the source shell',
-  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)));
+  ['dark', 'light'].every(theme => html.includes(`data-pref-theme="${theme}"`)));
 
 check('Theme policy normalizes unsupported or legacy themes to Light',
-  themePolicy.includes("const ALLOWED_THEMES = new Set(['dark', 'light', 'carbon'])") &&
+  themePolicy.includes("const ALLOWED_THEMES = new Set(['dark', 'light'])") &&
   themePolicy.includes("return ALLOWED_THEMES.has(theme) ? theme : 'light'") &&
   themePolicy.includes('normalizeSerializedState'));
 
-check('Theme policy removes legacy Codex controls from the live Preference menu',
-  themePolicy.includes('function removeCodexControls()') &&
-  themePolicy.includes('[data-pref-theme="codex"]') &&
-  themePolicy.includes('.theme-codex') &&
-  themePolicy.includes('control.remove()'));
+check('Theme policy removes retired theme controls from the live Preference menu',
+  themePolicy.includes('function removeRetiredThemeControls()') &&
+  themePolicy.includes("const RETIRED_THEMES = ['codex', 'carbon']") &&
+  themePolicy.includes('control.remove()') &&
+  themePolicy.includes('mark.remove()'));
 
 check('Theme policy makes Light the effective default body theme',
   themePolicy.includes('const nextTheme = normalizeTheme(document.body.dataset.theme)') &&
@@ -39,9 +39,9 @@ check('Theme policy makes Light the effective default body theme',
 // The same guarantee now comes from clamping both renderer write paths and
 // normalizing any value already on disk once at startup.
 check('Renderer theme writes are clamped on every path that reaches stored state',
-  js.includes("state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light'") &&
+  js.includes("state.preferences.theme=['dark','light'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light'") &&
   !js.includes('state.preferences.theme=button.dataset.prefTheme') &&
-  js.includes("s.preferences.theme=['dark','light','carbon'].includes(s.preferences.theme)?s.preferences.theme:'light'") &&
+  js.includes("s.preferences.theme=['dark','light'].includes(s.preferences.theme)?s.preferences.theme:'light'") &&
   themePolicy.includes('function patchStoredStateOnce()') &&
   themePolicy.includes('patchStoredStateOnce();') &&
   !themePolicy.includes('localStorage.setItem = (key, value) =>'));
@@ -50,10 +50,10 @@ check('Light theme CSS is present and isolated from Page iframe content',
   css.includes('body[data-theme="light"]') &&
   !css.includes('body[data-theme="light"] iframe'));
 
-check('Carbon remains available as the advanced dark appearance',
-  html.includes('data-pref-theme="carbon"') &&
-  css.includes('body[data-theme="carbon"]') &&
-  !css.includes('body[data-theme="carbon"] iframe'));
+check('Carbon is fully retired from the shell, styles and stored state',
+  !html.includes('data-pref-theme="carbon"') && !html.includes('theme-carbon') &&
+  !css.includes('body[data-theme="carbon"]') && !js.includes("'carbon'") &&
+  themePolicy.includes("RETIRED_THEMES = ['codex', 'carbon']"));
 
 check('Light theme source contains no Codex option or CSS',
   !html.includes('data-pref-theme="codex"') && !js.includes("theme:'codex'") &&

@@ -215,16 +215,16 @@ checkIncludesAll('Startup diagnostics cannot leave an invisible pointer-blocking
 
 const semanticTokens = ['--background', '--foreground', '--panel', '--panel-secondary', '--border', '--border-subtle', '--muted', '--accent', '--selection', '--focus-ring', '--success', '--warning', '--error'];
 check('Semantic design tokens present', semanticTokens.every(token => css.includes(token)), semanticTokens.join(', '));
-check('Dark, Light, and Carbon themes are exposed without legacy Codex source',
-  ['dark', 'light', 'carbon'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
-  !html.includes('data-pref-theme="codex"') &&
-  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&
-  !css.includes('body[data-theme="codex"]'));
+check('Dark and Light are the only exposed themes',
+  ['dark', 'light'].every(theme => html.includes(`data-pref-theme="${theme}"`)) &&
+  ['codex', 'carbon'].every(theme => !html.includes(`data-pref-theme="${theme}"`)) &&
+  css.includes(':root{') && css.includes('body[data-theme="light"]') &&
+  ['codex', 'carbon'].every(theme => !css.includes(`body[data-theme="${theme}"]`)));
 check('Light is the default preference theme',
   renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&
   !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));
 check('Theme CSS does not leak into Page iframes',
-  !css.includes('body[data-theme="carbon"] iframe') && !css.includes('body[data-theme="codex"] iframe'));
+  !/body\[data-theme="[^"]+"\][^{]*iframe/.test(css));
 
 checkIncludesAll('Zoom controls live outside the scrolling canvas', renderer,
   ["layer.className='viewport-floating-controls'", 'layer.append(control,fit);pane?.appendChild(layer)']);
