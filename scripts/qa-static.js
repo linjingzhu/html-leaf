@@ -166,8 +166,9 @@ const workflowFiles = fs.readdirSync(path.join(root, '.github', 'workflows')).fi
 // `qa` needs Electron and a display, so CI cannot run it; every other qa:* script must be covered.
 const runnableQaScripts = Object.keys(pkg.scripts).filter(name => name.startsWith('qa:')).sort();
 const workflowQaSuites = workflowFiles.flatMap(name => {
-  const text = read(path.join('.github', 'workflows', name));
-  return [...text.matchAll(/- name: [^\n]*QA[^\n]*\n\s*run: \|\n((?:\s*npm run [^\n]*\n)+)/g)]
+  // Windows runners check out with autocrlf, so normalize before matching.
+  const text = read(path.join('.github', 'workflows', name)).replace(/\r\n/g, '\n');
+  return [...text.matchAll(/- name: [^\n]*QA[^\n]*\n\s*run: \|\n((?:[ \t]*npm run [^\n]*\n)+)/g)]
     .map(match => ({
       workflow: name,
       suites: [...match[1].matchAll(/npm run (qa:[\w:-]+)/g)].map(entry => entry[1]).sort().join(' ')
