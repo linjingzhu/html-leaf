@@ -11,12 +11,9 @@ function write(file, value) {
   fs.writeFileSync(path.join(root, file), value);
 }
 
-function replaceAllOrThrow(file, source, replacements) {
+function replaceAllIfPresent(source, replacements) {
   let next = source;
   for (const [from, to] of replacements) {
-    if (!next.includes(from)) {
-      throw new Error(`${file}: expected source fragment not found: ${from}`);
-    }
     next = next.split(from).join(to);
   }
   return next;
@@ -39,7 +36,7 @@ function removeCodexPreferenceButton(html) {
 function cleanupRenderer() {
   const file = 'src/renderer/renderer.js';
   const source = read(file);
-  let next = replaceAllOrThrow(file, source, [
+  let next = replaceAllIfPresent(source, [
     ["theme:'codex'", "theme:'light'"],
     ["state.preferences.theme || 'codex'", "state.preferences.theme || 'light'"]
   ]);
@@ -48,6 +45,9 @@ function cleanupRenderer() {
     'state.preferences.theme=button.dataset.prefTheme;',
     "state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light';"
   );
+  if (next.includes("theme:'codex'") || next.includes("state.preferences.theme || 'codex'")) {
+    throw new Error(`${file}: legacy Codex theme defaults remain after cleanup.`);
+  }
   write(file, next);
 }
 
@@ -68,6 +68,7 @@ function cleanupStyles() {
 function cleanupStaticQa() {
   const file = 'scripts/qa-static.js';
   const source = read(file);
+  if (source.includes('without legacy Codex source')) return;
   let next = source.replace(
     /check\('Dark, Light, Carbon, and Codex themes are exposed',[\s\S]*?check\('Theme CSS does not leak into Page iframes'/,
     `check('Dark, Light, and Carbon themes are exposed without legacy Codex source',\n  ['dark', 'light', 'carbon'].every(theme => html.includes(\`data-pref-theme="\${theme}"\`)) &&\n  !html.includes('data-pref-theme="codex"') &&\n  css.includes(':root{') && css.includes('body[data-theme="light"]') && css.includes('body[data-theme="carbon"]') &&\n  !css.includes('body[data-theme="codex"]'));\ncheck('Light is the default preference theme',\n  renderer.includes("scale:1, theme:'light'") && renderer.includes("state.preferences.theme || 'light'") &&\n  !renderer.includes("theme:'codex'") && !renderer.includes("state.preferences.theme || 'codex'"));\ncheck('Theme CSS does not leak into Page iframes'`
@@ -81,7 +82,9 @@ function cleanupThemeLightQa() {
   const source = read(file);
   if (source.includes('Light theme source contains no Codex option or CSS')) return;
   const insertion = `\ncheck('Light theme source contains no Codex option or CSS',\n  !html.includes('data-pref-theme="codex"') && !js.includes("theme:'codex'") &&\n  !js.includes("state.preferences.theme || 'codex'") && !css.includes('body[data-theme="codex"]'));\n`;
-  write(file, source.replace('\nconsole.log(`Leaf Light theme policy QA: ${passed}/7 PASS`);', `${insertion}\nconsole.log(\`Leaf Light theme policy QA: \${passed}/8 PASS\`);`));
+  const next = source.replace('\nconsole.log(`Leaf Light theme policy QA: ${passed}/7 PASS`);', `${insertion}\nconsole.log(\`Leaf Light theme policy QA: \${passed}/8 PASS\`);`);
+  if (next === source) throw new Error(`${file}: failed to add Light source cleanup assertion.`);
+  write(file, next);
 }
 
 function removeHistoricalCodexQa() {
