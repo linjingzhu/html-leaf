@@ -34,7 +34,7 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
     'setTimeout(loadRenderer, 80)'
   ]),
   assertIncludes('visible debug panel is created by the early fidelity bundle', fidelity, [
-    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v2'",
+    "const STARTUP_DEBUG_VERSION='source-fidelity-startup-debug-v3'",
     "panel.id='appStartupDebug'",
     'startup.appendChild(panel)',
     'function recordStartupDebug(message,detail)',
@@ -42,54 +42,55 @@ addPass('1. Startup screen remains diagnosable before renderer.js executes', [
   ])
 ]);
 
-addPass('2. Old install, missing preload, and runtime mismatch evidence is visible', [
-  assertIncludes('preload exposes a narrow local startup diagnostic surface', preload, [
-    'function startupInfo()',
-    "diagnostics: 'preload-startup-info-v1'",
-    'platform: process.platform',
-    'electron: process.versions.electron',
-    'startupInfo: () => Promise.resolve(startupInfo())'
+addPass('2. Startup debug actions remain clickable even while loading is stuck', [
+  assertIncludes('startup actions use capture-level event handling', fidelity, [
+    'function installStartupActionCapture()',
+    "document.addEventListener('pointerup',handleStartupActionEvent,true)",
+    "document.addEventListener('click',handleStartupActionEvent,true)",
+    "continueButton.dataset.leafStartupAction='continue'",
+    "resetButton.dataset.leafStartupAction='reset'",
+    "copyButton.dataset.leafStartupAction='copy'"
   ]),
-  assertIncludes('startup screen records bridge and runtime evidence', fidelity, [
-    "recordStartupDebug('preload bridge probe'",
-    "recordStartupDebug('app startup info'",
-    "recordStartupDebug('runtime config'",
-    "copyButton.textContent='Copy debug'",
-    "copyButton.addEventListener('click',copyStartupDebugLog)"
+  assertIncludes('startup buttons force pointer events and expose Electron clipboard fallback', fidelity, [
+    "startup.style.pointerEvents='auto'",
+    "'pointer-events:auto'",
+    'window.electronAPI?.writeTextClipboard',
+    'fallbackCopyStartupDebugLog(text)',
+    "startup.style.pointerEvents='none'"
   ])
 ]);
 
-addPass('3. renderer.js load failures are captured without needing DevTools', [
+addPass('3. renderer.js load failures and missing loader progress are recoverable', [
   assertIncludes('renderer script observer is installed and watches future script nodes', fidelity, [
     'function installRendererScriptObserver()',
     'const observer=new MutationObserver',
     "observer.observe(document.documentElement,{childList:true,subtree:true})",
     'function observeRendererScript(script)',
-    '/renderer\\.js(?:$|[?#])/i.test(src)'
+    'function hasRendererBootstrapScript()'
   ]),
-  assertIncludes('renderer script success and failure events reach the visible log', fidelity, [
-    "recordStartupDebug('renderer.js script element detected'",
-    "recordStartupDebug('renderer.js load event fired')",
-    "reportStartupError('renderer.js failed to load.','renderer-load')",
-    "target?.tagName==='SCRIPT'"
+  assertIncludes('source-fidelity can recover when the bottom inline renderer loader is never reached', fidelity, [
+    'function ensureRendererBootstrapRecovery()',
+    'function loadRendererScriptFromStartupRecovery',
+    "script.dataset.leafRendererRecovery=reason",
+    "recordStartupDebug('renderer startup recovery appended renderer.js'",
+    'RENDERER_BOOTSTRAP_MAX_WAIT_MS',
+    "duplicate renderer.js script removed after startup recovery"
   ])
 ]);
 
-addPass('4. Ready never arrives still leaves a readable failure trail', [
-  assertIncludes('LeafStartup reportError now writes through the visible logger', fidelity, [
-    'reportError:reportStartupError',
-    'clearLegacyStateKeys,',
-    'record:recordStartupDebug',
-    'getDebugLog:()=>Array.from(window.__leafStartupDebugLog||[])'
+addPass('4. Renderer recovery preserves dependencies and does not wait only on DOMContentLoaded', [
+  assertIncludes('renderer recovery loads startup dependencies before renderer.js', fidelity, [
+    "{src:'./widget-registry.js',global:'WidgetRegistry'}",
+    "{src:'./jira-compat.js',global:'JiraCompatibility'}",
+    "{src:'./semantic-document.js',global:'SemanticDocument'}",
+    "{src:'./jira-export.js',global:'JiraExport'}",
+    'for(const dep of RENDERER_BOOTSTRAP_DEPENDENCIES)',
+    'await loadStartupDependencyScript(dep)'
   ]),
-  assertTrue('older non-logging reportError is not preserved as the active handler',
-    !fidelity.includes('reportError:previous.reportError||reportStartupError'),
-    'LeafStartup.reportError must not bypass the visible debug log.'),
-  assertIncludes('timeouts are recorded even if an earlier startup error already exists', fidelity, [
-    "if(existing&&context==='timeout')",
-    'existing ${existing.context}: ${existing.detail}',
-    "reportStartupError('Renderer did not signal ready within 12 seconds.','timeout')",
-    "recordStartupDebug('extensions still waiting for renderer readiness after 2.5s')",
+  assertIncludes('extensions install immediately when the app shell is already parsed', fidelity, [
+    'function canInstallExtensionsImmediately()',
+    "document.readyState==='loading'&&!canInstallExtensionsImmediately()",
+    "recordStartupDebug('document still loading; app shell parsed; installing extensions before DOMContentLoaded')",
     "recordStartupDebug('renderer ready marker observed')"
   ])
 ]);

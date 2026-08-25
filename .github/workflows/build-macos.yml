@@ -7,6 +7,10 @@ on:
         description: "Publish the built artifacts to a downloadable GitHub prerelease"
         type: boolean
         default: true
+      build_version:
+        description: "Optional exact semver to use for this platform build"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -26,15 +30,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Apply roadmap source cleanup
+        run: npm run source:cleanup
+
       - name: Install dependencies
         run: npm ci
 
       - name: Run static QA
-        run: npm run qa:static && npm run qa:scripted-html-edit && npm run qa:theme-light
+        run: |
+          npm run source:cleanup
+          npm run qa:static
+          npm run qa:scripted-html-edit
+          npm run qa:html-canvas
+          npm run qa:release-version
+          npm run qa:theme-light
 
       - name: Build macOS dmg + zip
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          LEAF_BUILD_VERSION: ${{ inputs.build_version }}
           LEAF_BUILD_NUMBER: ${{ github.run_number }}
         run: npm run dist:mac
 

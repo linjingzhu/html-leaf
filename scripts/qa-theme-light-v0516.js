@@ -35,7 +35,8 @@ check('Theme policy makes Light the effective default body theme',
   themePolicy.includes('syncThemeChecks(nextTheme)'));
 
 check('Renderer theme writes are guarded by the policy extension',
-  js.includes('state.preferences.theme=button.dataset.prefTheme') &&
+  js.includes("state.preferences.theme=['dark','light','carbon'].includes(button.dataset.prefTheme)?button.dataset.prefTheme:'light'") &&
+  !js.includes('state.preferences.theme=button.dataset.prefTheme') &&
   themePolicy.includes('patchLocalStorageWrites') &&
   themePolicy.includes('localStorage.setItem = (key, value) =>'));
 
@@ -48,4 +49,8 @@ check('Carbon remains available as the advanced dark appearance',
   css.includes('body[data-theme="carbon"]') &&
   !css.includes('body[data-theme="carbon"] iframe'));
 
-console.log(`Leaf Light theme policy QA: ${passed}/7 PASS`);
+check('Light theme source contains no Codex option or CSS',
+  !html.includes('data-pref-theme="codex"') && !js.includes("theme:'codex'") &&
+  !js.includes("state.preferences.theme || 'codex'") && !css.includes('body[data-theme="codex"]'));
+
+console.log(`Leaf Light theme policy QA: ${passed}/8 PASS`);

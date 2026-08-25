@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-<div class="app-startup" id="appStartup" role="status" aria-live="polite">
+<div class="app-startup is-complete" id="appStartup" role="status" aria-live="polite">
   <div class="app-startup-mark" aria-hidden="true">L</div>
   <div class="app-startup-copy">
     <strong>Starting Leaf</strong>
@@ -91,6 +91,8 @@
       const message = document.getElementById('appStartupMessage');
       if (message) message.textContent = `Startup issue (${context}): ${detail}`;
       const startup = document.getElementById('appStartup');
+      startup?.classList.remove('is-complete');
+      if (startup) startup.style.pointerEvents = 'auto';
       startup?.classList.add('startup-error');
       startup?.setAttribute('data-error-context', context);
       startup?.setAttribute('title', detail);
@@ -196,9 +198,8 @@
           <div class="separator"></div>
           <div class="menu-label">Appearance</div>
           <button data-pref-theme="dark">Dark <span class="check theme-dark"></span></button>
-          <button data-pref-theme="light">Light <span class="check theme-light"></span></button>
-          <button data-pref-theme="carbon">Carbon <span class="check theme-carbon"></span></button>
-          <button data-pref-theme="codex">Codex <span class="check theme-codex">✓</span></button>
+          <button data-pref-theme="light">Light <span class="check theme-light">✓</span></button>
+          <button data-pref-theme="carbon">Carbon <span class="check theme-carbon"></span></button>
         </div>
       </div>
 
