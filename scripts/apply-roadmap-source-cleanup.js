@@ -11,6 +11,10 @@ function write(file, value) {
   fs.writeFileSync(path.join(root, file), value);
 }
 
+function hasNormalized(source, fragment) {
+  return source.replace(/\r\n/g, '\n').includes(fragment.replace(/\r\n/g, '\n'));
+}
+
 function replaceAllIfPresent(source, replacements) {
   let next = source;
   for (const [from, to] of replacements) {
@@ -21,7 +25,7 @@ function replaceAllIfPresent(source, replacements) {
 
 function replaceRequired(source, from, to, file, reason) {
   if (!source.includes(from)) {
-    if (source.includes(to)) return source;
+    if (hasNormalized(source, to)) return source;
     throw new Error(`${file}: expected source fragment not found for ${reason}.`);
   }
   return source.split(from).join(to);
@@ -29,7 +33,7 @@ function replaceRequired(source, from, to, file, reason) {
 
 function replaceRequiredPattern(source, pattern, to, file, reason) {
   if (!pattern.test(source)) {
-    if (source.includes(to)) return source;
+    if (hasNormalized(source, to)) return source;
     throw new Error(`${file}: expected source pattern not found for ${reason}.`);
   }
   return source.replace(pattern, to);
