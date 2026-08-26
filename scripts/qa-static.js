@@ -344,6 +344,34 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Windows artifacts ------------------------------------------------------
+// Both Windows targets ship: the NSIS installer and the portable zip. The
+// installer's assets are referenced by path from package.json, so a missing
+// file here fails the build on the runner rather than here.
+const winTargets = JSON.stringify(pkg.build?.win?.target);
+check('Windows builds both an installer and a portable zip',
+  winTargets === '["nsis","zip"]' && /nsis/.test(pkg.scripts?.['dist:win'] || ''),
+  `target=${winTargets} dist:win=${pkg.scripts?.['dist:win'] || ''}`);
+check('The installer keeps its Leaf-branded name and shortcut',
+  pkg.build?.nsis?.artifactName?.startsWith('Leaf-Setup-')
+  && pkg.build?.nsis?.shortcutName === 'Leaf'
+  && pkg.build?.nsis?.oneClick === false
+  && pkg.build?.nsis?.allowToChangeInstallationDirectory === true);
+const nsisAssets = ['include', 'installerIcon', 'installerHeaderIcon', 'uninstallerIcon']
+  .map(key => pkg.build?.nsis?.[key])
+  .filter(Boolean);
+check('Every installer asset referenced by package.json exists',
+  nsisAssets.length === 4 && nsisAssets.every(rel => fs.existsSync(path.join(root, rel))),
+  nsisAssets.filter(rel => !fs.existsSync(path.join(root, rel))).join(', ') || `${nsisAssets.length} assets`);
+// Collecting only *.zip would upload a green build that silently omits the
+// installer, which is exactly how it would go missing without anyone noticing.
+for (const wf of ['build-windows.yml', 'build-release.yml']) {
+  const text = read(path.join('.github', 'workflows', wf)).replace(/\r/g, '');
+  check(`${wf} collects the installer alongside the zip`,
+    /-name '\*\.zip' -o -name '\*\.exe'/.test(text),
+    text.includes("-name '*.zip' -exec") ? 'collects only *.zip' : '');
+}
+
 // --- Startup project reset -------------------------------------------------
 // The project is a per-run workspace: every launch opens a clean one. The
 // reset must not take the user's app settings with it - theme, UI scale,
