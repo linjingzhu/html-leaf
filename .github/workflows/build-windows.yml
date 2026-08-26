@@ -85,7 +85,7 @@ jobs:
           npm run qa:theme-light
           npm run qa
 
-      - name: Build Windows portable zip
+      - name: Build Windows installer and portable zip
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           LEAF_BUILD_VERSION: ${{ inputs.build_version }}
@@ -100,7 +100,7 @@ jobs:
         run: |
           out="release-v${{ steps.meta.outputs.version }}"
           mkdir -p windows-artifacts
-          find "$out" -maxdepth 1 -type f -name '*.zip' -exec cp {} windows-artifacts/ \;
+          find "$out" -maxdepth 1 -type f \( -name '*.zip' -o -name '*.exe' \) -exec cp {} windows-artifacts/ \;
           cd windows-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -lh
@@ -132,6 +132,7 @@ jobs:
 
           | File | Target |
           | --- | --- |
+          | \`Leaf-Setup-${version}-x64.exe\` | Installer - choose install folder, Start Menu and desktop shortcuts |
           | \`Leaf-${version}-x64.zip\` | Portable app folder, no install |
 
           The build is not signed with a code-signing certificate, so SmartScreen may show

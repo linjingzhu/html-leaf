@@ -113,10 +113,10 @@ addPass('5. Windows build cannot start until adversarial and static QA pass', [
     'npm run qa:static',
     'npm run qa:scripted-html-edit',
     'npm run qa:theme-light',
-    'Build Windows portable zip'
+    'Build Windows installer and portable zip'
   ]),
   assertTrue('adversarial QA runs before static QA', before(workflow, 'npm run qa:startup-adversarial', 'npm run qa:static')),
-  assertTrue('static QA runs before Windows build', before(workflow, 'npm run qa:static', 'Build Windows portable zip'))
+  assertTrue('static QA runs before Windows build', before(workflow, 'npm run qa:static', 'Build Windows installer and portable zip'))
 ]);
 
 if (passes.length !== 5) {
