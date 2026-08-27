@@ -724,6 +724,28 @@ check('Nested Inspector subgroups keep their own border',
   /\.property-subgroup\{[^}]*border:1px solid var\(--border-subtle\)/.test(css)
   && /\.property-subgroup\{[^}]*border-radius:4px/.test(css));
 
+// --- Used list follows the marked row -------------------------------------
+// Selecting in a document View marks the matching Used row, but the list is a
+// scroller with far more rows than fit, so the mark was regularly off-screen.
+// The reveal must move the list's own scrollTop and nothing else: scrollIntoView
+// on the row would also scroll every scrollable ancestor.
+const usedReveal = renderer.slice(
+  renderer.indexOf('function revealUsedComponentRow('),
+  renderer.indexOf('function renderUsedComponents()')
+);
+check('The Used list can bring a marked row into view', usedReveal.length > 300, `${usedReveal.length} chars`);
+check('The reveal moves the list itself, never an ancestor',
+  usedReveal.includes('list.scrollTop+=rowBox.top-listBox.top')
+  && usedReveal.includes('list.scrollTop+=rowBox.bottom-listBox.bottom')
+  && !usedReveal.includes('scrollIntoView'));
+check('The reveal scrolls both up and back down, and no-ops on a visible row',
+  /if\(rowBox\.top<listBox\.top\)/.test(usedReveal)
+  && /else if\(rowBox\.bottom>listBox\.bottom\)/.test(usedReveal));
+check('A document-View selection brings its Used row into view',
+  renderer.includes('requestAnimationFrame(()=>revealUsedComponentRow(selectedUsedComponentToken));'));
+check('Highlighting instances from the list reveals that row too',
+  /classList\.add\('instance-highlighted'\);\s*\n\s*revealUsedComponentRow\(token\);/.test(renderer));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;
