@@ -1056,6 +1056,12 @@
     {slot:'codePreview',letter:'V',title:'Loaded in Code preview'},
     {slot:'codePage',letter:'C',title:'Loaded in the Code editor'}
   ];
+  // Only the Views the current mode actually puts on screen. repairViews binds
+  // every slot to the first Page whenever one is unset, so without this filter a
+  // single Page reported five bindings - including Compare and Code slots that
+  // are not displaying anything - and those phantom chips crowded out the name.
+  const MODE_CHIP_SLOTS={preview:['single'],split:['left','right'],code:['codePreview','codePage']};
+  function chipSlotsForCurrentMode(){ return MODE_CHIP_SLOTS[state.mode]||MODE_CHIP_SLOTS.preview; }
 
   function renderTree(){
     refs.tree.innerHTML='';
@@ -1136,16 +1142,11 @@
       row.className='tree-row';
       row.dataset.nodeId=node.id; row.dataset.depth=Math.min(depth,5);
       if(node.id===selectedTreeNode) row.classList.add('selected');
-      if(node.id===state.views.left) row.classList.add('view-left');
-      if(node.id===state.views.right) row.classList.add('view-right');
-      if(node.id===state.views.codePreview) row.classList.add('view-code-preview');
-      if(node.id===state.views.codePage) row.classList.add('view-code-editor');
-      // A Page can sit in several Views at once. These used to be one ::after,
-      // so only the last matching rule's letter showed and the rest were hidden.
-      // One container, not five loose children: as direct children of the row
-      // each chip also multiplied the row's 6px gap, so five bindings spent
-      // 30px on gaps alone and squeezed the file name out of the row.
-      const boundChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot]);
+      // Chips carry the binding state. They live in one container rather than
+      // five loose children: as direct children each chip also multiplied the
+      // row's 6px gap, which squeezed the file name out of the row.
+      const visibleChipSlots=chipSlotsForCurrentMode();
+      const boundChips=VIEW_CHIPS.filter(chip=>visibleChipSlots.includes(chip.slot)&&node.id===state.views[chip.slot]);
       const chipMarkup=boundChips
         .map(chip=>`<span class="view-chip view-chip-${chip.slot}" title="${esc(chip.title)}">${chip.letter}</span>`).join('');
       // The group carries the full list as its own title. A narrow sidebar

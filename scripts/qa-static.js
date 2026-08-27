@@ -370,6 +370,21 @@ check('The chip group can shrink but the file name cannot vanish',
 check('A clipped chip is still reported by the group title',
   renderer.includes('const chipsTitle=boundChips.map(chip=>chip.title)')
   && renderer.includes('<span class="view-chips" title="${esc(chipsTitle)}">'));
+// Chips report only the Views the current mode puts on screen. repairViews
+// binds every slot to the first Page whenever one is unset, so without this a
+// single Page claimed five bindings - Compare and Code slots included, while
+// neither was displaying anything - and the phantom chips crowded out the name.
+check('Chips are limited to the Views the current mode displays',
+  renderer.includes("const MODE_CHIP_SLOTS={preview:['single'],split:['left','right'],code:['codePreview','codePage']};")
+  && renderer.includes('function chipSlotsForCurrentMode()')
+  && renderer.includes('VIEW_CHIPS.filter(chip=>visibleChipSlots.includes(chip.slot)&&node.id===state.views[chip.slot])'));
+// The four view-* row classes were hooks for the retired ::after chips. Nothing
+// styles or reads them any more, so leaving them implied binding state still
+// flowed through CSS.
+check('The retired ::after chip hook classes are gone',
+  !renderer.includes("row.classList.add('view-left')")
+  && !renderer.includes("row.classList.add('view-code-editor')")
+  && !css.includes('.tree-row.view-left'));
 check('History shortcuts are forwarded out of preview documents',
   activeViewPolicy.includes('function forwardHistoryShortcut(event)')
   && activeViewPolicy.includes("doc.addEventListener('keydown', forwardHistoryShortcut, true)")
