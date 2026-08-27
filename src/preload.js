@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('file:readPagePath', filePath);
   },
   openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  armPdfAnnotationSave: (payload) => ipcRenderer.invoke('pdf:armAnnotationSave', payload),
+  onPdfAnnotationSaved: (callback) => {
+    const listener = (_event, result) => callback(result || {});
+    ipcRenderer.on('pdf:annotationSaved', listener);
+    return () => ipcRenderer.removeListener('pdf:annotationSaved', listener);
+  },
   exportHtml: (payload) => ipcRenderer.invoke('file:exportHtml', payload),
   saveHtmlPath: (payload) => ipcRenderer.invoke('file:saveHtmlPath', payload),
   exportText: (payload) => ipcRenderer.invoke('file:exportText', payload),

@@ -287,6 +287,7 @@
         <section class="view-pane single-view viewport-mode is-active active-view" data-mode-panel="preview" id="singleView">
           <div class="view-pane-head">
             <button class="viewport-edit-toggle" type="button" data-edit-slot="single" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-save" type="button" data-edit-save="single" title="Apply and save to the original file" aria-label="Apply and save to the original file" hidden>Save</button>
             <button class="viewport-edit-cancel" type="button" data-edit-cancel="single" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
             <select class="page-select" id="singlePageName" aria-label="Preview Page"></select>
             <div class="view-search" data-view-search="single" role="search">
@@ -318,7 +319,7 @@
           <div class="html-drop-zone" data-drop-slot="single">
             <div class="drop-icon">⇩</div>
             <strong>Drop Page here</strong>
-            <span>HTML, Markdown, JSON, XML, or PDF</span>
+            <span>HTML, Markdown, JSON, XML, PDF, or images</span>
           </div>
         </section>
 
@@ -326,6 +327,7 @@
           <section class="view-pane active-view" data-view-slot="left">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="left" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-save" type="button" data-edit-save="left" title="Apply and save to the original file" aria-label="Apply and save to the original file" hidden>Save</button>
             <button class="viewport-edit-cancel" type="button" data-edit-cancel="left" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="leftPageSelect"></select>
               <div class="view-search" data-view-search="left" role="search">
@@ -361,6 +363,7 @@
           <section class="view-pane" data-view-slot="right">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="right" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-save" type="button" data-edit-save="right" title="Apply and save to the original file" aria-label="Apply and save to the original file" hidden>Save</button>
             <button class="viewport-edit-cancel" type="button" data-edit-cancel="right" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="rightPageSelect"></select>
               <div class="view-search" data-view-search="right" role="search">
@@ -412,6 +415,7 @@
           <section class="view-pane active-view" data-view-slot="code-preview">
             <div class="view-pane-head">
               <button class="viewport-edit-toggle" type="button" data-edit-slot="codePreview" aria-pressed="false">Edit</button>
+            <button class="viewport-edit-save" type="button" data-edit-save="codePreview" title="Apply and save to the original file" aria-label="Apply and save to the original file" hidden>Save</button>
             <button class="viewport-edit-cancel" type="button" data-edit-cancel="codePreview" title="Discard changes and leave Edit" aria-label="Discard changes and leave Edit" hidden>✕</button>
               <select class="page-select" id="codePreviewSelect"></select>
               <div class="view-search" data-view-search="codePreview" role="search">
@@ -550,7 +554,10 @@
 </div>
 
 <div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
-  <button data-tree-add="page">New Page</button>
+  <button data-tree-add="page:html">New HTML Page</button>
+  <button data-tree-add="page:markdown">New Markdown Page</button>
+  <button data-tree-add="page:json">New JSON Page</button>
+  <button data-tree-add="page:xml">New XML Page</button>
   <button data-tree-add="group">New Section</button>
 </div>
 
@@ -578,6 +585,7 @@
         <option value="markdown">Markdown (.md)</option>
         <option value="json">JSON (.json)</option>
         <option value="pdf">PDF (.pdf)</option>
+        <option value="image">Image (copy original)</option>
       </select>
     </label>
     <div class="modal-actions">
@@ -590,7 +598,7 @@
 <div class="modal-backdrop" id="aboutModal" role="presentation">
   <div class="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
     <div class="about-brand"><img src="./assets/product-icon.png" alt=""><div><h3 id="aboutTitle">Leaf</h3><span id="aboutVersion">Version</span></div></div>
-    <p>Visual project editor for HTML, Markdown, JSON, XML, and PDF pages.</p>
+    <p>Visual project editor for HTML, Markdown, JSON, XML, PDF, and image pages.</p>
     <dl class="about-details"><div><dt>Project format</dt><dd>.prj</dd></div><div><dt>Runtime</dt><dd>Electron</dd></div><div><dt>Security</dt><dd>Sandboxed previews</dd></div></dl>
     <div class="modal-actions"><button class="btn primary" id="aboutClose">OK</button></div>
   </div>

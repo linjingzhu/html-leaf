@@ -106,11 +106,13 @@ checkIncludesAll('Legacy Leaf project extensions remain openable', main,
 check('Legacy leaf-document projects still migrate in renderer',
   renderer.includes("payload?.format==='leaf-document'"));
 
-checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, and PDF', main,
-  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])",
-   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']"]);
-check('Obsolete image Page formats are not restored',
-  !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'"));
+checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, PDF, and images', main,
+  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS])",
+   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']"]);
+check('Image formats share one binary Page type instead of one type each',
+  main.includes("if (IMAGE_EXTENSIONS.has(extension)) return 'image';")
+  && !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'")
+  && !renderer.includes("documentType==='png'"));
 checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF', html,
   ['option value="html"', 'option value="markdown"', 'option value="json"', 'option value="pdf"']);
 checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
@@ -344,21 +346,79 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Edit Save --------------------------------------------------------------
+check('Every View head offers Apply, Save and discard in that order',
+  (html.match(/data-edit-save="/g) || []).length === 4
+  && /data-edit-slot="single"[\s\S]{0,400}?data-edit-save="single"[\s\S]{0,400}?data-edit-cancel="single"/.test(html));
+// A Page typed into the app has no file behind it, so Save has nowhere to write.
+check('Save is offered only while editing and only with an original file',
+  renderer.includes('saveButton.hidden=!active;')
+  && renderer.includes('const savable=!!page?.sourcePath;')
+  && renderer.includes('saveButton.disabled=!savable;'));
+check('Save applies the edit before writing',
+  /const slot=button\.dataset\.editSave;[\s\S]{0,900}?setHtmlEditEnabled\(false,slot\);\s*\n\s*await savePage\(false\);/.test(renderer));
+
+// --- PDF annotation write-back ---------------------------------------------
+// The viewer can already annotate; its Save was a plain browser download, which
+// dropped a detached copy and left the Page pointing at the untouched original.
+check('The PDF viewer save is captured and written back to the Page',
+  main.includes("session.on('will-download'")
+  && main.includes('function registerPdfAnnotationCapture(session)')
+  && main.includes('registerPdfAnnotationCapture(mainWindow.webContents.session);'));
+// Staging first means a cancelled or failed download cannot truncate the original.
+check('An annotated PDF is staged before it replaces the original',
+  main.includes('item.setSavePath(staging);')
+  && /if \(state !== 'completed'\)/.test(main)
+  && main.includes('await atomicWriteFile(target, await fs.readFile(staging), null);'));
+// Without arming, any download the user started for another reason could be
+// redirected onto a Page's file.
+check('Only an explicitly armed Page can receive a captured download',
+  main.includes('function armPdfAnnotationSave(')
+  && main.includes('pendingPdfSaves.set(sourcePath')
+  && renderer.includes('window.electronAPI.armPdfAnnotationSave({sourcePath:page.sourcePath'));
+check('A saved PDF refreshes the View instead of showing the cached copy',
+  renderer.includes('window.electronAPI.onPdfAnnotationSaved?.(')
+  && renderer.includes('renderVisibleFramesForPage(found.page.id,null);'));
+
+// --- Image pages -----------------------------------------------------------
+// PDF and images are the same kind of Page: a binary shown but never edited as
+// source. Naming the type at each of those ~15 sites is how a format ends up
+// half-supported, so they all ask one predicate.
+check('Binary Pages are recognised by one predicate, not by naming pdf everywhere',
+  renderer.includes("function isBinaryPage(page){return page?.documentType==='pdf'||page?.documentType==='image';}")
+  && renderer.includes('if(isBinaryPage(page)&&!forceAs)')
+  && renderer.includes('(isBinaryPage(page)?!!(page.previewUrl||page.sourcePath)')
+  && renderer.includes('refs.source.readOnly=isBinaryPage(page);'));
+check('An image Page carries a preview URL and its own tree badge',
+  main.includes("documentType === 'pdf' || documentType === 'image' ? pathToFileURL(filePath).href : null")
+  && renderer.includes("node.documentType==='image'?'IMG'")
+  && renderer.includes("/\\.(png|jpe?g|webp|gif|svg)$/i.test(page.fileName||'')?'image'"));
+// A bare image document is laid out by the browser on its own background, which
+// ignores the View's zoom and fit chrome, so it goes through the srcdoc path.
+check('Images render through the sandboxed srcdoc wrapper, not a raw frame src',
+  renderer.includes("if(page.documentType==='image'){")
+  && renderer.includes("object-fit:contain")
+  && renderer.includes("frame.setAttribute('sandbox','allow-same-origin');\n      return false;")
+  && !renderer.includes("if(page.documentType==='pdf'||page.documentType==='image'){\n      frame.dataset.snapshotToken"));
+check('Save As on a binary Page copies the original and keeps its extension',
+  renderer.includes('if(isBinaryPage(page)){')
+  && renderer.includes("page.documentType==='pdf'?'pdf':'png'"));
+
 // --- XML pages -------------------------------------------------------------
 // A document type is only supported once every list agrees. Missing one leaves
 // a type that imports but cannot be saved, or that normalizeState rewrites back
 // to html on the next load.
 check('XML is accepted by the main-process file surface',
-  main.includes("'.json', '.xml', '.pdf'")
+  main.includes("'.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS")
   && main.includes("if (extension === '.xml') return 'xml';")
-  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")
+  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']")
   && main.includes("xml: { extension: 'xml', name: 'XML Page' },"));
 check('XML survives state normalization instead of being rewritten to html',
-  renderer.includes("if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){")
+  renderer.includes("if(!['html','markdown','json','xml','pdf','image'].includes(page.documentType)){")
   && renderer.includes("/\\.xml$/i.test(page.fileName||'')?'xml'"));
 check('XML is droppable and carries its own tree badge',
-  /isSupportedDocumentFile\(file\)\{return !!file&&\/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
-  && /isHtmlFile\(file\)\{ return !!file && \/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  renderer.includes("isSupportedDocumentFile(file){return !!file&&/\\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i")
+  && renderer.includes("isHtmlFile(file){ return !!file && /\\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i")
   && renderer.includes("node.documentType==='xml'?'XML'"));
 // XML whitespace can be significant, so the preview reports well-formedness
 // rather than reformatting the file the way the JSON preview does.
@@ -551,6 +611,53 @@ check('The Tile View hides the pane chrome it covers instead of stacking under i
   renderer.includes("classList.add('group-tiles-open')")
   && renderer.includes("classList.remove('group-tiles-open')")
   && css.includes('body.group-tiles-open .viewport-floating-controls{display:none}'));
+
+// --- New Page templates ----------------------------------------------------
+// Before this, New Page always produced a blank HTML Page - and a blank Page was
+// a dead end: the Code editor was display:none behind the import drop zone, so
+// there was nothing to type into and Edit stayed disabled. Two invariants keep
+// that from coming back: every offered type has a template, and a blank Page
+// stays authorable.
+const newPageTypes = renderer.slice(
+  renderer.indexOf('const NEW_PAGE_TYPES={'),
+  renderer.indexOf('function addEmptyPage(')
+);
+const menuTypes = [...html.matchAll(/data-tree-add="page:([a-z]+)"/g)].map(match => match[1]);
+check('The tree add menu offers HTML, Markdown, JSON and XML Pages',
+  ['html', 'markdown', 'json', 'xml'].every(type => menuTypes.includes(type)),
+  menuTypes.join(', ') || 'none');
+check('Every Page type the menu offers has a template entry',
+  menuTypes.length > 0 && menuTypes.every(type => new RegExp(`\\n\\s*${type}:\\{`).test(newPageTypes)),
+  menuTypes.filter(type => !new RegExp(`\\n\\s*${type}:\\{`).test(newPageTypes)).join(', '));
+check('New Page takes its type, extension and source from the template table',
+  /addEmptyPage\(project,node,\{asChild:true,documentType:action\.slice\(5\)\|\|'html'\}\)/.test(renderer)
+  && renderer.includes("const source=NEW_PAGE_TYPES[type].template(name);")
+  && renderer.includes('${exportSafeName(name)}.${NEW_PAGE_TYPES[type].extension}')
+  && renderer.includes("isEmpty:!source.trim()"));
+checkIncludesAll('The HTML template is a real scaffold, not a blank document', newPageTypes,
+  ["'<!DOCTYPE html>'", '\'<html lang="en">\'', "'<head>'", "'<body>'", '${esc(name)}</title>', "'</html>'"]);
+check('Markdown, JSON and XML Pages start blank',
+  ['markdown', 'json', 'xml'].every(type =>
+    new RegExp(`${type}:\\{[^}]*template:\\(\\)=>''`).test(newPageTypes)));
+// The drop zone used to be painted over the code pane and the editor hidden
+// underneath it, which is what made an empty Page unauthorable.
+// newPage() (Ctrl+Shift+N and the File menu) is the second creation path. It
+// used to hardcode a blank HTML Page of its own, so a fix applied only to the
+// tree menu would leave the shortcut on the old dead end.
+const newPageCommand = renderer.slice(
+  renderer.indexOf('function newPage(){'),
+  renderer.indexOf('async function newDocument()')
+);
+check('Ctrl+Shift+N builds its Page from the same template table',
+  newPageCommand.includes('NEW_PAGE_TYPES.html.template(name)')
+  && newPageCommand.includes('${NEW_PAGE_TYPES.html.extension}')
+  && newPageCommand.includes('isEmpty:!source.trim()')
+  && !newPageCommand.includes("source:'',loadedSource:''"));
+check('A blank Page keeps its Code editor reachable',
+  css.includes('.code-editor-pane.is-empty .code-area{display:block}')
+  && css.includes('.code-editor-pane.is-empty .html-drop-zone{display:none}')
+  && !css.includes('.code-editor-pane.is-empty .code-area{display:none}')
+  && !/\.view-pane\.is-empty \.html-drop-zone,\.code-editor-pane\.is-empty \.html-drop-zone\{display:flex/.test(css));
 
 const large = [];
 let pageCount = 0;

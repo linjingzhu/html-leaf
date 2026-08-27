@@ -89,7 +89,8 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf']);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS]);
 
 // Resolving a link target belongs here, not in the renderer: turning
 // "../shared/report.html" plus a file:// base into a real path is Windows
@@ -146,13 +147,14 @@ function documentTypeForPath(filePath) {
   if (extension === '.md' || extension === '.markdown') return 'markdown';
   if (extension === '.json') return 'json';
   if (extension === '.xml') return 'xml';
+  if (IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (extension === '.pdf') return 'pdf';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, XML, and PDF pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, XML, PDF, and image pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -161,12 +163,17 @@ async function readDocumentPath(filePath) {
     title: path.basename(filePath, path.extname(filePath)),
     documentType,
     baseUrl: baseUrlForFile(filePath),
-    previewUrl: documentType === 'pdf' ? pathToFileURL(filePath).href : null,
+    previewUrl: documentType === 'pdf' || documentType === 'image' ? pathToFileURL(filePath).href : null,
     initialSnapshotPath: null
   };
   if (documentType === 'pdf') {
     const stat = await fs.stat(filePath);
     if (!stat.isFile() || stat.size > 500_000_000) throw new Error('PDF pages must be files smaller than 500 MB.');
+    return { ...common, source: '', loadedSource: '' };
+  }
+  if (documentType === 'image') {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile() || stat.size > 100_000_000) throw new Error('Image pages must be files smaller than 100 MB.');
     return { ...common, source: '', loadedSource: '' };
   }
   const stat = await fs.stat(filePath);
@@ -179,7 +186,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
@@ -259,6 +266,7 @@ const PAGE_EXPORT_FORMATS = {
   markdown: { extension: 'md', name: 'Markdown Page' },
   json: { extension: 'json', name: 'JSON Page' },
   xml: { extension: 'xml', name: 'XML Page' },
+  image: { extension: 'png', name: 'Image Page' },
   pdf: { extension: 'pdf', name: 'PDF Document' }
 };
 
@@ -508,6 +516,57 @@ async function readProjectAtPath(filePath) {
   return { filePath, project: JSON.parse(raw) };
 }
 
+// The Chromium PDF viewer can already highlight, draw and annotate; what it
+// cannot do is put the result back into the Page. Its Save button issues a
+// normal browser download, which without this would drop a detached copy in the
+// downloads folder and leave the Page still pointing at the untouched original.
+// Intercepting it turns that button into "save this Page".
+const pendingPdfSaves = new Map();
+
+function annotatedPdfTargetFor(downloadUrl) {
+  for (const [sourcePath, entry] of pendingPdfSaves) {
+    if (entry.url && downloadUrl && downloadUrl.includes(entry.url)) return sourcePath;
+  }
+  return pendingPdfSaves.size === 1 ? [...pendingPdfSaves.keys()][0] : null;
+}
+
+function registerPdfAnnotationCapture(session) {
+  session.on('will-download', (event, item, webContents) => {
+    if (item.getMimeType() !== 'application/pdf' && !/\.pdf$/i.test(item.getFilename())) return;
+    const target = annotatedPdfTargetFor(item.getURL());
+    if (!target) return;
+    // Save to a temp path first, then replace the Page's file atomically, so a
+    // cancelled or failed download cannot truncate the original.
+    const staging = path.join(app.getPath('temp'), `leaf-pdf-${process.pid}-${Date.now()}.pdf`);
+    item.setSavePath(staging);
+    item.once('done', async (_e, state) => {
+      pendingPdfSaves.delete(target);
+      if (state !== 'completed') {
+        webContents?.send('pdf:annotationSaved', { sourcePath: target, ok: false, error: `Download ${state}` });
+        return;
+      }
+      try {
+        await atomicWriteFile(target, await fs.readFile(staging), null);
+        await fs.rm(staging, { force: true });
+        webContents?.send('pdf:annotationSaved', { sourcePath: target, ok: true });
+      } catch (error) {
+        webContents?.send('pdf:annotationSaved', { sourcePath: target, ok: false, error: error.message });
+      }
+    });
+  });
+}
+
+// The renderer arms this immediately before telling the viewer to save, so a
+// download the user started for some other reason is never redirected onto a Page.
+function armPdfAnnotationSave({ sourcePath, url } = {}) {
+  if (!sourcePath || !DOCUMENT_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) {
+    throw new Error('A valid PDF page source path is required.');
+  }
+  pendingPdfSaves.set(sourcePath, { url: url || null, armedAt: Date.now() });
+  setTimeout(() => pendingPdfSaves.delete(sourcePath), 60_000);
+  return { armed: true };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1660,
@@ -534,6 +593,7 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', syncAppTitle);
   mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', true));
   mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', false));
+  registerPdfAnnotationCapture(mainWindow.webContents.session);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -546,6 +606,7 @@ app.whenReady().then(() => {
   ipcMain.handle('file:readPagePath', (_e, filePath) => readDocumentPath(filePath));
   ipcMain.handle('file:resolveLinkTarget', (_e, payload) => resolveLinkTarget(payload));
   ipcMain.handle('shell:openExternal', (_e, url) => openExternalLink(url));
+  ipcMain.handle('pdf:armAnnotationSave', (_e, payload) => armPdfAnnotationSave(payload));
   ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath)); // v0.5.14 compatibility
   ipcMain.handle('file:exportHtml', (_e, payload) => exportHtml(payload));
   ipcMain.handle('file:saveHtmlPath', (_e, payload) => saveHtmlPath(payload));

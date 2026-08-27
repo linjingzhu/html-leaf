@@ -65,7 +65,10 @@ check('New Page becomes a child of the active Document selection',
   js.includes('if(parentId){const parent=project.nodes.find'));
 check('New Document, Page, and Section create immediately without naming dialogs',
   !js.includes("openModal('New Document'")&&!js.includes("openModal('New Page'")&&!js.includes("openModal('Add Group'")&&
-  js.includes("uniqueTreeName('New Document'")&&js.split("uniqueTreeName('New Page'").length>=3&&js.includes("uniqueTreeName('New Section'"));
+  js.includes("uniqueTreeName('New Document'")&&js.includes("uniqueTreeName('New Section'")&&
+  // Both New Page paths - the Ctrl+Shift+N command and the tree's per-type menu -
+  // name the Page themselves instead of prompting for one.
+  js.includes("uniqueTreeName('New Page'")&&js.includes("uniqueTreeName(`New ${NEW_PAGE_TYPES[type].label} Page`"));
 check('Group is explicitly normalized as a container',
   js.includes("if(page.type==='group')page.container=true")&&js.includes("type:'group',name,parentId")&&js.includes('container:true'));
 check('New Project schema remains leaf-project and v0.5.16',
@@ -75,9 +78,9 @@ check('Legacy leaf paths migrate through Save As prj',
 check('Trust Foundation remains active',
   main.includes('contextIsolation: true')&&main.includes('sandbox: true')&&main.includes('webSecurity: true')&&
   read('src/renderer/source-fidelity.js').includes('stripEditorArtifactsFromDocument'));
-check('Supported Page formats include HTML, Markdown, JSON, XML, and PDF',
-  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])")&&
-  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")&&
+check('Supported Page formats include HTML, Markdown, JSON, XML, PDF, and images',
+  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS])")&&
+  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']")&&
   !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
 check('Preview Edit provides an isolated direct source editor for Markdown, JSON and XML',
   js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}")&&
