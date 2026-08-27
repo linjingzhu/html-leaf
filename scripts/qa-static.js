@@ -346,6 +346,40 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Edit Save --------------------------------------------------------------
+check('Every View head offers Apply, Save and discard in that order',
+  (html.match(/data-edit-save="/g) || []).length === 4
+  && /data-edit-slot="single"[\s\S]{0,400}?data-edit-save="single"[\s\S]{0,400}?data-edit-cancel="single"/.test(html));
+// A Page typed into the app has no file behind it, so Save has nowhere to write.
+check('Save is offered only while editing and only with an original file',
+  renderer.includes('saveButton.hidden=!active;')
+  && renderer.includes('const savable=!!page?.sourcePath;')
+  && renderer.includes('saveButton.disabled=!savable;'));
+check('Save applies the edit before writing',
+  /const slot=button\.dataset\.editSave;[\s\S]{0,900}?setHtmlEditEnabled\(false,slot\);\s*\n\s*await savePage\(false\);/.test(renderer));
+
+// --- PDF annotation write-back ---------------------------------------------
+// The viewer can already annotate; its Save was a plain browser download, which
+// dropped a detached copy and left the Page pointing at the untouched original.
+check('The PDF viewer save is captured and written back to the Page',
+  main.includes("session.on('will-download'")
+  && main.includes('function registerPdfAnnotationCapture(session)')
+  && main.includes('registerPdfAnnotationCapture(mainWindow.webContents.session);'));
+// Staging first means a cancelled or failed download cannot truncate the original.
+check('An annotated PDF is staged before it replaces the original',
+  main.includes('item.setSavePath(staging);')
+  && /if \(state !== 'completed'\)/.test(main)
+  && main.includes('await atomicWriteFile(target, await fs.readFile(staging), null);'));
+// Without arming, any download the user started for another reason could be
+// redirected onto a Page's file.
+check('Only an explicitly armed Page can receive a captured download',
+  main.includes('function armPdfAnnotationSave(')
+  && main.includes('pendingPdfSaves.set(sourcePath')
+  && renderer.includes('window.electronAPI.armPdfAnnotationSave({sourcePath:page.sourcePath'));
+check('A saved PDF refreshes the View instead of showing the cached copy',
+  renderer.includes('window.electronAPI.onPdfAnnotationSaved?.(')
+  && renderer.includes('renderVisibleFramesForPage(found.page.id,null);'));
+
 // --- Image pages -----------------------------------------------------------
 // PDF and images are the same kind of Page: a binary shown but never edited as
 // source. Naming the type at each of those ~15 sites is how a format ends up

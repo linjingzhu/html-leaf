@@ -3867,6 +3867,18 @@
       button.textContent=active?'Apply':'Edit';
       const cancelButton=document.querySelector(`[data-edit-cancel="${slot}"]`);
       if(cancelButton)cancelButton.hidden=!active;
+      const saveButton=document.querySelector(`[data-edit-save="${slot}"]`);
+      if(saveButton){
+        saveButton.hidden=!active;
+        // A Page that was never read from disk has nowhere to save back to.
+        const savable=!!page?.sourcePath;
+        saveButton.disabled=!savable;
+        saveButton.title=savable
+          ?(page.documentType==='pdf'
+             ?'Apply, then save the annotated PDF over the original file'
+             :`Apply and save to ${page.sourcePath}`)
+          :'This Page has no original file yet - use Save As';
+      }
       const standardEditTitle=active?'Apply changes and leave Edit for this Window':'Enable Edit for this Window';
       button.title=unavailable
         ?'Edit is unavailable for this Page in the current View'
@@ -3921,6 +3933,18 @@
       if(restoreSlot)setHtmlEditEnabled(true,restoreSlot);
     }
   }
+
+  window.electronAPI.onPdfAnnotationSaved?.(result=>{
+    if(!result?.ok){ showToast(`PDF save failed: ${result?.error||'unknown error'}`); return; }
+    const found=loadedPageForPath(result.sourcePath);
+    if(!found){ showToast('Annotated PDF saved'); return; }
+    // The file on disk changed underneath the frame, so the preview has to be
+    // re-pointed with a fresh token or the viewer keeps showing the cached copy.
+    found.page.previewUrl=`file:///${String(result.sourcePath).replace(/\\/g,'/')}?t=${Date.now()}`;
+    renderVisibleFramesForPage(found.page.id,null);
+    persist();
+    showToast(`Saved annotations to ${found.page.name}`);
+  });
 
   window.electronAPI.onDocumentFullscreenChanged?.(enabled=>{
     if(!enabled&&documentFullscreenSlot)setDocumentFullscreen(null,{skipNative:true});
@@ -6605,6 +6629,25 @@
     updateClearButtons();
     renderCrumbs();
   }
+
+  $$('[data-edit-save]').forEach(button=>button.addEventListener('click',async event=>{
+    event.preventDefault();event.stopPropagation();
+    const slot=button.dataset.editSave;
+    const page=pageById(pageIdForSlot(slot));
+    if(!page?.sourcePath){showToast('This Page has no original file yet - use Save As');return;}
+    // A PDF's annotations live inside the plugin, not in page.source, so the app
+    // has nothing of its own to write. Arming the capture turns the viewer's own
+    // Save into a write back onto this Page's file.
+    if(page.documentType==='pdf'){
+      try{
+        await window.electronAPI.armPdfAnnotationSave({sourcePath:page.sourcePath,url:page.previewUrl||''});
+        showToast('Use the PDF toolbar Save to write your annotations back to this Page');
+      }catch(error){ showToast(`Could not arm the PDF save: ${error.message}`); }
+      return;
+    }
+    setHtmlEditEnabled(false,slot);
+    await savePage(false);
+  }));
 
   $$('[data-edit-cancel]').forEach(button=>button.addEventListener('click',event=>{
     event.preventDefault();event.stopPropagation();

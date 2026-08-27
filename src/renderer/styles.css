@@ -540,6 +540,14 @@ body.group-tiles-open .viewport-floating-controls{display:none}
   box-shadow:0 0 0 1px rgba(239,77,77,.3)
 }
 .viewport-edit-toggle:disabled{opacity:.38;cursor:default}
+.viewport-edit-save{
+  height:24px;min-width:44px;padding:0 8px;border:1px solid var(--border);border-radius:4px;
+  background:color-mix(in srgb,var(--accent) 18%,var(--panel-secondary));
+  color:var(--foreground);font-size:11px;font-weight:700;cursor:pointer
+}
+.viewport-edit-save:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 32%,var(--panel-secondary))}
+.viewport-edit-save:disabled{opacity:.45;cursor:not-allowed}
+.viewport-edit-save[hidden]{display:none}
 .viewport-edit-cancel{
   height:24px;min-width:26px;padding:0 6px;border:1px solid var(--border);border-radius:4px;
   background:color-mix(in srgb,var(--error) 20%,var(--panel-secondary));
