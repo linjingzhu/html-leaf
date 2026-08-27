@@ -1142,8 +1142,18 @@
       if(node.id===state.views.codePage) row.classList.add('view-code-editor');
       // A Page can sit in several Views at once. These used to be one ::after,
       // so only the last matching rule's letter showed and the rest were hidden.
-      const viewChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot])
+      // One container, not five loose children: as direct children of the row
+      // each chip also multiplied the row's 6px gap, so five bindings spent
+      // 30px on gaps alone and squeezed the file name out of the row.
+      const boundChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot]);
+      const chipMarkup=boundChips
         .map(chip=>`<span class="view-chip view-chip-${chip.slot}" title="${esc(chip.title)}">${chip.letter}</span>`).join('');
+      // The group carries the full list as its own title. A narrow sidebar
+      // clips the trailing chips, and a clipped chip cannot be hovered for its
+      // own tooltip - so without this the binding would be silently invisible,
+      // which is the defect the ::after chips had in the first place.
+      const chipsTitle=boundChips.map(chip=>chip.title).join(' · ');
+      const viewChips=chipMarkup?`<span class="view-chips" title="${esc(chipsTitle)}">${chipMarkup}</span>`:'';
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
@@ -6461,8 +6471,11 @@
     else if(modifier&&e.key.toLowerCase()==='n'){e.preventDefault();newProject();}
     if(modifier&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();saveLeafProject(true);}
     else if(modifier&&e.key.toLowerCase()==='s'){e.preventDefault();saveLeafProject(false);}
-    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();redo();}
-    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
+    // Redo is Ctrl+Y only - the key most Windows apps use, and this ships
+    // Windows-first. Ctrl+Shift+Z is deliberately inert rather than falling
+    // through to undo.
+    else if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='y'){e.preventDefault();redo();}
   });
 
   function repairViews(){
