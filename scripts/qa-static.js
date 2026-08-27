@@ -612,6 +612,53 @@ check('The Tile View hides the pane chrome it covers instead of stacking under i
   && renderer.includes("classList.remove('group-tiles-open')")
   && css.includes('body.group-tiles-open .viewport-floating-controls{display:none}'));
 
+// --- New Page templates ----------------------------------------------------
+// Before this, New Page always produced a blank HTML Page - and a blank Page was
+// a dead end: the Code editor was display:none behind the import drop zone, so
+// there was nothing to type into and Edit stayed disabled. Two invariants keep
+// that from coming back: every offered type has a template, and a blank Page
+// stays authorable.
+const newPageTypes = renderer.slice(
+  renderer.indexOf('const NEW_PAGE_TYPES={'),
+  renderer.indexOf('function addEmptyPage(')
+);
+const menuTypes = [...html.matchAll(/data-tree-add="page:([a-z]+)"/g)].map(match => match[1]);
+check('The tree add menu offers HTML, Markdown, JSON and XML Pages',
+  ['html', 'markdown', 'json', 'xml'].every(type => menuTypes.includes(type)),
+  menuTypes.join(', ') || 'none');
+check('Every Page type the menu offers has a template entry',
+  menuTypes.length > 0 && menuTypes.every(type => new RegExp(`\\n\\s*${type}:\\{`).test(newPageTypes)),
+  menuTypes.filter(type => !new RegExp(`\\n\\s*${type}:\\{`).test(newPageTypes)).join(', '));
+check('New Page takes its type, extension and source from the template table',
+  /addEmptyPage\(project,node,\{asChild:true,documentType:action\.slice\(5\)\|\|'html'\}\)/.test(renderer)
+  && renderer.includes("const source=NEW_PAGE_TYPES[type].template(name);")
+  && renderer.includes('${exportSafeName(name)}.${NEW_PAGE_TYPES[type].extension}')
+  && renderer.includes("isEmpty:!source.trim()"));
+checkIncludesAll('The HTML template is a real scaffold, not a blank document', newPageTypes,
+  ["'<!DOCTYPE html>'", '\'<html lang="en">\'', "'<head>'", "'<body>'", '${esc(name)}</title>', "'</html>'"]);
+check('Markdown, JSON and XML Pages start blank',
+  ['markdown', 'json', 'xml'].every(type =>
+    new RegExp(`${type}:\\{[^}]*template:\\(\\)=>''`).test(newPageTypes)));
+// The drop zone used to be painted over the code pane and the editor hidden
+// underneath it, which is what made an empty Page unauthorable.
+// newPage() (Ctrl+Shift+N and the File menu) is the second creation path. It
+// used to hardcode a blank HTML Page of its own, so a fix applied only to the
+// tree menu would leave the shortcut on the old dead end.
+const newPageCommand = renderer.slice(
+  renderer.indexOf('function newPage(){'),
+  renderer.indexOf('async function newDocument()')
+);
+check('Ctrl+Shift+N builds its Page from the same template table',
+  newPageCommand.includes('NEW_PAGE_TYPES.html.template(name)')
+  && newPageCommand.includes('${NEW_PAGE_TYPES.html.extension}')
+  && newPageCommand.includes('isEmpty:!source.trim()')
+  && !newPageCommand.includes("source:'',loadedSource:''"));
+check('A blank Page keeps its Code editor reachable',
+  css.includes('.code-editor-pane.is-empty .code-area{display:block}')
+  && css.includes('.code-editor-pane.is-empty .html-drop-zone{display:none}')
+  && !css.includes('.code-editor-pane.is-empty .code-area{display:none}')
+  && !/\.view-pane\.is-empty \.html-drop-zone,\.code-editor-pane\.is-empty \.html-drop-zone\{display:flex/.test(css));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;

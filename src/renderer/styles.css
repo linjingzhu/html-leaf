@@ -477,7 +477,8 @@ body.group-tiles-open .viewport-floating-controls{display:none}
   background:var(--canvas);border:1px dashed var(--border-strong);
   color:var(--text-secondary);text-align:center;pointer-events:none
 }
-.view-pane.is-empty .html-drop-zone,.code-editor-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
+.view-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
+.code-editor-pane.is-empty .html-drop-zone{display:none}
 .html-drop-zone:hover{background:color-mix(in srgb,var(--accent) 5%,var(--canvas));border-color:var(--focus-ring)}
 .html-drop-zone:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-3px}
 .html-drop-zone.drag-over{background:color-mix(in srgb,var(--accent) 7%,var(--canvas));border-color:var(--focus-ring)}
@@ -488,7 +489,7 @@ body.group-tiles-open .viewport-floating-controls{display:none}
   border-radius:6px;color:var(--muted);font-size:18px
 }
 .view-pane.is-empty .preview-canvas{display:none}
-.code-editor-pane.is-empty .code-area{display:none}
+.code-editor-pane.is-empty .code-area{display:block}
 .code-drop-zone{inset:var(--view-head-h) 0 0}
 
 /* Code */

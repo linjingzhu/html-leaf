@@ -65,7 +65,10 @@ check('New Page becomes a child of the active Document selection',
   js.includes('if(parentId){const parent=project.nodes.find'));
 check('New Document, Page, and Section create immediately without naming dialogs',
   !js.includes("openModal('New Document'")&&!js.includes("openModal('New Page'")&&!js.includes("openModal('Add Group'")&&
-  js.includes("uniqueTreeName('New Document'")&&js.split("uniqueTreeName('New Page'").length>=3&&js.includes("uniqueTreeName('New Section'"));
+  js.includes("uniqueTreeName('New Document'")&&js.includes("uniqueTreeName('New Section'")&&
+  // Both New Page paths - the Ctrl+Shift+N command and the tree's per-type menu -
+  // name the Page themselves instead of prompting for one.
+  js.includes("uniqueTreeName('New Page'")&&js.includes("uniqueTreeName(`New ${NEW_PAGE_TYPES[type].label} Page`"));
 check('Group is explicitly normalized as a container',
   js.includes("if(page.type==='group')page.container=true")&&js.includes("type:'group',name,parentId")&&js.includes('container:true'));
 check('New Project schema remains leaf-project and v0.5.16',

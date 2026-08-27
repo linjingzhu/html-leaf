@@ -637,9 +637,12 @@
       const context=selectedContext();
       const parentId=context.project?.id===project.id&&context.node?context.node.id:null;
       const name=uniqueTreeName('New Page',children(project,parentId).map(node=>node.name));
+      // Same scaffold the tree's New HTML Page uses - Ctrl+Shift+N must not be
+      // the one path that still lands you on a blank, uneditable Page.
+      const source=NEW_PAGE_TYPES.html.template(name);
       const page={
-        id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',
-        parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true
+        id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.${NEW_PAGE_TYPES.html.extension}`,documentType:'html',
+        parentId,order:children(project,parentId).length,source,loadedSource:source,baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:!source.trim()
       };
       project.nodes.push(page);project.expanded=true;state.selectedDocumentId=project.id;selectedTreeNode=page.id;
       if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
@@ -1309,7 +1312,7 @@
     const action=e.target.closest('[data-tree-add]')?.dataset.treeAdd;if(!action||!treeAddTarget)return;
     const project=documentById(treeAddTarget.documentId);const node=project?.nodes.find(item=>item.id===treeAddTarget.nodeId)||null;
     refs.treeAddMenu.hidden=true;
-    if(action==='page')addEmptyPage(project,node,{asChild:true});
+    if(action.startsWith('page'))addEmptyPage(project,node,{asChild:true,documentType:action.slice(5)||'html'});
     if(action==='group')addGroup(project,node,{asChild:true});
   };
   function handleContext(action){
@@ -1370,12 +1373,38 @@
       repairViews();renderAll();persist();
     });
   }
-  function addEmptyPage(project,targetNode,{asChild=false}={}){
+  // Templates for New Page. HTML gets a minimal doctype/head/body scaffold so the
+  // Page renders and is editable the moment it exists; the text formats start
+  // blank, because there is no equivalent of "valid but empty" to scaffold and a
+  // blank Page is authorable on its own now.
+  const NEW_PAGE_TYPES={
+    html:{label:'HTML',extension:'html',template:name=>[
+      '<!DOCTYPE html>',
+      '<html lang="en">',
+      '<head>',
+      '  <meta charset="utf-8">',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+      `  <title>${esc(name)}</title>`,
+      '</head>',
+      '<body>',
+      `  <h1>${esc(name)}</h1>`,
+      '</body>',
+      '</html>',
+      ''
+    ].join('\n')},
+    markdown:{label:'Markdown',extension:'md',template:()=>''},
+    json:{label:'JSON',extension:'json',template:()=>''},
+    xml:{label:'XML',extension:'xml',template:()=>''}
+  };
+
+  function addEmptyPage(project,targetNode,{asChild=false,documentType='html'}={}){
     if(!project)return;
+    const type=NEW_PAGE_TYPES[documentType]?documentType:'html';
     withUnsavedInspectorGuard(()=>{
       const parentId=asChild?(targetNode?.id||null):(targetNode?.type==='group'?targetNode.id:(targetNode?.parentId||null));
-      const name=uniqueTreeName('New Page',children(project,parentId).map(node=>node.name));
-      const page={id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.html`,documentType:'html',parentId,order:children(project,parentId).length,source:'',loadedSource:'',baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:true};
+      const name=uniqueTreeName(`New ${NEW_PAGE_TYPES[type].label} Page`,children(project,parentId).map(node=>node.name));
+      const source=NEW_PAGE_TYPES[type].template(name);
+      const page={id:uid('page'),type:'page',name,fileName:`${exportSafeName(name)}.${NEW_PAGE_TYPES[type].extension}`,documentType:type,parentId,order:children(project,parentId).length,source,loadedSource:source,baseUrl:null,sourcePath:null,previewUrl:null,isEmpty:!source.trim()};
       project.nodes.push(page);selectedTreeNode=page.id;state.selectedDocumentId=project.id;
       if(parentId){const parent=project.nodes.find(node=>node.id===parentId);if(parent)parent.expanded=true;}
       bindPageToSlot(activePageSlot(),page.id);
