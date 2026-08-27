@@ -89,7 +89,7 @@ async function readHtmlPath(filePath) {
   };
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf']);
+const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf']);
 
 // Resolving a link target belongs here, not in the renderer: turning
 // "../shared/report.html" plus a file:// base into a real path is Windows
@@ -145,13 +145,14 @@ function documentTypeForPath(filePath) {
   if (extension === '.html' || extension === '.htm') return 'html';
   if (extension === '.md' || extension === '.markdown') return 'markdown';
   if (extension === '.json') return 'json';
+  if (extension === '.xml') return 'xml';
   if (extension === '.pdf') return 'pdf';
   return null;
 }
 
 async function readDocumentPath(filePath) {
   const documentType = documentTypeForPath(filePath);
-  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, and PDF pages are supported.');
+  if (!filePath || !documentType) throw new Error('Only HTML, Markdown, JSON, XML, and PDF pages are supported.');
   if (documentType === 'html') return { ...(await readHtmlPath(filePath)), documentType };
 
   const common = {
@@ -178,7 +179,7 @@ async function openDocumentFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Pages',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf'] }]
+    filters: [{ name: 'Leaf Pages', extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf'] }]
   });
   if (result.canceled) return [];
   return Promise.all(result.filePaths.map(readDocumentPath));
@@ -257,6 +258,7 @@ const PAGE_EXPORT_FORMATS = {
   html: { extension: 'html', name: 'HTML Page' },
   markdown: { extension: 'md', name: 'Markdown Page' },
   json: { extension: 'json', name: 'JSON Page' },
+  xml: { extension: 'xml', name: 'XML Page' },
   pdf: { extension: 'pdf', name: 'PDF Document' }
 };
 

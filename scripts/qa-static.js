@@ -106,9 +106,9 @@ checkIncludesAll('Legacy Leaf project extensions remain openable', main,
 check('Legacy leaf-document projects still migrate in renderer',
   renderer.includes("payload?.format==='leaf-document'"));
 
-checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, and PDF', main,
-  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])",
-   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']"]);
+checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, and PDF', main,
+  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])",
+   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']"]);
 check('Obsolete image Page formats are not restored',
   !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'"));
 checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF', html,
@@ -116,8 +116,8 @@ checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF',
 checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
   ['async function exportPageAs', 'printToPDF({ printBackground: true, preferCSSPageSize: true })', "javascript: false"]);
 
-checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
-  ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}",
+checkIncludesAll('Direct Markdown, JSON and XML editing remains isolated', renderer,
+  ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}",
    "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
 checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./scripted-html-edit.js')"]);
@@ -343,6 +343,37 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
   ['function filterInspectorProperties()', "propertyRow('linkHref','Link URL'", "propertyRow('linkTarget','Open In'", "['http:','https:','mailto:','tel:'].includes(url.protocol)"]);
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
+
+// --- XML pages -------------------------------------------------------------
+// A document type is only supported once every list agrees. Missing one leaves
+// a type that imports but cannot be saved, or that normalizeState rewrites back
+// to html on the next load.
+check('XML is accepted by the main-process file surface',
+  main.includes("'.json', '.xml', '.pdf'")
+  && main.includes("if (extension === '.xml') return 'xml';")
+  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")
+  && main.includes("xml: { extension: 'xml', name: 'XML Page' },"));
+check('XML survives state normalization instead of being rewritten to html',
+  renderer.includes("if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){")
+  && renderer.includes("/\\.xml$/i.test(page.fileName||'')?'xml'"));
+check('XML is droppable and carries its own tree badge',
+  /isSupportedDocumentFile\(file\)\{return !!file&&\/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  && /isHtmlFile\(file\)\{ return !!file && \/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  && renderer.includes("node.documentType==='xml'?'XML'"));
+// XML whitespace can be significant, so the preview reports well-formedness
+// rather than reformatting the file the way the JSON preview does.
+check('The XML preview validates without rewriting the source',
+  renderer.includes("if(page.documentType==='xml'){")
+  && renderer.includes("new DOMParser().parseFromString(raw,'application/xml')")
+  && renderer.includes('Well-formed XML')
+  && renderer.includes('<pre>${esc(raw)}</pre>'));
+check('XML edits through the same source editor, correctly labelled',
+  renderer.includes("page?.documentType==='xml';")
+  && renderer.includes("const DIRECT_SOURCE_LABEL={markdown:'Markdown',json:'JSON',xml:'XML'};")
+  && renderer.includes("const label=DIRECT_SOURCE_LABEL[page.documentType]||'Markdown';"));
+check('Saving an XML Page uses an XML name and extension',
+  renderer.includes("xml:{title:'Save XML Page',extension:'xml'}")
+  && renderer.includes('const text=TEXT_PAGE_SAVE[page.documentType]||TEXT_PAGE_SAVE.markdown;'));
 
 // --- Preview link navigation ------------------------------------------------
 // Every link in a preview must be preventDefault()ed. Letting one through
