@@ -344,6 +344,30 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Preview link navigation ------------------------------------------------
+// Every link in a preview must be preventDefault()ed. Letting one through
+// navigates the srcdoc iframe itself - to chrome-error:// for a missing file,
+// or to the live site for an external link - and the View stays dead, because
+// re-picking the same Page in the select is a no-op.
+check('Preview link clicks never reach the iframe navigation',
+  renderer.includes('function followPreviewLink(frame,doc,anchor,raw)')
+  && /if\(!raw\)return;\s*\n\s*event\.preventDefault\(\);event\.stopPropagation\(\);/.test(renderer));
+check('A cross-page link resolves through the main process, not string munging',
+  main.includes('async function resolveLinkTarget(payload)')
+  && main.includes('fileURLToPath(resolved)')
+  && preload.includes("resolveLinkTarget: (payload) => ipcRenderer.invoke('file:resolveLinkTarget', payload)"));
+check('An already-loaded target is reused instead of imported twice',
+  renderer.includes('const already=loadedPageForPath(target.filePath);')
+  && renderer.includes('bindPageToSlot(slot,already.page.id);'));
+// shell.openExternal hands the string to the OS handler, so the scheme allowlist
+// is the only thing between a document's href and arbitrary local execution.
+check('Only http, https, mailto and tel can be opened externally',
+  main.includes("const EXTERNAL_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);")
+  && main.includes('if (!EXTERNAL_LINK_PROTOCOLS.has(url.protocol))'));
+check('Same-document anchors still scroll rather than navigate',
+  renderer.includes('function scrollFrameToFragment(doc,fragment)')
+  && renderer.includes("if(raw.startsWith('#')){"));
+
 // --- Undo/Redo shortcuts ----------------------------------------------------
 // A keydown raised inside a preview document never reaches the parent, so the
 // app's own shortcuts stopped firing the moment focus entered a View - which is

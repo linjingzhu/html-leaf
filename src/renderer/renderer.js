@@ -2887,6 +2887,53 @@
     return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
+  function scrollFrameToFragment(doc,fragment){
+    if(!fragment){doc.scrollingElement?.scrollTo({top:0,behavior:'auto'});return;}
+    const target=doc.getElementById(fragment)||[...doc.getElementsByName(fragment)][0];
+    target?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+  }
+
+  const EXTERNAL_LINK_SCHEME=/^(https?|mailto|tel):/i;
+
+  // Every link in a preview is handled here, and every one of them is
+  // preventDefault()ed. Letting one through navigates the iframe itself: the
+  // srcdoc preview is replaced - by chrome-error:// for a missing file, or by
+  // the live site for an external link - and the View is dead until the user
+  // switches modes, because re-picking the same Page in the select is a no-op.
+  async function followPreviewLink(frame,doc,anchor,raw){
+    const slot=previewSlotForFrame(frame);
+    const page=pageById(frameToPageId(frame));
+    if(EXTERNAL_LINK_SCHEME.test(raw)){
+      try{
+        await window.electronAPI.openExternalLink(anchor.href||raw);
+        showToast('Opened in your browser');
+      }catch(error){ showToast(`Could not open the link: ${error.message}`); }
+      return;
+    }
+    if(!page?.baseUrl){ showToast('This Page has no folder to resolve the link against'); return; }
+    let target=null;
+    try{ target=await window.electronAPI.resolveLinkTarget({href:raw,baseUrl:page.baseUrl}); }
+    catch(error){ showToast(`Could not resolve the link: ${error.message}`); return; }
+    if(!target?.filePath){ showToast('That link does not point at a local page'); return; }
+    if(!target.documentType){ showToast(`Leaf opens HTML, Markdown, JSON and PDF - not ${target.filePath.split(/[\\/]/).pop()}`); return; }
+
+    const already=loadedPageForPath(target.filePath);
+    if(already){
+      bindPageToSlot(slot,already.page.id);
+      selectedTreeNode=already.page.id;
+      state.selectedDocumentId=already.project.id;
+      clearInspector();renderAll();persist();
+      showToast(`Opened ${already.page.name}`);
+      return;
+    }
+    if(!target.exists){ showToast(`Linked file not found: ${target.filePath.split(/[\\/]/).pop()}`); return; }
+    try{
+      const result=await window.electronAPI.readPageAtPath(target.filePath);
+      const added=await addPageResultToDocument(result,slot);
+      if(added) showToast(`Opened ${added.name}`);
+    }catch(error){ showToast(`Could not open the linked page: ${error.message}`); }
+  }
+
   function installLocalAnchorNavigation(frame){
     let doc=null;try{doc=frame?.contentDocument}catch{}
     if(!doc||doc.__leafLocalAnchorNavigation)return false;
@@ -2895,12 +2942,14 @@
       if(canInspectFrame(frame))return;
       const anchor=event.target?.closest?.('a[href]');
       const raw=anchor?.getAttribute('href')?.trim()||'';
-      if(!raw.startsWith('#'))return;
+      if(!raw)return;
       event.preventDefault();event.stopPropagation();
-      let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
-      if(!fragment){doc.scrollingElement?.scrollTo({top:0,behavior:'auto'});return;}
-      const target=doc.getElementById(fragment)||[...doc.getElementsByName(fragment)][0];
-      target?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+      if(raw.startsWith('#')){
+        let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
+        scrollFrameToFragment(doc,fragment);
+        return;
+      }
+      withUnsavedInspectorGuard(()=>{followPreviewLink(frame,doc,anchor,raw);});
     },true);
     return true;
   }

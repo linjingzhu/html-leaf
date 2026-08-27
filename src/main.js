@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, clipboard } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, clipboard, shell } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -90,6 +90,55 @@ async function readHtmlPath(filePath) {
 }
 
 const DOCUMENT_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf']);
+
+// Resolving a link target belongs here, not in the renderer: turning
+// "../shared/report.html" plus a file:// base into a real path is Windows
+// separator and drive-letter work that string munging in the renderer gets
+// wrong. Returns null for anything that is not a local page we could open.
+async function resolveLinkTarget(payload) {
+  const href = String(payload?.href || '').trim();
+  const baseUrl = String(payload?.baseUrl || '').trim();
+  if (!href || !baseUrl) return null;
+  let resolved;
+  try {
+    resolved = new URL(href, baseUrl);
+  } catch {
+    return null;
+  }
+  if (resolved.protocol !== 'file:') return null;
+  let filePath;
+  try {
+    filePath = fileURLToPath(resolved);
+  } catch {
+    return null;
+  }
+  const documentType = documentTypeForPath(filePath);
+  if (!documentType) return { filePath, documentType: null, exists: false };
+  let exists = false;
+  try {
+    exists = (await fs.stat(filePath)).isFile();
+  } catch {
+    exists = false;
+  }
+  return { filePath, documentType, exists, fragment: resolved.hash.replace(/^#/, '') };
+}
+
+// Only the schemes a document legitimately links out with. Anything else -
+// file:, javascript:, data: - must never reach the OS handler.
+const EXTERNAL_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+async function openExternalLink(rawUrl) {
+  let url;
+  try {
+    url = new URL(String(rawUrl || '').trim());
+  } catch {
+    throw new Error('That link is not a valid URL.');
+  }
+  if (!EXTERNAL_LINK_PROTOCOLS.has(url.protocol)) {
+    throw new Error(`Refusing to open a ${url.protocol} link externally.`);
+  }
+  await shell.openExternal(url.href);
+  return { opened: true, url: url.href };
+}
 
 function documentTypeForPath(filePath) {
   const extension = path.extname(String(filePath || '')).toLowerCase();
@@ -493,6 +542,8 @@ app.whenReady().then(() => {
   ipcMain.handle('file:importPages', openDocumentFiles);
   ipcMain.handle('file:importDocuments', openDocumentFiles); // v0.5.14 compatibility
   ipcMain.handle('file:readPagePath', (_e, filePath) => readDocumentPath(filePath));
+  ipcMain.handle('file:resolveLinkTarget', (_e, payload) => resolveLinkTarget(payload));
+  ipcMain.handle('shell:openExternal', (_e, url) => openExternalLink(url));
   ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath)); // v0.5.14 compatibility
   ipcMain.handle('file:exportHtml', (_e, payload) => exportHtml(payload));
   ipcMain.handle('file:saveHtmlPath', (_e, payload) => saveHtmlPath(payload));
