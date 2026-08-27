@@ -191,7 +191,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ language:'ko', scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true },
+      preferences:{ language:'ko', scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -1574,6 +1574,175 @@
     return true;
   }
 
+  // ----- Contents (document outline) -----
+  // The panel floats over the viewport and is scoped to the node that holds the
+  // View's Page - its Group, or the Document when the Page sits at the top
+  // level - so a sibling Page's outline can be previewed without loading it.
+  const TOC_HEADING_SELECTOR='h1,h2,h3,h4,h5,h6';
+  const TOC_SLOTS=['single','left','right','codePreview'];
+  const tocSelection=new Map();
+
+  function headingsFromDocument(doc){
+    if(!doc?.body)return[];
+    return [...doc.body.querySelectorAll(TOC_HEADING_SELECTOR)]
+      .filter(el=>!el.closest('[data-editor-overlay],[data-adf-marker]'))
+      .map((el,index)=>({level:Number(el.tagName[1])||1,text:(el.textContent||'').trim().replace(/\s+/g,' '),index,el}));
+  }
+
+  // Parsing the stored source is what makes an unopened Page previewable. It
+  // runs through DOMParser, which builds a document without executing anything
+  // in it, and it never writes back - the outline is derived, not stored.
+  function headingsFromSource(page){
+    if(!page||isBinaryPage(page))return[];
+    const source=String(page.source||'');
+    if(!source.trim())return[];
+    let markup='';
+    if(page.documentType==='markdown')markup=window.JiraExport?.markdownToRichHtml?.(source)||'';
+    else if(page.documentType==='html')markup=source;
+    else return[];
+    let doc=null;
+    try{doc=new DOMParser().parseFromString(markup,'text/html');}catch{return[];}
+    return headingsFromDocument(doc).map(({el,...rest})=>rest);
+  }
+
+  // A reachable preview is the better source: the heading element itself becomes
+  // the scroll target, so no index has to be matched up afterwards.
+  function reachableTocDocument(slot,pageId){
+    const frame=frameForEditSlot(slot);
+    if(!frame||!pageId||pageIdForSlot(slot)!==pageId)return null;
+    if(['interactive-isolated','direct-source-editor','pdf-native-editor'].includes(frame.dataset.previewRuntime))return null;
+    if(isBinaryPage(pageById(pageId)))return null;
+    try{return frame.contentDocument?.body?frame.contentDocument:null;}catch{return null;}
+  }
+
+  function tocHeadings(slot,pageId){
+    const doc=reachableTocDocument(slot,pageId);
+    return doc?headingsFromDocument(doc):headingsFromSource(pageById(pageId));
+  }
+
+  function tocScope(slot){
+    const found=pageIdForSlot(slot)?nodeById(pageIdForSlot(slot)):null;
+    if(!found||found.node.type!=='page')return null;
+    const {project,node}=found;
+    const container=node.parentId?project.nodes.find(item=>item.id===node.parentId):null;
+    return {
+      scopeName:container?.name||project.name,
+      viewPageId:node.id,
+      pages:children(project,node.parentId).filter(item=>item.type==='page')
+    };
+  }
+
+  function tocSelectedPageId(slot){
+    const scope=tocScope(slot);
+    if(!scope)return null;
+    const chosen=tocSelection.get(slot);
+    return scope.pages.some(page=>page.id===chosen)?chosen:scope.viewPageId;
+  }
+
+  function tocVisible(){return state.preferences.tocVisible===true;}
+
+  function setTocVisible(visible){
+    state.preferences.tocVisible=!!visible;
+    TOC_SLOTS.forEach(renderTocPanel);
+    persist();
+  }
+
+  function renderTocPanel(slot){
+    const panel=$(`[data-toc-panel="${slot}"]`);
+    if(!panel)return;
+    const scope=tocScope(slot);
+    const toggle=$(`[data-toc-toggle="${slot}"]`);
+    if(toggle){
+      toggle.classList.toggle('active',tocVisible());
+      toggle.setAttribute('aria-pressed',tocVisible()?'true':'false');
+    }
+    if(!tocVisible()||!scope){panel.hidden=true;return;}
+    panel.hidden=false;
+    const selectedId=tocSelectedPageId(slot);
+    const headings=tocHeadings(slot,selectedId);
+    const minLevel=headings.length?Math.min(...headings.map(item=>item.level)):1;
+    panel.querySelector('.toc-panel-scope').textContent=scope.scopeName;
+    const select=panel.querySelector('.toc-panel-pages');
+    select.innerHTML=scope.pages.map(page=>
+      `<option value="${esc(page.id)}"${page.id===selectedId?' selected':''}>${esc(page.name)}${page.id===scope.viewPageId?' · in View':''}</option>`).join('');
+    const list=panel.querySelector('.toc-panel-list');
+    if(!headings.length){
+      const page=pageById(selectedId);
+      list.innerHTML=`<div class="toc-panel-empty">${esc(
+        isBinaryPage(page)?`${page.documentType==='pdf'?'PDF':'Image'} Pages have no headings to extract`
+        :page&&!['html','markdown'].includes(page.documentType)?'Contents is extracted from HTML and Markdown Pages'
+        :'No headings in this Page')}</div>`;
+      return;
+    }
+    list.innerHTML=headings.map(item=>
+      `<button type="button" class="toc-entry" data-toc-index="${item.index}" style="padding-left:${8+Math.min(item.level-minLevel,5)*13}px" title="${esc(item.text)}">
+         <span class="toc-entry-level">H${item.level}</span><span class="toc-entry-text">${esc(item.text||'(untitled heading)')}</span>
+       </button>`).join('');
+  }
+
+  function renderAllTocPanels(){TOC_SLOTS.forEach(renderTocPanel);}
+
+  function scrollSlotToHeading(slot,index,text){
+    const frame=frameForEditSlot(slot);
+    if(!frame)return;
+    if(frame.dataset.previewRuntime==='interactive-isolated'){
+      const token=frame.dataset.snapshotToken;
+      if(token)frame.contentWindow.postMessage({__leafViewTocScroll:true,token,index},'*');
+      return;
+    }
+    let doc=null;try{doc=frame.contentDocument;}catch{}
+    const headings=headingsFromDocument(doc);
+    if(!headings.length)return;
+    // Index first, but only when the text still agrees. A scripted page can add
+    // headings after the outline was parsed from source, which shifts everything
+    // below them; the text match is what survives that.
+    const byIndex=headings[index];
+    const target=(byIndex&&(!text||byIndex.text===text))?byIndex:(text?headings.find(item=>item.text===text):null)||byIndex;
+    target?.el?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+  }
+
+  async function jumpToHeading(slot,pageId,index,text){
+    if(pageIdForSlot(slot)!==pageId){
+      if(!bindPageToSlot(slot,pageId))return;
+      selectedTreeNode=pageId;
+      renderAll();persist();
+      const frame=frameForEditSlot(slot);
+      if(frame)await new Promise(resolve=>{
+        const timer=setTimeout(resolve,1500);
+        frame.addEventListener('load',()=>{clearTimeout(timer);resolve();},{once:true});
+      });
+    }
+    scrollSlotToHeading(slot,index,text);
+  }
+
+  function buildTocPanel(slot,pane){
+    if(!pane||pane.querySelector(`[data-toc-panel="${slot}"]`))return;
+    const panel=document.createElement('div');
+    panel.className='toc-panel';panel.dataset.tocPanel=slot;panel.hidden=true;
+    panel.setAttribute('aria-label','Contents');
+    panel.innerHTML=`
+      <div class="toc-panel-head"><span class="toc-panel-title">Contents</span><span class="toc-panel-scope"></span>
+        <button type="button" class="toc-panel-close" title="Hide Contents">✕</button></div>
+      <select class="toc-panel-pages" aria-label="Page to outline"></select>
+      <div class="toc-panel-list"></div>`;
+    // The panel sits over the preview; clicks in it must not be read as the
+    // viewport activation gesture underneath.
+    panel.addEventListener('pointerdown',event=>event.stopPropagation());
+    panel.querySelector('.toc-panel-close').addEventListener('click',event=>{event.stopPropagation();setTocVisible(false);});
+    panel.querySelector('.toc-panel-pages').addEventListener('change',event=>{
+      event.stopPropagation();tocSelection.set(slot,event.target.value);renderTocPanel(slot);
+    });
+    panel.querySelector('.toc-panel-list').addEventListener('click',event=>{
+      const entry=event.target.closest('[data-toc-index]');
+      if(!entry)return;
+      event.stopPropagation();
+      const index=Number(entry.dataset.tocIndex);
+      const text=entry.querySelector('.toc-entry-text')?.textContent||'';
+      jumpToHeading(slot,tocSelectedPageId(slot),index,text);
+    });
+    pane.appendChild(panel);
+  }
+
   function installPreviewZoomControls(){
     ['single','left','right','codePreview'].forEach(slot=>{
       const indicator=$(`[data-preview-zoom="${slot}"]`);
@@ -1588,6 +1757,9 @@
       inside.type='button';inside.textContent='+';inside.dataset.zoomIn=slot;inside.title='Zoom in';
       const fit=document.createElement('button');
       fit.type='button';fit.textContent='Fit';fit.className='viewport-zoom-fit';fit.dataset.zoomFit=slot;fit.title='Fit preview to Window';
+      const contents=document.createElement('button');
+      contents.type='button';contents.textContent='Contents';contents.className='viewport-toc-toggle';
+      contents.dataset.tocToggle=slot;contents.title='Show or hide Contents';contents.setAttribute('aria-pressed','false');
       const canvas=$(`[data-preview-canvas="${slot}"]`);
       const pane=canvas?.closest('.view-pane');
       const layer=document.createElement('div');
@@ -1596,7 +1768,9 @@
       indicator.replaceWith(control);
       control.append(out,inputIndicator,inside);
       control.insertAdjacentElement('afterend',fit);
-      layer.append(control,fit);pane?.appendChild(layer);
+      layer.append(contents,control,fit);pane?.appendChild(layer);
+      buildTocPanel(slot,pane);
+      contents.addEventListener('click',e=>{e.stopPropagation();setTocVisible(!tocVisible());});
       out.addEventListener('click',e=>{e.stopPropagation();setPreviewZoom(slot,previewZoomForSlot(slot)-PREVIEW_ZOOM_STEP);});
       inside.addEventListener('click',e=>{e.stopPropagation();setPreviewZoom(slot,previewZoomForSlot(slot)+PREVIEW_ZOOM_STEP);});
       fit.addEventListener('click',e=>{e.stopPropagation();fitPreviewZoom(slot);});
@@ -3024,6 +3198,10 @@
         addEventListener('message', event => {
           if(event.data && event.data.__leafViewportChromeScale===true && event.data.token===TOKEN){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof event.data.css==='string'&&event.data.css.length<1200)style.textContent=event.data.css;return;}
           if(event.data && event.data.__leafViewSearch===true && event.data.token===TOKEN){runSearch(event.data.query,event.data.index);return;}
+          if(event.data && event.data.__leafViewTocScroll===true && event.data.token===TOKEN){
+            try{ document.querySelectorAll('h1,h2,h3,h4,h5,h6')[event.data.index]?.scrollIntoView({block:'start',inline:'nearest'}); }catch{}
+            return;
+          }
           if(event.data && event.data.__hbeSnapshotRequest===TOKEN) sendSnapshot();
         });
         addEventListener('pointerdown', () => {
@@ -3237,6 +3415,7 @@
     const slot=previewSlotForFrame(frame);
     if(slot)applyPreviewScrollbarCompensation(slot);
     if(slot)requestAnimationFrame(()=>updateViewportFloatingInsets(slot));
+    if(slot)renderTocPanel(slot);
     installLocalAnchorNavigation(frame);
     if(frame.dataset.previewRuntime==='direct-source-editor'){
       disconnectHierarchyObserver(frame);
@@ -6657,6 +6836,7 @@
     renderViewMode();
     updateClearButtons();
     renderCrumbs();
+    renderAllTocPanels();
   }
 
   $$('[data-edit-save]').forEach(button=>button.addEventListener('click',async event=>{

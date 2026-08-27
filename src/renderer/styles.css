@@ -423,7 +423,7 @@ iframe{width:100%;height:100%;border:0;background:var(--canvas);color-scheme:dar
 body.document-view-only .group-tile-view{display:none!important}
 /* The Tile View owns the whole viewport; the pane's zoom/Fit chrome sits on a
    near-maximum z-index, so it has to be hidden rather than stacked under. */
-body.group-tiles-open .viewport-floating-controls{display:none}
+body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-panel{display:none}
 .group-tile-head{
   display:flex;align-items:center;gap:9px;height:var(--view-head-h);padding:0 12px;
   background:var(--panel);border-bottom:1px solid var(--border)
@@ -589,8 +589,7 @@ body.group-tiles-open .viewport-floating-controls{display:none}
 .selection-card.draft-dirty .draft-label{display:block}
 .selection-card.draft-dirty{box-shadow:inset 2px 0 0 color-mix(in srgb,var(--accent) 70%,var(--border))}
 
-.property-group{padding:0 0 2px;margin:5px 0;border:1px solid var(--border);border-radius:4px;overflow:hidden}
-.property-group:first-of-type{border-top:0}
+.property-group{padding:0 0 2px;margin:5px 0;overflow:hidden}
 .property-group-title{
   min-height:28px;padding:0 7px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
   list-style:none;background:color-mix(in srgb,var(--panel-secondary) 78%,white 4%);
@@ -900,6 +899,48 @@ body.is-resizing-row iframe{pointer-events:none!important}
   color:var(--text-secondary);font-size:10px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.12)
 }
 .viewport-zoom-fit:hover,.viewport-zoom-fit.active{background:var(--hover);color:var(--foreground)}
+/* Contents (document outline) */
+.viewport-toc-toggle{
+  height:22px;padding:0 9px;border:1px solid var(--border);border-radius:var(--radius-control);
+  background:var(--panel);color:var(--text-secondary);cursor:pointer;font-size:11px;white-space:nowrap
+}
+.viewport-toc-toggle:hover{color:var(--foreground);border-color:var(--border-strong)}
+.viewport-toc-toggle.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.toc-panel{
+  position:absolute;right:10px;top:calc(var(--view-head-h) + 10px);z-index:2147482001;
+  width:248px;max-width:calc(100% - 20px);max-height:calc(100% - var(--view-head-h) - 56px);
+  display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--border-strong);border-radius:var(--radius-control);
+  box-shadow:0 8px 24px rgba(0,0,0,.18)
+}
+.toc-panel[hidden]{display:none}
+.toc-panel-head{
+  display:flex;align-items:center;gap:6px;padding:7px 8px;border-bottom:1px solid var(--border);
+  color:var(--foreground);font-size:11px;font-weight:600
+}
+.toc-panel-scope{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-weight:400}
+.toc-panel-close{
+  flex:none;width:18px;height:18px;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);border-radius:var(--radius-control);
+  background:var(--panel-secondary);color:var(--text-secondary);cursor:pointer;font-size:9px
+}
+.toc-panel-close:hover{color:var(--foreground);border-color:var(--border-strong)}
+.toc-panel-pages{
+  margin:7px 8px 0;height:24px;border:1px solid var(--border);border-radius:var(--radius-control);
+  background:var(--panel-secondary);color:var(--foreground);font-size:11px
+}
+.toc-panel-list{overflow:auto;padding:6px 0 8px}
+.toc-panel-empty{padding:14px 12px;color:var(--muted);font-size:11px;text-align:center}
+.toc-entry{
+  width:100%;display:flex;align-items:baseline;gap:6px;padding-right:8px;
+  min-height:22px;border:0;background:transparent;color:var(--text-secondary);
+  cursor:pointer;font-size:11px;text-align:left
+}
+.toc-entry:hover{background:var(--panel-secondary);color:var(--foreground)}
+.toc-entry-level{flex:none;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
+.toc-entry-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.view-pane.is-empty .toc-panel{display:none}
+
 .viewport-floating-controls{
   position:absolute;right:calc(10px + var(--viewport-scrollbar-inline,0px));bottom:calc(9px + var(--viewport-scrollbar-block,0px));
   z-index:2147482000;display:flex;align-items:center;gap:8px;pointer-events:none;transition:right 100ms ease,bottom 100ms ease
