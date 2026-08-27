@@ -2094,6 +2094,20 @@
     refs.usedComponentPreviewFrame.srcdoc=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><style>html,body{min-height:100%;margin:0}body{box-sizing:border-box;display:grid;place-items:center;padding:14px;background:#fff;color:#17202a;font-family:system-ui,sans-serif}body>*{max-width:100%;box-sizing:border-box}</style></head><body>${content}</body></html>`;
   }
 
+  // The Used list scrolls on its own inside the panel. scrollIntoView would also
+  // move every scrollable ancestor - the left panel, the window - so the offset
+  // is measured against the list and applied to its own scrollTop, and nothing
+  // else on the page moves. An already-visible row works out to no change.
+  function revealUsedComponentRow(token){
+    const list=refs.usedComponentsList;
+    if(!list||!token)return;
+    const row=list.querySelector(`[data-used-component="${CSS.escape(token)}"]`);
+    if(!row||!list.clientHeight)return;
+    const listBox=list.getBoundingClientRect(),rowBox=row.getBoundingClientRect();
+    if(rowBox.top<listBox.top)list.scrollTop+=rowBox.top-listBox.top;
+    else if(rowBox.bottom>listBox.bottom)list.scrollTop+=rowBox.bottom-listBox.bottom;
+  }
+
   function renderUsedComponents(){
     if(!refs.usedComponentsList) return;
     usedComponentCatalog=new Map();
@@ -2132,6 +2146,7 @@
       refs.usedContextMenu.querySelector('button')?.focus();
     }));
     renderUsedComponentPreview();
+    requestAnimationFrame(()=>revealUsedComponentRow(selectedUsedComponentToken));
   }
 
   function syncUsedSelectionFromElement(element){
@@ -2161,6 +2176,7 @@
     });
     highlightedUsedComponentToken=token;
     refs.usedComponentsList?.querySelector(`[data-used-component="${CSS.escape(token)}"]`)?.classList.add('instance-highlighted');
+    revealUsedComponentRow(token);
     elements[0]?.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});
     showToast(`${elements.length} instance${elements.length===1?'':'s'} highlighted`);
   }
