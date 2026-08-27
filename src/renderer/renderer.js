@@ -255,10 +255,10 @@
       if(page.type==='page'){
         page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
-        if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){
-          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.json$/i.test(page.fileName||'')?'json':/\.xml$/i.test(page.fileName||'')?'xml':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        if(!['html','markdown','json','xml','pdf','image'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.(png|jpe?g|webp|gif|svg)$/i.test(page.fileName||'')?'image':/\.json$/i.test(page.fileName||'')?'json':/\.xml$/i.test(page.fileName||'')?'xml':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
         }
-        if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
+        if((page.documentType==='pdf'||page.documentType==='image')&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
       }
     }));
     s.views={...fallback.views,...(s.views||{})};
@@ -736,13 +736,13 @@
   }
 
   function pageFormatKey(page){
-    return page?.documentType==='markdown'?'markdown':page?.documentType==='json'?'json':page?.documentType==='xml'?'xml':page?.documentType==='pdf'?'pdf':'html';
+    return page?.documentType==='markdown'?'markdown':page?.documentType==='json'?'json':page?.documentType==='xml'?'xml':page?.documentType==='pdf'?'pdf':page?.documentType==='image'?'image':'html';
   }
 
   function openSavePageAsDialog(){
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
-    [...refs.savePageAsFormat.options].forEach(option=>{option.disabled=page.documentType==='pdf'&&option.value!=='pdf';});
+    [...refs.savePageAsFormat.options].forEach(option=>{option.disabled=isBinaryPage(page)&&option.value!==page.documentType;});
     refs.savePageAsFormat.value=pageFormatKey(page);
     refs.savePageAsModal.classList.add('show');
     setTimeout(()=>refs.savePageAsFormat.focus(),0);
@@ -817,13 +817,13 @@
     if(forceAs)return openSavePageAsDialog();
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
-    if(page.documentType==='pdf'&&!forceAs){showToast('PDF pages are read-only. Use Save As to copy the file.');return false;}
+    if(isBinaryPage(page)&&!forceAs){showToast(`${page.documentType==='pdf'?'PDF':'Image'} pages are read-only. Use Save As to copy the file.`);return false;}
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
           let filePath=null;
-          if(page.documentType==='pdf'){
-            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
+          if(isBinaryPage(page)){
+            filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.${page.documentType==='pdf'?'pdf':'png'}`});
           }else if(isDirectSourceType(page)){
             const text=TEXT_PAGE_SAVE[page.documentType]||TEXT_PAGE_SAVE.markdown;
             const extension=page.documentType==='markdown'&&/\.markdown$/i.test(page.fileName||'')?'markdown':text.extension;
@@ -981,11 +981,11 @@
     $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
-  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|json|xml|pdf)$/i.test(file.name||'');}
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i.test(file.name||'');}
 
   async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, JSON, XML, or PDF pages');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, JSON, XML, PDF, or image pages');return;}
     try{
       for(const file of files){
         const result=await window.electronAPI.readDroppedPage(file);
@@ -1166,7 +1166,7 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':node.documentType==='xml'?'XML':'◇';
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='image'?'IMG':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':node.documentType==='xml'?'XML':'◇';
       row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span>${viewChips}<button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
@@ -2055,7 +2055,7 @@
     disconnectHierarchyObserver(frame);
     let doc=null;try{doc=frame.contentDocument}catch{}
     const page=pageById(frameToPageId(frame));
-    if(!doc?.body||page?.documentType==='pdf'||['interactive-isolated','direct-source-editor'].includes(frame.dataset.previewRuntime))return;
+    if(!doc?.body||isBinaryPage(page)||['interactive-isolated','direct-source-editor'].includes(frame.dataset.previewRuntime))return;
     const observer=new doc.defaultView.MutationObserver(records=>{
       const authorChange=records.some(record=>{
         if(record.type==='attributes'&&/^(data-editor-|data-adf-marker)/.test(record.attributeName||''))return false;
@@ -2527,7 +2527,7 @@
     if(thumb.dataset.tileFilled==='true') return;
     thumb.dataset.tileFilled='true';
     const page=pageById(thumb.dataset.pageId);
-    if(!pageHasRenderableContent(page)||page.documentType==='pdf') return;
+    if(!pageHasRenderableContent(page)||isBinaryPage(page)) return;
     const frame=document.createElement('iframe');
     frame.setAttribute('sandbox','');
     frame.setAttribute('scrolling','no');
@@ -2892,7 +2892,7 @@
   }
 
   function pageHasRenderableContent(page){
-    return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
+    return !!page && !page.isEmpty && (isBinaryPage(page)?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
   function scrollFrameToFragment(doc,fragment){
@@ -2923,7 +2923,7 @@
     try{ target=await window.electronAPI.resolveLinkTarget({href:raw,baseUrl:page.baseUrl}); }
     catch(error){ showToast(`Could not resolve the link: ${error.message}`); return; }
     if(!target?.filePath){ showToast('That link does not point at a local page'); return; }
-    if(!target.documentType){ showToast(`Leaf opens HTML, Markdown, JSON, XML and PDF - not ${target.filePath.split(/[\\/]/).pop()}`); return; }
+    if(!target.documentType){ showToast(`Leaf opens HTML, Markdown, JSON, XML, PDF and images - not ${target.filePath.split(/[\\/]/).pop()}`); return; }
 
     const already=loadedPageForPath(target.filePath);
     if(already){
@@ -3048,6 +3048,15 @@
       const diagnostic=error?`<div class="json-error"><strong>JSON validation error</strong>${esc(error)}</div>`:'<div class="json-valid">Valid JSON</div>';
       return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>html{color-scheme:light}body{margin:0;padding:30px 36px;color:#20242a;background:#fff;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.json-valid,.json-error{position:sticky;top:0;margin:0 0 14px;padding:9px 12px;border-radius:6px}.json-valid{color:#176b3a;background:#e7f6ed}.json-error{display:flex;gap:10px;color:#9b2525;background:#fdecec}pre{margin:0;padding:18px;overflow:auto;border:1px solid #d9dde3;border-radius:7px;background:#f7f8fa;color:#172033;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Consolas,'SFMono-Regular',monospace}</style></head><body>${diagnostic}<pre>${esc(formatted)}</pre></body></html>`;
     }
+    if(page.documentType==='image'){
+      // Rendered through the normal srcdoc path rather than pointing the frame
+      // at the file: a bare image document is laid out by the browser on its own
+      // background, which ignores the View's zoom and fit chrome. The wrapper
+      // keeps it centred and scaled like every other Page.
+      const href=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      const alt=esc(page.name||page.fileName||'Image');
+      return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob:; style-src 'unsafe-inline';"><style>html,body{margin:0;height:100%}body{display:flex;align-items:center;justify-content:center;background:#fff;color-scheme:light}img{max-width:100%;max-height:100%;object-fit:contain;image-rendering:auto}</style></head><body><img src="${esc(href)}" alt="${alt}"></body></html>`;
+    }
     if(page.documentType==='xml'){
       // Shown as written, not reformatted. Whitespace inside XML can be
       // significant (mixed content, xml:space), so pretty-printing the preview
@@ -3073,6 +3082,10 @@
     return `<!doctype html><html><head>${base}${csp}${bridge}</head><body>${source}</body></html>`;
   }
 
+  // PDF and images are the same kind of Page: a binary the app shows but cannot
+  // edit as source. Everywhere that means "binary, preview-only, read-only"
+  // asks this rather than naming a type, so a third such format is one entry.
+  function isBinaryPage(page){return page?.documentType==='pdf'||page?.documentType==='image';}
   function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}
   function isDirectSourceEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&isDirectSourceType(page);}
   function isPdfNativeEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&page?.documentType==='pdf';}
@@ -3089,6 +3102,13 @@
       frame.dataset.previewRuntime='direct-source-editor';
       const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
       frame.setAttribute('sandbox','allow-scripts');
+      return false;
+    }
+    if(page?.documentType==='image'){
+      frame.closest('.view-pane')?.classList.remove('scripted-preview');
+      frame.dataset.previewRuntime='document-readonly';
+      const imageBadge=$(`[data-runtime-badge="${slot}"]`);if(imageBadge)imageBadge.hidden=true;
+      frame.setAttribute('sandbox','allow-same-origin');
       return false;
     }
     if(page?.documentType==='pdf'){
@@ -3197,7 +3217,7 @@
       return;
     }
     const page=pageById(frameToPageId(frame));
-    if(frame.dataset.previewRuntime==='pdf-native-editor'||page?.documentType==='pdf'){
+    if(frame.dataset.previewRuntime==='pdf-native-editor'||isBinaryPage(page)){
       disconnectHierarchyObserver(frame);
       updateInspectorEditControls();
       refreshViewSearch(slot);
@@ -3453,10 +3473,10 @@
     const pane=$('.code-editor-pane');
     const empty=!page || page.isEmpty;
     pane?.classList.toggle('is-empty', empty);
-    const pdfNotice=page?.documentType==='pdf'?`PDF page (read-only)\n${page.sourcePath||page.fileName||''}`:'';
+    const pdfNotice=isBinaryPage(page)?`${page.documentType==='pdf'?'PDF':'Image'} page (read-only)\n${page.sourcePath||page.fileName||''}`:'';
     refs.source.value=pdfNotice||(page?.source||'');
-    refs.source.readOnly=page?.documentType==='pdf';
-    refs.source.classList.toggle('read-only',page?.documentType==='pdf');
+    refs.source.readOnly=isBinaryPage(page);
+    refs.source.classList.toggle('read-only',isBinaryPage(page));
     const codeFileName=$('#codeFileName');if(codeFileName)codeFileName.textContent=page?.fileName||'No page selected';
     refs.dirty.hidden=true;
     updateLineRail();syncLineRailScroll();updateCodeSearchStatus();
@@ -3475,7 +3495,7 @@
   });
   refs.source.oninput=()=>{
     const page=pageById(state.views.codePage);if(!page)return;
-    if(page.documentType==='pdf')return;
+    if(isBinaryPage(page))return;
     pushUndo(page);page.source=refs.source.value;page.isEmpty=!(page.source||'').trim();$('.code-editor-pane')?.classList.toggle('is-empty',page.isEmpty);refs.dirty.hidden=false;updateLineRail();updateClearButtons();persist();
     updateCodeSearchStatus();
     if(state.views.codePreview===page.id)setTimeout(()=>renderFrame(refs.codePreviewFrame,page.id),220);
@@ -3589,7 +3609,7 @@
       else updateViewSearchStatus(slot,0,0);
       return;
     }
-    if(frame.dataset.previewRuntime==='document-readonly'&&pageById(pageIdForSlot(slot))?.documentType==='pdf'){
+    if(frame.dataset.previewRuntime==='document-readonly'&&isBinaryPage(pageById(pageIdForSlot(slot)))){
       updateViewSearchStatus(slot,0,0);return;
     }
     try{applyStaticViewSearch(slot,frame,query,index);}catch(error){console.warn('View search unavailable',error);updateViewSearchStatus(slot,0,0);}
@@ -3678,7 +3698,7 @@
   }
 
   // ----- Explorer Page Drag & Drop -----
-  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|xml|pdf)$/i.test(file.name || ''); }
+  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
@@ -3691,7 +3711,7 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Drop an HTML, Markdown, JSON, XML, or PDF page');
+    if(!file) return showToast('Drop an HTML, Markdown, JSON, XML, or PDF page or image');
 
     withUnsavedInspectorGuard(async()=>{
       try{

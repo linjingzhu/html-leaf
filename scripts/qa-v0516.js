@@ -75,9 +75,9 @@ check('Legacy leaf paths migrate through Save As prj',
 check('Trust Foundation remains active',
   main.includes('contextIsolation: true')&&main.includes('sandbox: true')&&main.includes('webSecurity: true')&&
   read('src/renderer/source-fidelity.js').includes('stripEditorArtifactsFromDocument'));
-check('Supported Page formats include HTML, Markdown, JSON, XML, and PDF',
-  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])")&&
-  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")&&
+check('Supported Page formats include HTML, Markdown, JSON, XML, PDF, and images',
+  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS])")&&
+  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']")&&
   !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
 check('Preview Edit provides an isolated direct source editor for Markdown, JSON and XML',
   js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}")&&

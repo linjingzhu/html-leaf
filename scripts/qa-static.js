@@ -106,11 +106,13 @@ checkIncludesAll('Legacy Leaf project extensions remain openable', main,
 check('Legacy leaf-document projects still migrate in renderer',
   renderer.includes("payload?.format==='leaf-document'"));
 
-checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, and PDF', main,
-  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])",
-   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']"]);
-check('Obsolete image Page formats are not restored',
-  !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'"));
+checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, PDF, and images', main,
+  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS])",
+   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']"]);
+check('Image formats share one binary Page type instead of one type each',
+  main.includes("if (IMAGE_EXTENSIONS.has(extension)) return 'image';")
+  && !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'")
+  && !renderer.includes("documentType==='png'"));
 checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF', html,
   ['option value="html"', 'option value="markdown"', 'option value="json"', 'option value="pdf"']);
 checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
@@ -344,21 +346,45 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Image pages -----------------------------------------------------------
+// PDF and images are the same kind of Page: a binary shown but never edited as
+// source. Naming the type at each of those ~15 sites is how a format ends up
+// half-supported, so they all ask one predicate.
+check('Binary Pages are recognised by one predicate, not by naming pdf everywhere',
+  renderer.includes("function isBinaryPage(page){return page?.documentType==='pdf'||page?.documentType==='image';}")
+  && renderer.includes('if(isBinaryPage(page)&&!forceAs)')
+  && renderer.includes('(isBinaryPage(page)?!!(page.previewUrl||page.sourcePath)')
+  && renderer.includes('refs.source.readOnly=isBinaryPage(page);'));
+check('An image Page carries a preview URL and its own tree badge',
+  main.includes("documentType === 'pdf' || documentType === 'image' ? pathToFileURL(filePath).href : null")
+  && renderer.includes("node.documentType==='image'?'IMG'")
+  && renderer.includes("/\\.(png|jpe?g|webp|gif|svg)$/i.test(page.fileName||'')?'image'"));
+// A bare image document is laid out by the browser on its own background, which
+// ignores the View's zoom and fit chrome, so it goes through the srcdoc path.
+check('Images render through the sandboxed srcdoc wrapper, not a raw frame src',
+  renderer.includes("if(page.documentType==='image'){")
+  && renderer.includes("object-fit:contain")
+  && renderer.includes("frame.setAttribute('sandbox','allow-same-origin');\n      return false;")
+  && !renderer.includes("if(page.documentType==='pdf'||page.documentType==='image'){\n      frame.dataset.snapshotToken"));
+check('Save As on a binary Page copies the original and keeps its extension',
+  renderer.includes('if(isBinaryPage(page)){')
+  && renderer.includes("page.documentType==='pdf'?'pdf':'png'"));
+
 // --- XML pages -------------------------------------------------------------
 // A document type is only supported once every list agrees. Missing one leaves
 // a type that imports but cannot be saved, or that normalizeState rewrites back
 // to html on the next load.
 check('XML is accepted by the main-process file surface',
-  main.includes("'.json', '.xml', '.pdf'")
+  main.includes("'.json', '.xml', '.pdf', ...IMAGE_EXTENSIONS")
   && main.includes("if (extension === '.xml') return 'xml';")
-  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")
+  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']")
   && main.includes("xml: { extension: 'xml', name: 'XML Page' },"));
 check('XML survives state normalization instead of being rewritten to html',
-  renderer.includes("if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){")
+  renderer.includes("if(!['html','markdown','json','xml','pdf','image'].includes(page.documentType)){")
   && renderer.includes("/\\.xml$/i.test(page.fileName||'')?'xml'"));
 check('XML is droppable and carries its own tree badge',
-  /isSupportedDocumentFile\(file\)\{return !!file&&\/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
-  && /isHtmlFile\(file\)\{ return !!file && \/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  renderer.includes("isSupportedDocumentFile(file){return !!file&&/\\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i")
+  && renderer.includes("isHtmlFile(file){ return !!file && /\\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i")
   && renderer.includes("node.documentType==='xml'?'XML'"));
 // XML whitespace can be significant, so the preview reports well-formedness
 // rather than reformatting the file the way the JSON preview does.

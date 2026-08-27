@@ -26,8 +26,8 @@ async function main(){
     check('PDF remains binary/read-only and uses a file preview URL',pdf.source===''&&pdf.previewUrl.startsWith('file:'));
     let unsupported=false;try{await api.readDocumentPath(txtPath);}catch{unsupported=true;}
     check('Unsupported Explorer files are rejected',unsupported);
-    let unsupportedWebp=false;try{await api.readDocumentPath(webpPath);}catch{unsupportedWebp=true;}
-    check('Animated WebP is rejected as a Page format',unsupportedWebp&&api.documentTypeForPath(webpPath)===null);
+    const webp=await api.readDocumentPath(webpPath);
+    check('WebP loads as a read-only image Page under one shared image type',api.documentTypeForPath(webpPath)==='image'&&webp.documentType==='image'&&webp.source===''&&webp.previewUrl.startsWith('file:'));
     const large=path.join(temp,'large.html');const handle=await fsp.open(large,'w');await handle.truncate(50_000_001);await handle.close();
     let oversized=false;try{await api.readDocumentPath(large);}catch(error){oversized=/50 MB/.test(error.message);}
     check('Oversized text documents are rejected before reading',oversized);
