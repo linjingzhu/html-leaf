@@ -318,7 +318,7 @@ check('Theme CSS does not leak into Page iframes',
   !/body\[data-theme="[^"]+"\][^{]*iframe/.test(css));
 
 checkIncludesAll('Zoom controls live outside the scrolling canvas', renderer,
-  ["layer.className='viewport-floating-controls'", 'layer.append(control,fit);pane?.appendChild(layer)']);
+  ["layer.className='viewport-floating-controls'", 'layer.append(contents,control,fit);pane?.appendChild(layer)']);
 checkIncludesAll('Zoom-independent scrollbar compensation remains metadata-safe', renderer,
   ['const PREVIEW_SCROLLBAR_VISUAL_SIZE=8', 'function runtimePreviewScrollbarCss(zoom=100)', 'applyPreviewScrollbarCompensation(slot,zoom);',
    "frame.dataset.scrollbarCompensation=applied?'inverse-zoom':'native'"]);
@@ -610,7 +610,7 @@ check('Leaving a Group tears the tile observers down',
 check('The Tile View hides the pane chrome it covers instead of stacking under it',
   renderer.includes("classList.add('group-tiles-open')")
   && renderer.includes("classList.remove('group-tiles-open')")
-  && css.includes('body.group-tiles-open .viewport-floating-controls{display:none}'));
+  && css.includes('body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-panel{display:none}'));
 
 // --- New Page templates ----------------------------------------------------
 // Before this, New Page always produced a blank HTML Page - and a blank Page was
@@ -658,6 +658,55 @@ check('A blank Page keeps its Code editor reachable',
   && css.includes('.code-editor-pane.is-empty .html-drop-zone{display:none}')
   && !css.includes('.code-editor-pane.is-empty .code-area{display:none}')
   && !/\.view-pane\.is-empty \.html-drop-zone,\.code-editor-pane\.is-empty \.html-drop-zone\{display:flex/.test(css));
+
+// --- Contents (document outline) -------------------------------------------
+// The outline is derived, never stored. Anchoring it the obvious way - writing
+// ids onto the headings - would leak into every export and Save, because
+// stripEditorArtifactsFromDocument cannot tell an injected id from an author's
+// own. The panel therefore holds element references and document-order indices,
+// and nothing it does may reach page.source.
+const tocSection = renderer.slice(
+  renderer.indexOf('const TOC_HEADING_SELECTOR'),
+  renderer.indexOf('function installPreviewZoomControls()')
+);
+check('Contents section is present', tocSection.length > 1500, `${tocSection.length} chars`);
+check('Contents floats over the viewport and is toggled from the floating controls',
+  renderer.includes("contents.dataset.tocToggle=slot")
+  && /layer\.append\(contents,control,fit\)/.test(renderer)
+  && renderer.includes('buildTocPanel(slot,pane)')
+  && css.includes('.toc-panel{')
+  && /\.toc-panel\{[^}]*position:absolute/.test(css));
+check('The outline never writes to the Page, and injects no anchor ids',
+  !/page\.source\s*=/.test(tocSection)
+  && !/\.id\s*=[^=]/.test(tocSection)
+  && !/setAttribute\(\s*'id'/.test(tocSection)
+  && tocSection.includes('new DOMParser().parseFromString'));
+check('Editor overlays are kept out of the outline',
+  tocSection.includes("'[data-editor-overlay],[data-adf-marker]'"));
+// Scoping to the containing node is what lets a sibling Page be previewed
+// without being loaded into the View.
+check('Contents is scoped to the node holding the View Page, not to the View alone',
+  tocSection.includes('function tocScope(')
+  && tocSection.includes("children(project,node.parentId).filter(item=>item.type==='page')")
+  && tocSection.includes('container?.name||project.name'));
+check('An unloaded Page is outlined from its stored source',
+  tocSection.includes('function headingsFromSource(')
+  && /reachableTocDocument\(slot,pageId\)/.test(tocSection)
+  && tocSection.includes('doc?headingsFromDocument(doc):headingsFromSource(pageById(pageId))'));
+check('A reachable preview scrolls its own element; the isolated runtime goes through the bridge',
+  tocSection.includes("__leafViewTocScroll:true")
+  && /if\(\['interactive-isolated','direct-source-editor','pdf-native-editor'\]\.includes\(frame\.dataset\.previewRuntime\)\)return null/.test(tocSection)
+  && tocSection.includes("target?.el?.scrollIntoView("));
+check('The preview bridge answers the outline scroll message',
+  /__leafViewTocScroll===true && event\.data\.token===TOKEN/.test(renderer)
+  && /document\.querySelectorAll\('h1,h2,h3,h4,h5,h6'\)\[event\.data\.index\]\?\.scrollIntoView/.test(renderer));
+check('A Page with no headings explains itself instead of showing a blank panel',
+  tocSection.includes('toc-panel-empty')
+  && tocSection.includes('have no headings to extract')
+  && tocSection.includes('Contents is extracted from HTML and Markdown Pages')
+  && tocSection.includes("'No headings in this Page'"));
+check('Contents stays out of the way of the Group Tile View',
+  css.includes('body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-panel{display:none}'));
 
 const large = [];
 let pageCount = 0;
