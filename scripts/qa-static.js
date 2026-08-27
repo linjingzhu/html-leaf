@@ -708,6 +708,22 @@ check('A Page with no headings explains itself instead of showing a blank panel'
 check('Contents stays out of the way of the Group Tile View',
   css.includes('body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-panel{display:none}'));
 
+// --- Inspector section chrome ----------------------------------------------
+// The first-depth section is a heading with its content under it, not a box.
+// The nested subgroup keeps its border - that is the only thing distinguishing
+// the two depths once the outer box is gone, so it must not be flattened too.
+check('First-depth Inspector sections carry no box outline',
+  /\n\.property-group\{[^}]*\}/.test(css)
+  && !/\n\.property-group\{[^}]*border:/.test(css)
+  && !/\n\.property-group\{[^}]*border-radius:/.test(css)
+  && !css.includes('.property-group:first-of-type{border-top:0}'));
+check('The section header keeps the background and separator that replace the box',
+  /\.property-group-title\{[^}]*background:/.test(css)
+  && css.includes('.property-group[open]>.property-group-title{border-bottom-color:var(--border)}'));
+check('Nested Inspector subgroups keep their own border',
+  /\.property-subgroup\{[^}]*border:1px solid var\(--border-subtle\)/.test(css)
+  && /\.property-subgroup\{[^}]*border-radius:4px/.test(css));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;

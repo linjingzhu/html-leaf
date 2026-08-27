@@ -589,8 +589,7 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
 .selection-card.draft-dirty .draft-label{display:block}
 .selection-card.draft-dirty{box-shadow:inset 2px 0 0 color-mix(in srgb,var(--accent) 70%,var(--border))}
 
-.property-group{padding:0 0 2px;margin:5px 0;border:1px solid var(--border);border-radius:4px;overflow:hidden}
-.property-group:first-of-type{border-top:0}
+.property-group{padding:0 0 2px;margin:5px 0;overflow:hidden}
 .property-group-title{
   min-height:28px;padding:0 7px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
   list-style:none;background:color-mix(in srgb,var(--panel-secondary) 78%,white 4%);
