@@ -106,9 +106,9 @@ checkIncludesAll('Legacy Leaf project extensions remain openable', main,
 check('Legacy leaf-document projects still migrate in renderer',
   renderer.includes("payload?.format==='leaf-document'"));
 
-checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, and PDF', main,
-  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])",
-   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']"]);
+checkIncludesAll('Supported Page formats include HTML, Markdown, JSON, XML, and PDF', main,
+  ["new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])",
+   "extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']"]);
 check('Obsolete image Page formats are not restored',
   !main.includes("return 'webp'") && !renderer.includes("documentType==='webp'"));
 checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF', html,
@@ -116,8 +116,8 @@ checkIncludesAll('Save Page As supports HTML, Markdown, JSON, and rendered PDF',
 checkIncludesAll('Rendered PDF export uses secure hidden printing', main,
   ['async function exportPageAs', 'printToPDF({ printBackground: true, preferCSSPageSize: true })', "javascript: false"]);
 
-checkIncludesAll('Direct Markdown and JSON editing remains isolated', renderer,
-  ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}",
+checkIncludesAll('Direct Markdown, JSON and XML editing remains isolated', renderer,
+  ["function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}",
    "frame.dataset.previewRuntime='direct-source-editor'", "frame.setAttribute('sandbox','allow-scripts')", '__leafDirectSourceEdit:true']);
 checkIncludesAll('Scripted HTML Edit extension is loaded with source-fidelity guards', fidelity,
   ["loadExtensionScript('./scripted-html-edit.js')"]);
@@ -344,6 +344,61 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- XML pages -------------------------------------------------------------
+// A document type is only supported once every list agrees. Missing one leaves
+// a type that imports but cannot be saved, or that normalizeState rewrites back
+// to html on the next load.
+check('XML is accepted by the main-process file surface',
+  main.includes("'.json', '.xml', '.pdf'")
+  && main.includes("if (extension === '.xml') return 'xml';")
+  && main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")
+  && main.includes("xml: { extension: 'xml', name: 'XML Page' },"));
+check('XML survives state normalization instead of being rewritten to html',
+  renderer.includes("if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){")
+  && renderer.includes("/\\.xml$/i.test(page.fileName||'')?'xml'"));
+check('XML is droppable and carries its own tree badge',
+  /isSupportedDocumentFile\(file\)\{return !!file&&\/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  && /isHtmlFile\(file\)\{ return !!file && \/\\\.\(html\?\|md\|markdown\|json\|xml\|pdf\)\$\/i/.test(renderer)
+  && renderer.includes("node.documentType==='xml'?'XML'"));
+// XML whitespace can be significant, so the preview reports well-formedness
+// rather than reformatting the file the way the JSON preview does.
+check('The XML preview validates without rewriting the source',
+  renderer.includes("if(page.documentType==='xml'){")
+  && renderer.includes("new DOMParser().parseFromString(raw,'application/xml')")
+  && renderer.includes('Well-formed XML')
+  && renderer.includes('<pre>${esc(raw)}</pre>'));
+check('XML edits through the same source editor, correctly labelled',
+  renderer.includes("page?.documentType==='xml';")
+  && renderer.includes("const DIRECT_SOURCE_LABEL={markdown:'Markdown',json:'JSON',xml:'XML'};")
+  && renderer.includes("const label=DIRECT_SOURCE_LABEL[page.documentType]||'Markdown';"));
+check('Saving an XML Page uses an XML name and extension',
+  renderer.includes("xml:{title:'Save XML Page',extension:'xml'}")
+  && renderer.includes('const text=TEXT_PAGE_SAVE[page.documentType]||TEXT_PAGE_SAVE.markdown;'));
+
+// --- Preview link navigation ------------------------------------------------
+// Every link in a preview must be preventDefault()ed. Letting one through
+// navigates the srcdoc iframe itself - to chrome-error:// for a missing file,
+// or to the live site for an external link - and the View stays dead, because
+// re-picking the same Page in the select is a no-op.
+check('Preview link clicks never reach the iframe navigation',
+  renderer.includes('function followPreviewLink(frame,doc,anchor,raw)')
+  && /if\(!raw\)return;\s*\n\s*event\.preventDefault\(\);event\.stopPropagation\(\);/.test(renderer));
+check('A cross-page link resolves through the main process, not string munging',
+  main.includes('async function resolveLinkTarget(payload)')
+  && main.includes('fileURLToPath(resolved)')
+  && preload.includes("resolveLinkTarget: (payload) => ipcRenderer.invoke('file:resolveLinkTarget', payload)"));
+check('An already-loaded target is reused instead of imported twice',
+  renderer.includes('const already=loadedPageForPath(target.filePath);')
+  && renderer.includes('bindPageToSlot(slot,already.page.id);'));
+// shell.openExternal hands the string to the OS handler, so the scheme allowlist
+// is the only thing between a document's href and arbitrary local execution.
+check('Only http, https, mailto and tel can be opened externally',
+  main.includes("const EXTERNAL_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);")
+  && main.includes('if (!EXTERNAL_LINK_PROTOCOLS.has(url.protocol))'));
+check('Same-document anchors still scroll rather than navigate',
+  renderer.includes('function scrollFrameToFragment(doc,fragment)')
+  && renderer.includes("if(raw.startsWith('#')){"));
+
 // --- Undo/Redo shortcuts ----------------------------------------------------
 // A keydown raised inside a preview document never reaches the parent, so the
 // app's own shortcuts stopped firing the moment focus entered a View - which is
@@ -370,6 +425,21 @@ check('The chip group can shrink but the file name cannot vanish',
 check('A clipped chip is still reported by the group title',
   renderer.includes('const chipsTitle=boundChips.map(chip=>chip.title)')
   && renderer.includes('<span class="view-chips" title="${esc(chipsTitle)}">'));
+// Chips report only the Views the current mode puts on screen. repairViews
+// binds every slot to the first Page whenever one is unset, so without this a
+// single Page claimed five bindings - Compare and Code slots included, while
+// neither was displaying anything - and the phantom chips crowded out the name.
+check('Chips are limited to the Views the current mode displays',
+  renderer.includes("const MODE_CHIP_SLOTS={preview:['single'],split:['left','right'],code:['codePreview','codePage']};")
+  && renderer.includes('function chipSlotsForCurrentMode()')
+  && renderer.includes('VIEW_CHIPS.filter(chip=>visibleChipSlots.includes(chip.slot)&&node.id===state.views[chip.slot])'));
+// The four view-* row classes were hooks for the retired ::after chips. Nothing
+// styles or reads them any more, so leaving them implied binding state still
+// flowed through CSS.
+check('The retired ::after chip hook classes are gone',
+  !renderer.includes("row.classList.add('view-left')")
+  && !renderer.includes("row.classList.add('view-code-editor')")
+  && !css.includes('.tree-row.view-left'));
 check('History shortcuts are forwarded out of preview documents',
   activeViewPolicy.includes('function forwardHistoryShortcut(event)')
   && activeViewPolicy.includes("doc.addEventListener('keydown', forwardHistoryShortcut, true)")

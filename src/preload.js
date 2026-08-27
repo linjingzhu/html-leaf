@@ -41,6 +41,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (!filePath) return Promise.reject(new Error('A valid dropped page is required.'));
     return ipcRenderer.invoke('file:readPagePath', filePath);
   },
+  // Following a link inside a preview needs both halves: resolve the href
+  // against the linking Page's base, then read that file if it is not open yet.
+  resolveLinkTarget: (payload) => ipcRenderer.invoke('file:resolveLinkTarget', payload),
+  readPageAtPath: (filePath) => {
+    if (!filePath) return Promise.reject(new Error('A page path is required.'));
+    return ipcRenderer.invoke('file:readPagePath', filePath);
+  },
+  openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
   exportHtml: (payload) => ipcRenderer.invoke('file:exportHtml', payload),
   saveHtmlPath: (payload) => ipcRenderer.invoke('file:saveHtmlPath', payload),
   exportText: (payload) => ipcRenderer.invoke('file:exportText', payload),

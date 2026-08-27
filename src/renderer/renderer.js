@@ -255,8 +255,8 @@
       if(page.type==='page'){
         page.source=String(page.source||'');page.name=String(page.name||'Untitled Page');page.fileName=String(page.fileName||'untitled.html');
         if(typeof page.loadedSource!=='string') page.loadedSource=String(page.source||'');
-        if(!['html','markdown','json','pdf'].includes(page.documentType)){
-          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.json$/i.test(page.fileName||'')?'json':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
+        if(!['html','markdown','json','xml','pdf'].includes(page.documentType)){
+          page.documentType=/\.pdf$/i.test(page.fileName||'')?'pdf':/\.json$/i.test(page.fileName||'')?'json':/\.xml$/i.test(page.fileName||'')?'xml':/\.(md|markdown)$/i.test(page.fileName||'')?'markdown':'html';
         }
         if(page.documentType==='pdf'&&page.sourcePath&&!page.previewUrl)page.previewUrl=`file:///${String(page.sourcePath).replace(/\\/g,'/')}`;
       }
@@ -736,7 +736,7 @@
   }
 
   function pageFormatKey(page){
-    return page?.documentType==='markdown'?'markdown':page?.documentType==='json'?'json':page?.documentType==='pdf'?'pdf':'html';
+    return page?.documentType==='markdown'?'markdown':page?.documentType==='json'?'json':page?.documentType==='xml'?'xml':page?.documentType==='pdf'?'pdf':'html';
   }
 
   function openSavePageAsDialog(){
@@ -770,6 +770,7 @@
     if(format==='markdown'){
       if(page.documentType==='markdown')return {source:page.source||'',baseUrl:page.baseUrl||null};
       if(page.documentType==='json')return {source:`\`\`\`json\n${page.source||''}\n\`\`\``,baseUrl:null};
+      if(page.documentType==='xml')return {source:`\`\`\`xml\n${page.source||''}\n\`\`\``,baseUrl:null};
       const payload=await htmlForSemanticExport(page);
       const semantic=window.SemanticDocument.fromHtml(payload.html,{baseUrl:page.baseUrl||null,title:page.name||page.fileName||'',sourceKind:payload.sourceKind});
       return {source:window.JiraExport.toMarkdown(semantic),baseUrl:null};
@@ -791,10 +792,10 @@
   async function savePageAsFormat(format){
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
-    const normalized=['html','markdown','json','pdf'].includes(format)?format:null;
+    const normalized=['html','markdown','json','xml','pdf'].includes(format)?format:null;
     if(!normalized)throw new Error('Unsupported Page format.');
     const extension={html:'html',markdown:'md',json:'json',pdf:'pdf'}[normalized];
-    const base=exportSafeName((page.fileName||page.name||'page').replace(/\.(?:html?|md|markdown|json|pdf)$/i,''));
+    const base=exportSafeName((page.fileName||page.name||'page').replace(/\.(?:html?|md|markdown|json|xml|pdf)$/i,''));
     const payload=await pageExportSource(page,normalized);
     const filePath=await window.electronAPI.exportPageAs({
       format:normalized,suggestedName:`${base}.${extension}`,source:payload.source,
@@ -823,10 +824,11 @@
           let filePath=null;
           if(page.documentType==='pdf'){
             filePath=await window.electronAPI.copyDocumentAs({sourcePath:page.sourcePath,suggestedName:page.fileName||`${page.name}.pdf`});
-          }else if(page.documentType==='markdown'||page.documentType==='json'){
-            const isJson=page.documentType==='json';
+          }else if(isDirectSourceType(page)){
+            const text=TEXT_PAGE_SAVE[page.documentType]||TEXT_PAGE_SAVE.markdown;
+            const extension=page.documentType==='markdown'&&/\.markdown$/i.test(page.fileName||'')?'markdown':text.extension;
             filePath=forceAs||!page.sourcePath
-              ?await window.electronAPI.exportText({title:isJson?'Save JSON Page':'Save Markdown Page',suggestedName:page.fileName||`${page.name}.${isJson?'json':'md'}`,extension:isJson?'json':/\.markdown$/i.test(page.fileName||'')?'markdown':'md',source:page.source})
+              ?await window.electronAPI.exportText({title:text.title,suggestedName:page.fileName||`${page.name}.${text.extension}`,extension,source:page.source})
               :await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source});
           }else{
             filePath=forceAs||!page.sourcePath
@@ -979,11 +981,11 @@
     $$('.document-card').forEach(card=>card.classList.remove('drop-before','import-target'));
   }
 
-  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|json|pdf)$/i.test(file.name||'');}
+  function isSupportedDocumentFile(file){return !!file&&/\.(html?|md|markdown|json|xml|pdf)$/i.test(file.name||'');}
 
   async function importDroppedPages(event,project,parentId=null){
     const files=[...(event.dataTransfer?.files||[])].filter(isSupportedDocumentFile);
-    if(!files.length){showToast('Drop HTML, Markdown, JSON, or PDF pages');return;}
+    if(!files.length){showToast('Drop HTML, Markdown, JSON, XML, or PDF pages');return;}
     try{
       for(const file of files){
         const result=await window.electronAPI.readDroppedPage(file);
@@ -1049,6 +1051,12 @@
     return{query,projectMatch,visible};
   }
 
+  const DIRECT_SOURCE_LABEL={markdown:'Markdown',json:'JSON',xml:'XML'};
+  const TEXT_PAGE_SAVE={
+    markdown:{title:'Save Markdown Page',extension:'md'},
+    json:{title:'Save JSON Page',extension:'json'},
+    xml:{title:'Save XML Page',extension:'xml'}
+  };
   const VIEW_CHIPS=[
     {slot:'single',letter:'P',title:'Loaded in Preview'},
     {slot:'left',letter:'L',title:'Loaded in Compare left'},
@@ -1056,6 +1064,12 @@
     {slot:'codePreview',letter:'V',title:'Loaded in Code preview'},
     {slot:'codePage',letter:'C',title:'Loaded in the Code editor'}
   ];
+  // Only the Views the current mode actually puts on screen. repairViews binds
+  // every slot to the first Page whenever one is unset, so without this filter a
+  // single Page reported five bindings - including Compare and Code slots that
+  // are not displaying anything - and those phantom chips crowded out the name.
+  const MODE_CHIP_SLOTS={preview:['single'],split:['left','right'],code:['codePreview','codePage']};
+  function chipSlotsForCurrentMode(){ return MODE_CHIP_SLOTS[state.mode]||MODE_CHIP_SLOTS.preview; }
 
   function renderTree(){
     refs.tree.innerHTML='';
@@ -1136,16 +1150,11 @@
       row.className='tree-row';
       row.dataset.nodeId=node.id; row.dataset.depth=Math.min(depth,5);
       if(node.id===selectedTreeNode) row.classList.add('selected');
-      if(node.id===state.views.left) row.classList.add('view-left');
-      if(node.id===state.views.right) row.classList.add('view-right');
-      if(node.id===state.views.codePreview) row.classList.add('view-code-preview');
-      if(node.id===state.views.codePage) row.classList.add('view-code-editor');
-      // A Page can sit in several Views at once. These used to be one ::after,
-      // so only the last matching rule's letter showed and the rest were hidden.
-      // One container, not five loose children: as direct children of the row
-      // each chip also multiplied the row's 6px gap, so five bindings spent
-      // 30px on gaps alone and squeezed the file name out of the row.
-      const boundChips=VIEW_CHIPS.filter(chip=>node.id===state.views[chip.slot]);
+      // Chips carry the binding state. They live in one container rather than
+      // five loose children: as direct children each chip also multiplied the
+      // row's 6px gap, which squeezed the file name out of the row.
+      const visibleChipSlots=chipSlotsForCurrentMode();
+      const boundChips=VIEW_CHIPS.filter(chip=>visibleChipSlots.includes(chip.slot)&&node.id===state.views[chip.slot]);
       const chipMarkup=boundChips
         .map(chip=>`<span class="view-chip view-chip-${chip.slot}" title="${esc(chip.title)}">${chip.letter}</span>`).join('');
       // The group carries the full list as its own title. A narrow sidebar
@@ -1157,7 +1166,7 @@
       if(isNodeInActiveViewport(node.id)) row.classList.add('active-viewport-node');
       const hasChildren=children(project,node.id).length;
       row.draggable=true;
-      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':'◇';
+      const documentIcon=node.documentType==='pdf'?'PDF':node.documentType==='markdown'?'MD':node.documentType==='json'?'{}':node.documentType==='xml'?'XML':'◇';
       row.innerHTML=`<span class="twisty">${hasChildren?(node.expanded!==false?'▾':'▸'):''}</span><span class="ico ${node.type==='page'?'page-kind':''}">${node.type==='group'?'▰':documentIcon}</span><span class="label">${esc(node.name)}</span>${viewChips}<button class="tree-row-add" type="button" title="Add child">＋</button>`;
       row.onclick=e=>{
         e.stopPropagation();
@@ -2886,6 +2895,53 @@
     return !!page && !page.isEmpty && (page.documentType==='pdf'?!!(page.previewUrl||page.sourcePath):!!String(page.source||'').trim());
   }
 
+  function scrollFrameToFragment(doc,fragment){
+    if(!fragment){doc.scrollingElement?.scrollTo({top:0,behavior:'auto'});return;}
+    const target=doc.getElementById(fragment)||[...doc.getElementsByName(fragment)][0];
+    target?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+  }
+
+  const EXTERNAL_LINK_SCHEME=/^(https?|mailto|tel):/i;
+
+  // Every link in a preview is handled here, and every one of them is
+  // preventDefault()ed. Letting one through navigates the iframe itself: the
+  // srcdoc preview is replaced - by chrome-error:// for a missing file, or by
+  // the live site for an external link - and the View is dead until the user
+  // switches modes, because re-picking the same Page in the select is a no-op.
+  async function followPreviewLink(frame,doc,anchor,raw){
+    const slot=previewSlotForFrame(frame);
+    const page=pageById(frameToPageId(frame));
+    if(EXTERNAL_LINK_SCHEME.test(raw)){
+      try{
+        await window.electronAPI.openExternalLink(anchor.href||raw);
+        showToast('Opened in your browser');
+      }catch(error){ showToast(`Could not open the link: ${error.message}`); }
+      return;
+    }
+    if(!page?.baseUrl){ showToast('This Page has no folder to resolve the link against'); return; }
+    let target=null;
+    try{ target=await window.electronAPI.resolveLinkTarget({href:raw,baseUrl:page.baseUrl}); }
+    catch(error){ showToast(`Could not resolve the link: ${error.message}`); return; }
+    if(!target?.filePath){ showToast('That link does not point at a local page'); return; }
+    if(!target.documentType){ showToast(`Leaf opens HTML, Markdown, JSON, XML and PDF - not ${target.filePath.split(/[\\/]/).pop()}`); return; }
+
+    const already=loadedPageForPath(target.filePath);
+    if(already){
+      bindPageToSlot(slot,already.page.id);
+      selectedTreeNode=already.page.id;
+      state.selectedDocumentId=already.project.id;
+      clearInspector();renderAll();persist();
+      showToast(`Opened ${already.page.name}`);
+      return;
+    }
+    if(!target.exists){ showToast(`Linked file not found: ${target.filePath.split(/[\\/]/).pop()}`); return; }
+    try{
+      const result=await window.electronAPI.readPageAtPath(target.filePath);
+      const added=await addPageResultToDocument(result,slot);
+      if(added) showToast(`Opened ${added.name}`);
+    }catch(error){ showToast(`Could not open the linked page: ${error.message}`); }
+  }
+
   function installLocalAnchorNavigation(frame){
     let doc=null;try{doc=frame?.contentDocument}catch{}
     if(!doc||doc.__leafLocalAnchorNavigation)return false;
@@ -2894,12 +2950,14 @@
       if(canInspectFrame(frame))return;
       const anchor=event.target?.closest?.('a[href]');
       const raw=anchor?.getAttribute('href')?.trim()||'';
-      if(!raw.startsWith('#'))return;
+      if(!raw)return;
       event.preventDefault();event.stopPropagation();
-      let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
-      if(!fragment){doc.scrollingElement?.scrollTo({top:0,behavior:'auto'});return;}
-      const target=doc.getElementById(fragment)||[...doc.getElementsByName(fragment)][0];
-      target?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+      if(raw.startsWith('#')){
+        let fragment='';try{fragment=decodeURIComponent(raw.slice(1))}catch{fragment=raw.slice(1)}
+        scrollFrameToFragment(doc,fragment);
+        return;
+      }
+      withUnsavedInspectorGuard(()=>{followPreviewLink(frame,doc,anchor,raw);});
     },true);
     return true;
   }
@@ -2990,6 +3048,20 @@
       const diagnostic=error?`<div class="json-error"><strong>JSON validation error</strong>${esc(error)}</div>`:'<div class="json-valid">Valid JSON</div>';
       return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>html{color-scheme:light}body{margin:0;padding:30px 36px;color:#20242a;background:#fff;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.json-valid,.json-error{position:sticky;top:0;margin:0 0 14px;padding:9px 12px;border-radius:6px}.json-valid{color:#176b3a;background:#e7f6ed}.json-error{display:flex;gap:10px;color:#9b2525;background:#fdecec}pre{margin:0;padding:18px;overflow:auto;border:1px solid #d9dde3;border-radius:7px;background:#f7f8fa;color:#172033;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Consolas,'SFMono-Regular',monospace}</style></head><body>${diagnostic}<pre>${esc(formatted)}</pre></body></html>`;
     }
+    if(page.documentType==='xml'){
+      // Shown as written, not reformatted. Whitespace inside XML can be
+      // significant (mixed content, xml:space), so pretty-printing the preview
+      // would misrepresent the file. Well-formedness is still reported.
+      const raw=String(page.source||'');
+      let error='';
+      try{
+        const parsed=new DOMParser().parseFromString(raw,'application/xml');
+        const failure=parsed.querySelector('parsererror');
+        if(failure)error=(failure.textContent||'Malformed XML').trim().split('\n')[0];
+      }catch(parseError){ error=parseError.message||'Malformed XML'; }
+      const diagnostic=error?`<div class="json-error"><strong>XML validation error</strong>${esc(error)}</div>`:'<div class="json-valid">Well-formed XML</div>';
+      return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>html{color-scheme:light}body{margin:0;padding:30px 36px;color:#20242a;background:#fff;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.json-valid,.json-error{position:sticky;top:0;margin:0 0 14px;padding:9px 12px;border-radius:6px}.json-valid{color:#176b3a;background:#e7f6ed}.json-error{display:flex;gap:10px;color:#9b2525;background:#fdecec}pre{margin:0;padding:18px;overflow:auto;border:1px solid #d9dde3;border-radius:7px;background:#f7f8fa;color:#172033;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Consolas,'SFMono-Regular',monospace}</style></head><body>${diagnostic}<pre>${esc(raw)}</pre></body></html>`;
+    }
     const base=page.baseUrl?`<base href="${esc(page.baseUrl)}">`:'';
     const csp=allowScripts
       ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; connect-src 'none'; object-src 'none'; frame-src 'none';">`
@@ -3001,14 +3073,14 @@
     return `<!doctype html><html><head>${base}${csp}${bridge}</head><body>${source}</body></html>`;
   }
 
-  function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}
+  function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}
   function isDirectSourceEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&isDirectSourceType(page);}
   function isPdfNativeEdit(page,slot){return !!htmlEditEnabled&&editOwnerSlot===slot&&!!frameForEditSlot(slot)&&page?.documentType==='pdf';}
 
   function buildDirectSourceEditor(page,token,zoom=100){
     const initial=JSON.stringify(String(page.source||'')).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
-    const label=page.documentType==='json'?'JSON':'Markdown';
-    return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;color-scheme:dark}body{display:grid;grid-template-rows:38px 1fr 26px;background:#12161d;color:#d8dee9;font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif}.source-head,.source-foot{display:flex;align-items:center;gap:9px;padding:0 12px;background:#181e27;color:#9ba8ba}.source-head{border-bottom:1px solid #2b3442}.source-head strong{color:#f2f5f9}.source-foot{justify-content:space-between;border-top:1px solid #2b3442}.status.valid{color:#78d39a}.status.invalid{color:#ff8b8b}textarea{box-sizing:border-box;width:100%;height:100%;resize:none;border:0;outline:0;padding:18px 20px;background:#0f1319;color:#e4e9f0;tab-size:2;white-space:pre;overflow:auto;font:13px/1.58 Consolas,'SFMono-Regular',monospace;caret-color:#8ab4ff}textarea::selection{background:#315b96}</style><style data-leaf-scrollbar-runtime>${runtimePreviewScrollbarCss(zoom)}</style></head><body><div class="source-head"><strong>${label} Source</strong><span>Edit is applied immediately</span></div><textarea id="source" spellcheck="false" aria-label="${label} source editor"></textarea><div class="source-foot"><span id="status" class="status"></span><span>Tab: indent · Esc: finish</span></div><script>(()=>{const TOKEN=${JSON.stringify(token)};const INITIAL=${initial};const TYPE=${JSON.stringify(page.documentType)};const editor=document.getElementById('source');const status=document.getElementById('status');const send=(kind,extra={})=>parent.postMessage({__leafDirectSourceEdit:true,token:TOKEN,kind,...extra},'*');const validate=()=>{if(TYPE!=='json'){status.className='status';status.textContent=editor.value.split('\\n').length+' lines';return true}try{JSON.parse(editor.value);status.className='status valid';status.textContent='Valid JSON';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Invalid JSON';return false}};editor.value=INITIAL;validate();editor.addEventListener('pointerdown',()=>send('activate'),true);editor.addEventListener('input',()=>{validate();send('input',{source:editor.value})});editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();const start=editor.selectionStart,end=editor.selectionEnd;editor.setRangeText('  ',start,end,'end');editor.dispatchEvent(new Event('input'))}else if(event.key==='Escape'){event.preventDefault();send('exit')}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();send('save')}});addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();event.stopPropagation();send('zoom',{direction:event.deltaY<0?1:-1,clientX:event.clientX,clientY:event.clientY})},{capture:true,passive:false});addEventListener('message',event=>{const data=event.data;if(!data||data.token!==TOKEN)return;if(data.__leafViewportChromeScale===true){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof data.css==='string'&&data.css.length<1200)style.textContent=data.css;return}if(data.__leafDirectSourceSearch===true){const query=String(data.query||''),needle=query.toLocaleLowerCase(),matches=[];if(needle){const text=editor.value.toLocaleLowerCase();let from=0;while(from<=text.length-needle.length){const at=text.indexOf(needle,from);if(at<0)break;matches.push(at);from=at+Math.max(1,needle.length)}}const index=matches.length?((Number(data.index)||0)%matches.length+matches.length)%matches.length:0;if(matches.length){editor.focus();editor.setSelectionRange(matches[index],matches[index]+query.length)}send('search-result',{count:matches.length,index});return}if(data.__leafDirectSourceReply!==true)return;editor.value=String(data.source||'');validate();if(data.message){status.className='status invalid';status.textContent=data.message}});setTimeout(()=>{editor.focus();send('activate');send('ready')},0)})();<\/script></body></html>`;
+    const label=DIRECT_SOURCE_LABEL[page.documentType]||'Markdown';
+    return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;color-scheme:dark}body{display:grid;grid-template-rows:38px 1fr 26px;background:#12161d;color:#d8dee9;font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif}.source-head,.source-foot{display:flex;align-items:center;gap:9px;padding:0 12px;background:#181e27;color:#9ba8ba}.source-head{border-bottom:1px solid #2b3442}.source-head strong{color:#f2f5f9}.source-foot{justify-content:space-between;border-top:1px solid #2b3442}.status.valid{color:#78d39a}.status.invalid{color:#ff8b8b}textarea{box-sizing:border-box;width:100%;height:100%;resize:none;border:0;outline:0;padding:18px 20px;background:#0f1319;color:#e4e9f0;tab-size:2;white-space:pre;overflow:auto;font:13px/1.58 Consolas,'SFMono-Regular',monospace;caret-color:#8ab4ff}textarea::selection{background:#315b96}</style><style data-leaf-scrollbar-runtime>${runtimePreviewScrollbarCss(zoom)}</style></head><body><div class="source-head"><strong>${label} Source</strong><span>Edit is applied immediately</span></div><textarea id="source" spellcheck="false" aria-label="${label} source editor"></textarea><div class="source-foot"><span id="status" class="status"></span><span>Tab: indent · Esc: finish</span></div><script>(()=>{const TOKEN=${JSON.stringify(token)};const INITIAL=${initial};const TYPE=${JSON.stringify(page.documentType)};const editor=document.getElementById('source');const status=document.getElementById('status');const send=(kind,extra={})=>parent.postMessage({__leafDirectSourceEdit:true,token:TOKEN,kind,...extra},'*');const validate=()=>{if(TYPE==='xml'){try{const d=new DOMParser().parseFromString(editor.value,'application/xml');const bad=d.querySelector('parsererror');if(bad)throw new Error((bad.textContent||'Malformed XML').trim().split('\\n')[0]);status.className='status valid';status.textContent='Well-formed XML';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Malformed XML';return false}}if(TYPE!=='json'){status.className='status';status.textContent=editor.value.split('\\n').length+' lines';return true}try{JSON.parse(editor.value);status.className='status valid';status.textContent='Valid JSON';return true}catch(error){status.className='status invalid';status.textContent=error.message||'Invalid JSON';return false}};editor.value=INITIAL;validate();editor.addEventListener('pointerdown',()=>send('activate'),true);editor.addEventListener('input',()=>{validate();send('input',{source:editor.value})});editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();const start=editor.selectionStart,end=editor.selectionEnd;editor.setRangeText('  ',start,end,'end');editor.dispatchEvent(new Event('input'))}else if(event.key==='Escape'){event.preventDefault();send('exit')}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();send('save')}});addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();event.stopPropagation();send('zoom',{direction:event.deltaY<0?1:-1,clientX:event.clientX,clientY:event.clientY})},{capture:true,passive:false});addEventListener('message',event=>{const data=event.data;if(!data||data.token!==TOKEN)return;if(data.__leafViewportChromeScale===true){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof data.css==='string'&&data.css.length<1200)style.textContent=data.css;return}if(data.__leafDirectSourceSearch===true){const query=String(data.query||''),needle=query.toLocaleLowerCase(),matches=[];if(needle){const text=editor.value.toLocaleLowerCase();let from=0;while(from<=text.length-needle.length){const at=text.indexOf(needle,from);if(at<0)break;matches.push(at);from=at+Math.max(1,needle.length)}}const index=matches.length?((Number(data.index)||0)%matches.length+matches.length)%matches.length:0;if(matches.length){editor.focus();editor.setSelectionRange(matches[index],matches[index]+query.length)}send('search-result',{count:matches.length,index});return}if(data.__leafDirectSourceReply!==true)return;editor.value=String(data.source||'');validate();if(data.message){status.className='status invalid';status.textContent=data.message}});setTimeout(()=>{editor.focus();send('activate');send('ready')},0)})();<\/script></body></html>`;
   }
 
   function configureFrameRuntime(frame,page,slot){
@@ -3030,7 +3102,7 @@
       frame.closest('.view-pane')?.classList.remove('scripted-preview');
       frame.dataset.previewRuntime='document-readonly';
       const badge=$(`[data-runtime-badge="${slot}"]`);if(badge)badge.hidden=true;
-      if(page.documentType==='markdown'||page.documentType==='json')frame.setAttribute('sandbox','allow-same-origin');
+      if(isDirectSourceType(page))frame.setAttribute('sandbox','allow-same-origin');
       else frame.removeAttribute('sandbox');
       return false;
     }
@@ -3363,7 +3435,7 @@
     const page=pageById(pendingClearPageId);
     if(!page) return closeClearHtmlDialog();
     try{
-      const isTextPage=page.documentType==='markdown'||page.documentType==='json';
+      const isTextPage=isDirectSourceType(page);
       const isJson=page.documentType==='json';
       const filePath=isTextPage
         ?(page.sourcePath?await window.electronAPI.saveTextPath({filePath:page.sourcePath,source:page.source}):await window.electronAPI.exportText({title:isJson?'Save JSON Page':'Save Markdown Page',suggestedName:page.fileName||`${page.name}.${isJson?'json':'md'}`,extension:isJson?'json':'md',source:page.source}))
@@ -3606,7 +3678,7 @@
   }
 
   // ----- Explorer Page Drag & Drop -----
-  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|pdf)$/i.test(file.name || ''); }
+  function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|xml|pdf)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
@@ -3619,7 +3691,7 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Drop an HTML, Markdown, JSON, or PDF page');
+    if(!file) return showToast('Drop an HTML, Markdown, JSON, XML, or PDF page');
 
     withUnsavedInspectorGuard(async()=>{
       try{

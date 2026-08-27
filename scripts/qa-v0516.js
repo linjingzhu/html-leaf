@@ -75,12 +75,12 @@ check('Legacy leaf paths migrate through Save As prj',
 check('Trust Foundation remains active',
   main.includes('contextIsolation: true')&&main.includes('sandbox: true')&&main.includes('webSecurity: true')&&
   read('src/renderer/source-fidelity.js').includes('stripEditorArtifactsFromDocument'));
-check('Supported Page formats include HTML, Markdown, JSON, and PDF',
-  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.pdf'])")&&
-  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'pdf']")&&
+check('Supported Page formats include HTML, Markdown, JSON, XML, and PDF',
+  main.includes("new Set(['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.pdf'])")&&
+  main.includes("extensions: ['html', 'htm', 'md', 'markdown', 'json', 'xml', 'pdf']")&&
   !main.includes("return 'webp'")&&!js.includes("documentType==='webp'"));
-check('Preview Edit provides an isolated direct source editor for Markdown and JSON',
-  js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json';}")&&
+check('Preview Edit provides an isolated direct source editor for Markdown, JSON and XML',
+  js.includes("function isDirectSourceType(page){return page?.documentType==='markdown'||page?.documentType==='json'||page?.documentType==='xml';}")&&
   js.includes("frame.dataset.previewRuntime='direct-source-editor'")&&js.includes("frame.setAttribute('sandbox','allow-scripts')")&&
   js.includes('__leafDirectSourceEdit:true'));
 check('Direct source input is immediate, undoable, bounded, and metadata guarded',
@@ -127,7 +127,7 @@ check('Floating controls reserve outer and document scrollbar insets',js.include
 check('Inspector mouse wheel adjusts numeric values live',js.includes('function handleInspectorNumberWheel(event)')&&js.includes("control.dispatchEvent(new Event(control.dataset.draftKey?'input':'change'"));
 check('Inspector exposes safe hyperlink URL and target properties',js.includes("propertyRow('linkHref','Link URL'")&&js.includes("propertyRow('linkTarget','Open In'")&&js.includes("['http:','https:','mailto:','tel:'].includes(url.protocol)")&&js.includes("anchor.setAttribute('rel','noopener noreferrer')"));
 check('Non-anchor objects can be wrapped and unwrapped as real links',js.includes('function applyDraftHyperlink(')&&js.includes("anchor=el.ownerDocument.createElement('a')")&&js.includes('anchor.replaceWith(el)'));
-check('Local contents links scroll without navigating the iframe',js.includes('function installLocalAnchorNavigation(frame)')&&js.includes("if(!raw.startsWith('#'))return")&&js.includes("target?.scrollIntoView({block:'start'"));
+check('No link navigates the iframe: fragments scroll, the rest are handled',js.includes('function installLocalAnchorNavigation(frame)')&&js.includes("if(!raw)return;")&&js.includes('function followPreviewLink(frame,doc,anchor,raw)')&&js.includes("target?.scrollIntoView({block:'start'")&&!js.includes("if(!raw.startsWith('#'))return;\n      event.preventDefault()"));
 check('Script-isolated previews receive local-anchor protection',js.includes("raw[0]!=='#'")&&js.includes('document.getElementById(fragment)||document.getElementsByName(fragment)[0]'));
 check('Occupied View drop offers Cancel, Open as New, and Replace',html.includes('id="replaceHtmlCancel"')&&html.includes('id="replaceHtmlOpenNew"')&&html.includes('id="replaceHtmlConfirm"'));
 check('Drop choices route to separate new-Page and replace transactions',js.includes('refs.replaceHtmlOpenNew.onclick=async')&&js.includes('await addHtmlResultToDocument(pending.result,pending.slot)')&&js.includes("showToast('Page replaced')"));
