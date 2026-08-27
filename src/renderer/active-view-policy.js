@@ -136,6 +136,42 @@
     viewSeg.addEventListener('click', handleModeGesture, true);
   }
 
+  // A keydown raised inside a preview document never reaches the parent, so the
+  // moment focus enters a View - which is most of the time while editing - the
+  // app's own Undo/Redo shortcuts stop firing. Forward just those back out.
+  //
+  // Typing inside an editable element is left alone: there the browser's native
+  // undo is what the user means, and the app records a text edit as a single
+  // history entry when it commits rather than one per keystroke.
+  function isHistoryShortcut(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
+    const key = String(event.key || '').toLowerCase();
+    return key === 'z' || key === 'y';
+  }
+
+  function forwardHistoryShortcut(event) {
+    if (!isHistoryShortcut(event)) return;
+    let target = event.target;
+    if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    let forwarded;
+    try {
+      forwarded = new KeyboardEvent('keydown', {
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        bubbles: true,
+        cancelable: true
+      });
+    } catch {
+      return;
+    }
+    document.dispatchEvent(forwarded);
+  }
+
   function bindFrameDocument(frame, slot) {
     if (!frame || !slot) return false;
     let doc = null;
@@ -148,6 +184,7 @@
     boundFrameDocuments.add(doc);
     doc.addEventListener('pointerdown', () => dispatchPaneActivation(slot, 'pointer'), true);
     doc.addEventListener('focusin', () => dispatchPaneActivation(slot, 'focus'), true);
+    doc.addEventListener('keydown', forwardHistoryShortcut, true);
     return true;
   }
 

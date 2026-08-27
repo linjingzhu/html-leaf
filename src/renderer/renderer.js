@@ -6463,6 +6463,8 @@
     else if(modifier&&e.key.toLowerCase()==='s'){e.preventDefault();saveLeafProject(false);}
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();redo();}
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
+    // Ctrl+Y is the redo key most Windows apps use, and this ships Windows-first.
+    else if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='y'){e.preventDefault();redo();}
   });
 
   function repairViews(){

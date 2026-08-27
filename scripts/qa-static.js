@@ -344,6 +344,24 @@ checkIncludesAll('Inspector owns live property-name search and hyperlink control
 checkIncludesAll('Project tree search preserves visible ancestors', renderer,
   ['function projectTreeSearchContext(project)', 'while(current?.parentId){visible.add(current.parentId)']);
 
+// --- Undo/Redo shortcuts ----------------------------------------------------
+// A keydown raised inside a preview document never reaches the parent, so the
+// app's own shortcuts stopped firing the moment focus entered a View - which is
+// most of the time while editing. The forwarder is what keeps them alive.
+const activeViewPolicy = read(path.join('src', 'renderer', 'active-view-policy.js'));
+check('Redo is reachable by Ctrl+Y as well as Ctrl+Shift+Z', renderer.includes(
+  "else if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='y'){e.preventDefault();redo();}"));
+check('History shortcuts are forwarded out of preview documents',
+  activeViewPolicy.includes('function forwardHistoryShortcut(event)')
+  && activeViewPolicy.includes("doc.addEventListener('keydown', forwardHistoryShortcut, true)")
+  && activeViewPolicy.includes("document.dispatchEvent(forwarded)"));
+check('The forwarder covers both undo and redo keys',
+  /return key === 'z' \|\| key === 'y';/.test(activeViewPolicy));
+// Hijacking Ctrl+Z while someone types in the document would replace the
+// browser's native, per-keystroke undo with a whole-page revert.
+check('Typing inside an editable element keeps its native undo',
+  /if \(target && \(target\.isContentEditable \|\| \['INPUT', 'TEXTAREA'\]\.includes\(target\.tagName\)\)\) return;/.test(activeViewPolicy));
+
 // --- Windows artifacts ------------------------------------------------------
 // Both Windows targets ship: the NSIS installer and the portable zip. The
 // installer's assets are referenced by path from package.json, so a missing
