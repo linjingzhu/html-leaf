@@ -14,6 +14,7 @@ const fidelity = read('src/renderer/source-fidelity.js');
 const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
 const registry = read('src/renderer/widget-registry.js');
 const imageWidgetEdit = read('src/renderer/image-widget-edit.js');
+const dropBridge = read('src/renderer/view-drop-bridge.js');
 
 const checks = [];
 function check(name, condition, detail = '') {
@@ -551,7 +552,11 @@ check('The startup reset carries the user app settings across',
   renderer.includes('function startFreshProject(stored){')
   && renderer.includes('fresh.preferences=carried.preferences;')
   && renderer.includes('fresh.layout=carried.layout;')
-  && renderer.includes('fresh.previewSizes=carried.previewSizes;'));
+  && renderer.includes('fresh.previewSizes=carried.previewSizes;')
+  // Recent is app history, not the project. Wiping it made File > Recent a menu
+  // that could never list anything: the launch after the one that filled it
+  // started from an empty list, every time.
+  && renderer.includes('fresh.recent=carried.recent;'));
 check('A corrupt stored state still yields a usable fresh project',
   /catch\{ return fresh; \}/.test(renderer));
 // The discarded project must not linger in storage waiting for some later edit
@@ -745,6 +750,153 @@ check('A document-View selection brings its Used row into view',
   renderer.includes('requestAnimationFrame(()=>revealUsedComponentRow(selectedUsedComponentToken));'));
 check('Highlighting instances from the list reveals that row too',
   /classList\.add\('instance-highlighted'\);\s*\n\s*revealUsedComponentRow\(token\);/.test(renderer));
+
+// --- Opening a Page by URL -------------------------------------------------
+// This is the first network code in the app, and a URL box in a desktop app is
+// an SSRF hole by default: main runs with full privileges, so an unguarded
+// fetch reaches the user's own localhost services, their LAN, and the cloud
+// metadata endpoint. Every guard below is load-bearing.
+const fetchSection = main.slice(
+  main.indexOf('const FETCH_PROTOCOLS'),
+  main.indexOf('function documentTypeForPath(')
+);
+check('URL fetch section is present', fetchSection.length > 2000, `${fetchSection.length} chars`);
+check('Only http and https are reachable',
+  /const FETCH_PROTOCOLS = new Set\(\['http:', 'https:'\]\)/.test(fetchSection)
+  && fetchSection.includes('if (!FETCH_PROTOCOLS.has(url.protocol))'));
+check('Link-local is refused on every hop, typed or not',
+  fetchSection.includes('function isLinkLocalAddress(')
+  && /v4\[0\] === 169 && v4\[1\] === 254/.test(fetchSection)
+  && fetchSection.includes('Refusing to fetch a link-local address'));
+checkIncludesAll('Loopback, LAN and CGNAT ranges are all classified as internal', fetchSection,
+  ['function isInternalAddress(', 'a === 127', 'a === 10',
+   'a === 172 && b >= 16 && b <= 31', 'a === 192 && b === 168', 'a === 100 && b >= 64 && b <= 127']);
+// The whole point of the redirect loop: a public site must not be able to 302
+// its way into loopback, while a dev server redirecting / to /index.html must
+// still work.
+check('An internal address is reachable only on the host the user typed',
+  fetchSection.includes('const sameHostAsTyped = originHost !== null')
+  && fetchSection.includes('if (isInternalAddress(address) && !sameHostAsTyped)')
+  && /for \(let hop = 0; hop <= FETCH_MAX_REDIRECTS; hop\+\+\)/.test(fetchSection)
+  && /await assertFetchableUrl\(next, \{ originHost \}\)/.test(fetchSection));
+check('A hostname is resolved before it is judged, so a name cannot hide an address',
+  fetchSection.includes('function addressesForHost(')
+  && fetchSection.includes("dns.lookup(bare, { all: true, verbatim: true })")
+  && fetchSection.includes('const addresses = await addressesForHost(url.hostname)'));
+check('Fetches carry no app cookies and are capped in size, time and hops',
+  fetchSection.includes("const FETCH_PARTITION = 'leaf-url-fetch'")
+  && fetchSection.includes('session: session.fromPartition(FETCH_PARTITION, { cache: false })')
+  && fetchSection.includes('useSessionCookies: false')
+  && fetchSection.includes('size > FETCH_MAX_BYTES')
+  && fetchSection.includes('FETCH_TIMEOUT_MS')
+  && fetchSection.includes('FETCH_MAX_REDIRECTS'));
+check('Redirects are followed by hand, not by the network stack',
+  fetchSection.includes("redirect: 'manual'"));
+// image/svg+xml and application/xhtml+xml both end in +xml, so a generic XML
+// rule placed first swallows them - that shipped broken once.
+check('Specific content types are matched before the generic +xml rule',
+  fetchSection.indexOf("'image'") < fetchSection.indexOf("[/^application\\/xml")
+  && fetchSection.indexOf("'html'") < fetchSection.indexOf("[/^application\\/xml"));
+check('A fetched Page has no local file, so Save stays disabled and Save As takes over',
+  /filePath: null/.test(fetchSection) && fetchSection.includes('sourceUrl: current'));
+check('A fetched binary is staged locally, because the preview CSP admits file: and not http:',
+  fetchSection.includes('await ensureSessionTempDir()')
+  && fetchSection.includes('previewUrl: pathToFileURL(staged).href'));
+check('The renderer cannot widen what is reachable',
+  preload.includes("ipcRenderer.invoke('net:fetchPage', url)")
+  && main.includes("ipcMain.handle('net:fetchPage', (_e, url) => fetchPageAtUrl(url))"));
+check('The URL field lives in the drop zone, and a dragged link works too',
+  renderer.includes('function installDropZoneUrlFields()')
+  && renderer.includes('installDropZoneUrlFields();')
+  && renderer.includes('function urlFromDataTransfer(')
+  && renderer.includes("getData('text/uri-list')")
+  && css.includes('.drop-url{')
+  && html.includes('or open a URL'));
+check('The URL field keeps its own clicks, so it does not open the file picker',
+  /\['click','pointerdown','dblclick'\]\.forEach\(type=>row\.addEventListener\(type,event=>event\.stopPropagation\(\)\)\)/.test(renderer));
+
+// --- Downloading the fonts a page uses -------------------------------------
+// @font-face is the only place a font's URL is written down: document.fonts
+// reports the families but carries no src at all, so the stylesheets are the
+// route and both readable and unreadable sheets have to be covered.
+const fontScan = renderer.slice(
+  renderer.indexOf('const FONT_SRC_ENTRY'),
+  renderer.indexOf('// ----- Download Page Fonts dialog')
+);
+check('Font scan section is present', fontScan.length > 2500, `${fontScan.length} chars`);
+check('src is parsed into url(), local() and format() parts',
+  fontScan.includes('function parseFontSrc(')
+  && fontScan.includes("entries.push({kind:'url'")
+  && fontScan.includes("entries.push({kind:'local'")
+  && fontScan.includes('function preferredFontSource('));
+// A sheet on a CDN saying /f/x.woff2 means the CDN's root, not the page's.
+check('A relative src resolves against the stylesheet, not the Page',
+  fontScan.includes('function resolveAgainst(')
+  && fontScan.includes("const sheetBase=sheet.href||page?.baseUrl||''")
+  && fontScan.includes('resolveAgainst(face.sheetBase,chosen.value)'));
+check('A cross-origin stylesheet is fetched as text rather than silently dropped',
+  fontScan.includes('function parseFontFacesFromText(')
+  && fontScan.includes('window.electronAPI.fetchStylesheetText(href)')
+  && fontScan.includes('unreadable.push(sheet.href)'));
+check('Only families the document actually renders with are offered',
+  fontScan.includes('function renderedFamilies(')
+  && fontScan.includes('if(!used.has(normalizeFamilyName(face.family)))continue;'));
+check('Embedded and system-only faces are classified, not queued for download',
+  fontScan.includes("kind:url.startsWith('data:')?'embedded':localOnly?'system':url?'network':'unknown'"));
+check('woff2 is preferred when a face offers several formats',
+  /const FONT_FORMAT_RANK=\{woff2:0,woff:1/.test(fontScan));
+const fontMain = main.slice(main.indexOf('const FONT_MAX_BYTES'), main.indexOf('function documentTypeForPath('));
+check('Font downloads run through the same guarded fetch as the URL bar',
+  fontMain.includes('await fetchGuardedBytes(source)')
+  && main.includes('async function fetchGuardedBytes(rawUrl)')
+  && main.includes('const fetched = await fetchGuardedBytes(rawUrl);'));
+check('A data: font is decoded locally instead of being fetched',
+  fontMain.includes("if (source.startsWith('data:'))")
+  && fontMain.includes("Buffer.from(source.slice(comma + 1), 'base64')"));
+check('Font writes are staged and rolled back, and are size-capped',
+  fontMain.includes('FONT_MAX_BYTES')
+  && fontMain.includes('FONT_TOTAL_MAX_BYTES')
+  && fontMain.includes('leaf-stage-')
+  && /await Promise\.allSettled\(staged\.map\(item => fs\.unlink\(item\.stagePath\)\)\)/.test(fontMain));
+check('A usable fonts.css is generated beside the files',
+  fontMain.includes("const cssPath = path.join(directory, 'fonts.css')")
+  && fontMain.includes('@font-face{')
+  && /licence before redistributing/.test(fontMain));
+check('One font failing does not lose the rest',
+  fontMain.includes('failed.push({ family:') && fontMain.includes('continue;'));
+check('The dialog states the licence position instead of implying reuse is free',
+  html.includes('id="fontExportModal"')
+  && /Licences differ by family/.test(html)
+  && html.includes('data-action="extract-fonts"')
+  && renderer.includes("case 'extract-fonts': return openFontExportDialog();"));
+// The checkbox index addresses the full row list; a filtered copy silently
+// downloads the wrong faces.
+check('Checkbox indices address the same list they were rendered from',
+  renderer.includes('pendingFontRows=rows;')
+  && renderer.includes('pendingFontRows[Number(box.dataset.fontIndex)]'));
+
+// --- No settings that only pretend to apply --------------------------------
+// Preference carried a Language switch that stored a value, moved a tick, and
+// changed nothing else: there is no i18n layer and the UI is English only. A
+// control that reports a state the app does not have is worse than no control.
+check('No Language setting is offered while there is nothing to translate',
+  !html.includes('data-pref-lang')
+  && !renderer.includes("state.preferences.language")
+  && !renderer.includes('.lang-ko')
+  && !renderer.includes('.lang-en'));
+check('The Preference settings that remain all reach something real',
+  html.includes('data-pref-scale') && /font-size:calc\(12px \* var\(--ui-scale\)\)/.test(css)
+  && html.includes('data-pref-theme') && renderer.includes("document.body.dataset.theme = state.preferences.theme"));
+// The Code pane is its own drop target; the zone over it is only an affordance,
+// and it has to stay out of the way at rest or an empty Page cannot be typed
+// into. view-drop-bridge.js owns bringing it back mid-drag.
+check('The Code pane stays a drop target, with the affordance owned by the bridge',
+  renderer.includes("bindDropTarget('#codeView .code-editor-pane','codePage');")
+  && css.includes('.code-editor-pane.is-empty .html-drop-zone{display:none}')
+  && dropBridge.includes('.code-editor-pane.${OVER_CLASS} .html-drop-zone')
+  && dropBridge.includes("{ slot: 'codePage', pane: '#codeView .code-editor-pane'"));
+check('No URL field is placed in a zone that is only visible mid-drag',
+  renderer.includes("if(zone.classList.contains('code-drop-zone'))return;"));
 
 const large = [];
 let pageCount = 0;

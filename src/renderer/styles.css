@@ -478,7 +478,48 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
   color:var(--text-secondary);text-align:center;pointer-events:none
 }
 .view-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
+/* Hidden at rest so it cannot cover the Code editor - an empty Page has to stay
+   typeable. view-drop-bridge.js injects the drag-over rules that bring it back
+   while a file is over the pane, and those are injected after this sheet, so
+   they win on equal specificity. The pane itself is the drop target either way. */
 .code-editor-pane.is-empty .html-drop-zone{display:none}
+/* Download Page Fonts */
+.font-export-modal{width:min(560px,92vw)}
+.font-export-list{
+  max-height:min(46vh,380px);overflow:auto;margin:10px 0 4px;
+  border:1px solid var(--border);border-radius:var(--radius-control);background:var(--panel-secondary)
+}
+.font-export-empty{padding:22px 16px;color:var(--muted);font-size:12px;text-align:center}
+.font-export-row{
+  display:grid;grid-template-columns:18px minmax(0,1fr) auto auto;gap:9px;align-items:center;
+  padding:7px 11px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px
+}
+.font-export-row:last-child{border-bottom:0}
+.font-export-row:hover{background:var(--hover)}
+.font-export-row.is-unavailable{cursor:default;color:var(--muted)}
+.font-export-row.is-unavailable:hover{background:transparent}
+.font-export-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--foreground);font-weight:600}
+.font-export-row.is-unavailable .font-export-name{color:var(--muted)}
+.font-export-meta{color:var(--text-secondary);font-size:11px;white-space:nowrap}
+.font-export-kind{color:var(--muted);font-size:10px;white-space:nowrap}
+.font-export-note{margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
+.font-export-note code{padding:1px 4px;border-radius:3px;background:var(--panel-secondary);font-size:10px}
+/* URL entry lives in the drop zone, which already means "put a Page here" */
+.drop-url{display:flex;gap:6px;width:min(360px,86%);margin-top:12px}
+.drop-url-input{
+  flex:1;min-width:0;height:28px;padding:0 9px;
+  border:1px solid var(--border-strong);border-radius:var(--radius-control);
+  background:var(--panel);color:var(--foreground);font-size:12px
+}
+.drop-url-input::placeholder{color:var(--muted)}
+.drop-url-input:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-1px}
+.drop-url-open{
+  flex:none;height:28px;padding:0 12px;
+  border:1px solid var(--accent);border-radius:var(--radius-control);
+  background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600
+}
+.drop-url-open:hover{filter:brightness(1.06)}
 .html-drop-zone:hover{background:color-mix(in srgb,var(--accent) 5%,var(--canvas));border-color:var(--focus-ring)}
 .html-drop-zone:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-3px}
 .html-drop-zone.drag-over{background:color-mix(in srgb,var(--accent) 7%,var(--canvas));border-color:var(--focus-ring)}

@@ -49,6 +49,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('file:readPagePath', filePath);
   },
   openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  // Fetching a Page over the network. Every guard lives in main - the renderer
+  // cannot widen what is reachable by passing a different URL.
+  fetchPageAtUrl: (url) => {
+    if (!url) return Promise.reject(new Error('A URL is required.'));
+    return ipcRenderer.invoke('net:fetchPage', url);
+  },
+  fetchStylesheetText: (url) => {
+    if (!url) return Promise.reject(new Error('A stylesheet URL is required.'));
+    return ipcRenderer.invoke('net:fetchStylesheet', url);
+  },
+  downloadFonts: (payload) => ipcRenderer.invoke('fonts:download', payload),
   armPdfAnnotationSave: (payload) => ipcRenderer.invoke('pdf:armAnnotationSave', payload),
   onPdfAnnotationSaved: (callback) => {
     const listener = (_event, result) => callback(result || {});
