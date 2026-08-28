@@ -978,6 +978,8 @@ body.is-resizing-row iframe{pointer-events:none!important}
   cursor:pointer;font-size:11px;text-align:left
 }
 .toc-entry:hover{background:var(--panel-secondary);color:var(--foreground)}
+.toc-entry.is-active{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--foreground);font-weight:600}
+.toc-entry.is-active .toc-entry-level{color:var(--accent)}
 .toc-entry-level{flex:none;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
 .toc-entry-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .view-pane.is-empty .toc-panel{display:none}

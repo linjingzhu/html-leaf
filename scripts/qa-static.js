@@ -703,8 +703,10 @@ check('A reachable preview scrolls its own element; the isolated runtime goes th
   && /if\(\['interactive-isolated','direct-source-editor','pdf-native-editor'\]\.includes\(frame\.dataset\.previewRuntime\)\)return null/.test(tocSection)
   && tocSection.includes("target?.el?.scrollIntoView("));
 check('The preview bridge answers the outline scroll message',
-  /__leafViewTocScroll===true && event\.data\.token===TOKEN/.test(renderer)
-  && /document\.querySelectorAll\('h1,h2,h3,h4,h5,h6'\)\[event\.data\.index\]\?\.scrollIntoView/.test(renderer));
+  /__leafViewTocScroll===true/.test(renderer)
+  && /event\.data\.token===TOKEN/.test(renderer)
+  && /const target=document\.querySelectorAll\('h1,h2,h3,h4,h5,h6'\)\[event\.data\.index\]/.test(renderer)
+  && /target\.scrollIntoView\(\{block:'start',inline:'nearest'\}\)/.test(renderer));
 check('A Page with no headings explains itself instead of showing a blank panel',
   tocSection.includes('toc-panel-empty')
   && tocSection.includes('have no headings to extract')
@@ -931,8 +933,9 @@ check('No second window is ever opened, and http links go to the browser',
 // Pointing a preview frame at a PDF or an image IS a frame navigation, so a
 // subframe guard here would block the app's own rendering. That case is held by
 // the sandbox, frame-src 'none', and the renderer preventDefaulting every link.
-check('Subframe navigation is deliberately left to the preview sandbox',
-  !navSection.includes("'will-frame-navigate'")
+check('Subframe navigation is observed but never blocked',
+  navSection.includes("contents.on('will-frame-navigate'")
+  && !/will-frame-navigate[\s\S]{0,600}?event\.preventDefault\(\)/.test(navSection)
   && !navSection.includes("'will-redirect'")
   && renderer.includes("frame.src=page.previewUrl||")
   && /frame-src 'none'/.test(renderer));
@@ -960,6 +963,77 @@ check('The scripted runtime stays on an opaque origin',
 check('Nested frames and plugins stay refused in every preview',
   (renderer.match(/frame-src 'none'/g) || []).length >= 2
   && (renderer.match(/object-src 'none'/g) || []).length >= 2);
+
+// --- Clicking an outline entry marks the heading ---------------------------
+// Contents was built on injecting nothing into the Page, and the highlight must
+// not be the thing that breaks that. It is a positioned overlay carrying
+// data-editor-overlay - the same shape the Used-instance marker uses - so the
+// export stripper removes it and the edit-session mutation check reads it as
+// not-a-change. The heading's own style attribute is never touched.
+const tocHighlightSection = renderer.slice(
+  renderer.indexOf("const TOC_HIGHLIGHT_MARK="),
+  renderer.indexOf('function scrollSlotToHeading(')
+);
+check('Heading highlight section is present', tocHighlightSection.length > 700, `${tocHighlightSection.length} chars`);
+check('The mark is a runtime overlay, not a write to the Page',
+  tocHighlightSection.includes("marker.dataset.editorOverlay=TOC_HIGHLIGHT_MARK;")
+  && tocHighlightSection.includes("position:'absolute'")
+  && tocHighlightSection.includes("pointerEvents:'none'")
+  && !/element\.style\./.test(tocHighlightSection)
+  && !/\.setAttribute\('style'/.test(tocHighlightSection));
+check('Only one heading is ever marked',
+  renderer.includes('clearTocHighlight();\n    tocHighlight={slot,pageId,index};')
+  && tocHighlightSection.includes('function clearTocHighlight('));
+check('The mark is put away when the panel closes or the outlined Page changes',
+  /clearTocHighlight\(\);setTocVisible\(false\)/.test(renderer)
+  && /clearTocHighlight\(\);tocSelection\.set\(slot,event\.target\.value\)/.test(renderer)
+  && renderer.includes('tocHighlight.pageId!==pageIdForSlot(slot))tocHighlight=null;'));
+// The isolated runtime's document is unreachable from the renderer, so it draws
+// its own marker over the same bridge the scroll already uses.
+check('The bridged runtime paints and clears its own marker',
+  renderer.includes('__leafViewTocHighlight===true')
+  && /marker\.dataset\.editorOverlay='toc-heading-highlight'/.test(renderer)
+  && renderer.includes(`document.querySelectorAll('[data-editor-overlay="toc-heading-highlight"]').forEach(node=>node.remove());`));
+check('The panel shows which entry is marked',
+  renderer.includes("const activeIndex=tocHighlight&&tocHighlight.slot===slot&&tocHighlight.pageId===selectedId?tocHighlight.index:-1;")
+  && css.includes('.toc-entry.is-active{'));
+
+// --- The app follows a preview that navigated itself -----------------------
+// A fetched Page is a live page: its scripts run and its links really move the
+// frame. Both already happened; what did not was Leaf following. The outline,
+// the Code view and Save As kept describing the page the View started on, and
+// the next re-render rebuilt the frame from that stale model, throwing the
+// navigation away.
+const followSection = renderer.slice(
+  renderer.indexOf('let followingFrameNavigation=false;'),
+  renderer.indexOf('// ----- Opening a Page by URL')
+);
+check('Follow section is present', followSection.length > 900, `${followSection.length} chars`);
+// The frame is opaque-origin, so the renderer cannot read where it went. Main
+// reports it, and reports only - blocking here would break the navigation the
+// user asked for.
+check('Main reports where a preview frame went, and never blocks it',
+  main.includes("contents.on('will-frame-navigate', event => {")
+  && main.includes("const slot = /^leaf-view-(.+)$/.exec(event.frame?.name || '')?.[1];")
+  && main.includes("mainWindow.webContents.send('preview:frameNavigated', { slot, url: event.url });")
+  && !/will-frame-navigate[\s\S]{0,600}?event\.preventDefault\(\)/.test(main));
+check('Preview frames are named so the report can name a slot',
+  ['single','left','right','codePreview'].every(slot => html.includes(`name="leaf-view-${slot}"`)));
+check('Only a Page that was already remote follows',
+  followSection.includes("if(!page||!/^https?:/i.test(String(page.baseUrl||'')))return;")
+  && followSection.includes('if(String(page.baseUrl)===String(url))return;'));
+// Re-rendering would rebuild the frame from source and undo the navigation, so
+// only what reads the model is refreshed.
+check('Following refreshes the model, not the frame',
+  followSection.includes('renderTree();renderPageSelects();renderCrumbs();renderTocPanel(slot);')
+  && !/^\s*renderAll\(\);/m.test(followSection));
+check('A View that moved on while the fetch was in flight is not overwritten',
+  followSection.includes('if(!current||current.id!==page.id)return;')
+  && followSection.includes('followingFrameNavigation=true;')
+  && followSection.includes('finally{ followingFrameNavigation=false; }'));
+check('The destination goes through the same guarded fetch as the URL bar',
+  followSection.includes('await window.electronAPI.fetchPageAtUrl(url)')
+  && preload.includes("ipcRenderer.on('preview:frameNavigated', listener)"));
 
 const large = [];
 let pageCount = 0;
@@ -992,6 +1066,49 @@ const to = order.indexOf('A');
 const [moved] = order.splice(from, 1);
 order.splice(to, 0, moved);
 check('Project drag reorder invariant B,A,C', order.join(',') === 'B,A,C', order.join(','));
+
+// Markdown rendering is exercised for real, not matched as text: the parser is
+// loaded into a bare context and its output inspected. Front matter as body,
+// pipes instead of a table, and relative links dropped to plain text were all
+// shipped defects, and all three are invisible to a substring check.
+const markdownRender = (() => {
+  const vm = require('node:vm');
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(read('src/renderer/jira-export.js'), context);
+  return context.window.JiraExport.markdownToRichHtml;
+})();
+const markdownSample = [
+  '---',
+  'title: Getting Started',
+  'outline: [2, 3]',
+  '---',
+  '',
+  '# Getting Started',
+  '',
+  '| Option | Type |',
+  '| ------ | ---: |',
+  '| base | string |',
+  '',
+  'See [the reference](./reference.md) and [home](../index.html).'
+].join('\n');
+const markdownHtml = markdownRender(markdownSample);
+check('Markdown front matter is stripped, not rendered as body',
+  !/title\s*:\s*Getting Started/.test(markdownHtml) && !markdownHtml.includes('<hr>'),
+  markdownHtml.slice(0, 120));
+check('Markdown GFM table becomes a real table',
+  /<table>/.test(markdownHtml) && /<th[^>]*>Option<\/th>/.test(markdownHtml)
+    && /<tbody>/.test(markdownHtml) && /text-align:right/.test(markdownHtml),
+  markdownHtml.slice(0, 160));
+check('Markdown relative links stay links so Leaf can follow them',
+  markdownHtml.includes('<a href="./reference.md">') && markdownHtml.includes('<a href="../index.html">'),
+  markdownHtml.slice(-160));
+check('Markdown thematic break outside front matter still renders',
+  markdownRender('a\n\n---\n\nb').includes('<hr>'));
+check('Markdown link hrefs stay restricted to schemes Leaf follows',
+  !markdownRender('[x](javascript:alert(1))').includes('<a ')
+    && !markdownRender('[x](//evil.test/x)').includes('<a ')
+    && markdownRender('[x](#section)').includes('<a href="#section">'));
 
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');

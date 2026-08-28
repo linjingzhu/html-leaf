@@ -959,6 +959,22 @@ function installNavigationGuards(contents) {
     return { action: 'deny' };
   });
 
+  // A preview frame that follows a link really does navigate - it is a live page
+  // in a sandbox, and that is the point. The renderer cannot see where it went,
+  // because the frame is opaque-origin, so main reports the destination and the
+  // renderer brings its own model along. Reported, never blocked.
+  contents.on('will-frame-navigate', event => {
+    if (event.isMainFrame) return;
+    const slot = /^leaf-view-(.+)$/.exec(event.frame?.name || '')?.[1];
+    if (!slot) return;
+    let protocol = '';
+    try { protocol = new URL(event.url).protocol; } catch { return; }
+    if (protocol !== 'http:' && protocol !== 'https:') return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('preview:frameNavigated', { slot, url: event.url });
+    }
+  });
+
   // Top-level only. Subframe navigation is deliberately left alone: pointing a
   // preview frame at a PDF or an image IS a frame navigation, so guarding those
   // here would block the app's own rendering. Preview content is already held by

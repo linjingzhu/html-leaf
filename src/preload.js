@@ -60,6 +60,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('net:fetchStylesheet', url);
   },
   downloadFonts: (payload) => ipcRenderer.invoke('fonts:download', payload),
+  onPreviewFrameNavigated: (callback) => {
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('preview:frameNavigated', listener);
+    return () => ipcRenderer.removeListener('preview:frameNavigated', listener);
+  },
   armPdfAnnotationSave: (payload) => ipcRenderer.invoke('pdf:armAnnotationSave', payload),
   onPdfAnnotationSaved: (callback) => {
     const listener = (_event, result) => callback(result || {});
