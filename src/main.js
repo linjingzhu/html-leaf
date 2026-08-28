@@ -1,8 +1,9 @@
-const { app, BrowserWindow, dialog, ipcMain, clipboard, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
+const dns = require('node:dns/promises');
 
 let mainWindow;
 let sessionTempDir = null;
@@ -139,6 +140,206 @@ async function openExternalLink(rawUrl) {
   }
   await shell.openExternal(url.href);
   return { opened: true, url: url.href };
+}
+
+// ----- Fetching a Page over the network -------------------------------------
+// The app was entirely local-file before this. Everything below exists because
+// a URL box in a desktop app is an SSRF hole by default: main runs with full
+// privileges, so an unguarded fetch reaches the user's own localhost services,
+// their LAN, and the cloud metadata endpoint.
+const FETCH_PROTOCOLS = new Set(['http:', 'https:']);
+const FETCH_MAX_BYTES = 25_000_000;
+const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_MAX_REDIRECTS = 5;
+// Its own partition, so the app's cookies and credentials never ride along on a
+// fetch the user asked for.
+const FETCH_PARTITION = 'leaf-url-fetch';
+
+function ipv4Octets(host) {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!match) return null;
+  const parts = match.slice(1).map(Number);
+  return parts.every(n => n >= 0 && n <= 255) ? parts : null;
+}
+
+// Always refused, on any hop: the cloud metadata endpoint lives here and no
+// "open this page" request has a legitimate reason to reach it.
+function isLinkLocalAddress(host) {
+  const v4 = ipv4Octets(host);
+  if (v4) return v4[0] === 169 && v4[1] === 254;
+  const v6 = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  return /^fe[89ab][0-9a-f]:/.test(v6);
+}
+
+// Allowed on the address the user typed - a local dev server is a normal thing
+// to open - and refused when a redirect picked it.
+function isInternalAddress(host) {
+  const v6 = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  if (v6 === '::1' || v6 === '::' || /^f[cd][0-9a-f]{2}:/.test(v6)) return true;
+  const v4 = ipv4Octets(host);
+  if (!v4) return false;
+  const [a, b] = v4;
+  return a === 127 || a === 0 || a === 10
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 100 && b >= 64 && b <= 127);
+}
+
+async function addressesForHost(hostname) {
+  const bare = String(hostname || '').replace(/^\[|\]$/g, '');
+  if (ipv4Octets(bare) || bare.includes(':')) return [bare];
+  try {
+    const records = await dns.lookup(bare, { all: true, verbatim: true });
+    return records.map(record => record.address);
+  } catch {
+    throw new Error(`Could not resolve ${hostname}.`);
+  }
+}
+
+// Every redirect hop is re-checked. An internal address is allowed only on the
+// host the user actually typed: a dev server redirecting / to /index.html stays
+// on its own host and is fine, while a public site answering 302 into loopback
+// or the LAN is the attack this closes.
+async function assertFetchableUrl(url, { originHost = null } = {}) {
+  if (!FETCH_PROTOCOLS.has(url.protocol)) {
+    throw new Error(`Only http and https URLs can be opened as a Page - not ${url.protocol}`);
+  }
+  const sameHostAsTyped = originHost !== null && url.hostname.toLowerCase() === originHost.toLowerCase();
+  const addresses = await addressesForHost(url.hostname);
+  for (const address of addresses) {
+    if (isLinkLocalAddress(address)) {
+      throw new Error(`Refusing to fetch a link-local address (${address}).`);
+    }
+    if (isInternalAddress(address) && !sameHostAsTyped) {
+      throw new Error(`Refusing to reach a private address (${address}) that was not the one entered.`);
+    }
+  }
+  return url;
+}
+
+// Order matters: image/svg+xml and application/xhtml+xml both end in +xml, so
+// the specific types have to be tried before the generic XML rule.
+const FETCH_TYPE_BY_MIME = [
+  [/^text\/html\b|^application\/xhtml\+xml\b/, 'html'],
+  [/^text\/markdown\b|^text\/x-markdown\b/, 'markdown'],
+  [/^image\/(png|jpeg|jpg|webp|gif|svg\+xml)\b/, 'image'],
+  [/^application\/pdf\b/, 'pdf'],
+  [/^application\/json\b|\+json\b/, 'json'],
+  [/^application\/xml\b|^text\/xml\b|\+xml\b/, 'xml']
+];
+
+function fetchedDocumentType(contentType, url) {
+  const mime = String(contentType || '').split(';')[0].trim().toLowerCase();
+  for (const [pattern, type] of FETCH_TYPE_BY_MIME) if (pattern.test(mime)) return type;
+  // Servers that answer octet-stream or nothing at all still tell the truth in
+  // the path, and a URL with no extension at all is almost always a page.
+  const byPath = documentTypeForPath(new URL(url).pathname);
+  if (byPath) return byPath;
+  if (!mime || mime === 'application/octet-stream') return null;
+  return null;
+}
+
+function fetchedPageName(url, documentType) {
+  const parsed = new URL(url);
+  const base = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+  if (base) return base;
+  const extension = documentType === 'markdown' ? 'md' : documentType === 'html' ? 'html' : documentType;
+  return `${parsed.hostname}.${extension}`;
+}
+
+function requestOnce(url) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({
+      url,
+      method: 'GET',
+      redirect: 'manual',
+      session: session.fromPartition(FETCH_PARTITION, { cache: false }),
+      useSessionCookies: false
+    });
+    const timer = setTimeout(() => { request.abort(); reject(new Error('The request timed out.')); }, FETCH_TIMEOUT_MS);
+    request.on('redirect', (status, method, redirectUrl) => {
+      clearTimeout(timer);
+      request.abort();
+      resolve({ redirectUrl, status });
+    });
+    request.on('response', response => {
+      const chunks = [];
+      let size = 0;
+      response.on('data', chunk => {
+        size += chunk.length;
+        if (size > FETCH_MAX_BYTES) {
+          request.abort();
+          clearTimeout(timer);
+          reject(new Error(`That page is larger than ${Math.round(FETCH_MAX_BYTES / 1_000_000)} MB.`));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => {
+        clearTimeout(timer);
+        resolve({
+          status: response.statusCode,
+          headers: response.headers,
+          body: Buffer.concat(chunks)
+        });
+      });
+      response.on('error', error => { clearTimeout(timer); reject(error); });
+    });
+    request.on('error', error => { clearTimeout(timer); reject(new Error(error.message || 'The request failed.')); });
+    request.end();
+  });
+}
+
+async function fetchPageAtUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(String(rawUrl || '').trim());
+  } catch {
+    throw new Error('That is not a valid URL.');
+  }
+  const originHost = url.hostname;
+  await assertFetchableUrl(url, { originHost });
+
+  let current = url.href;
+  let result = null;
+  for (let hop = 0; hop <= FETCH_MAX_REDIRECTS; hop++) {
+    const answer = await requestOnce(current);
+    if (!answer.redirectUrl) { result = answer; break; }
+    const next = new URL(answer.redirectUrl, current);
+    await assertFetchableUrl(next, { originHost });
+    current = next.href;
+  }
+  if (!result) throw new Error('Too many redirects.');
+  if (result.status >= 400) throw new Error(`The server answered ${result.status}.`);
+
+  const contentType = [].concat(result.headers?.['content-type'] || []).join('; ');
+  const documentType = fetchedDocumentType(contentType, current);
+  if (!documentType) throw new Error(`Leaf opens HTML, Markdown, JSON, XML, PDF and images - not ${contentType || 'that content type'}.`);
+
+  const fileName = fetchedPageName(current, documentType);
+  const common = {
+    // No local file backs a fetched Page, so Save has nothing to write to and
+    // stays disabled with its reason; Save As is the way to keep one.
+    filePath: null,
+    sourceUrl: current,
+    fileName,
+    title: fileName.replace(/\.[^.]+$/, '') || new URL(current).hostname,
+    documentType,
+    baseUrl: current,
+    previewUrl: null,
+    initialSnapshotPath: null
+  };
+
+  if (documentType === 'pdf' || documentType === 'image') {
+    // Binary Pages render from a URL, not from source, and the preview CSP
+    // admits file: but not http: - so the bytes are staged locally.
+    const dir = await ensureSessionTempDir();
+    const staged = path.join(dir, `fetched-${Date.now()}-${fileName.replace(/[^\w.-]+/g, '_')}`);
+    await atomicWriteFile(staged, result.body);
+    return { ...common, previewUrl: pathToFileURL(staged).href, source: '', loadedSource: '' };
+  }
+  const source = result.body.toString('utf8');
+  return { ...common, source, loadedSource: source };
 }
 
 function documentTypeForPath(filePath) {
@@ -606,6 +807,7 @@ app.whenReady().then(() => {
   ipcMain.handle('file:readPagePath', (_e, filePath) => readDocumentPath(filePath));
   ipcMain.handle('file:resolveLinkTarget', (_e, payload) => resolveLinkTarget(payload));
   ipcMain.handle('shell:openExternal', (_e, url) => openExternalLink(url));
+  ipcMain.handle('net:fetchPage', (_e, url) => fetchPageAtUrl(url));
   ipcMain.handle('pdf:armAnnotationSave', (_e, payload) => armPdfAnnotationSave(payload));
   ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath)); // v0.5.14 compatibility
   ipcMain.handle('file:exportHtml', (_e, payload) => exportHtml(payload));

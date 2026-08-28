@@ -3924,6 +3924,72 @@
   // ----- Explorer Page Drag & Drop -----
   function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
+  // ----- Opening a Page by URL ----------------------------------------------
+  // The drop zone already means "put a Page here", so the URL field belongs in
+  // it rather than in a menu somewhere else.
+  const REMOTE_URL_SCHEME=/^https?:\/\//i;
+
+  function loadedPageForUrl(url){
+    const normalized=String(url||'').trim();
+    if(!normalized)return null;
+    return pageList().find(item=>String(item.page.baseUrl||'').trim()===normalized)||null;
+  }
+
+  async function openPageFromUrl(rawUrl,slot){
+    let candidate=String(rawUrl||'').trim();
+    if(!candidate)return;
+    // A bare host is what people paste; only add a scheme, never change one.
+    if(!/^[a-z][a-z0-9+.-]*:/i.test(candidate))candidate=`https://${candidate}`;
+    if(!REMOTE_URL_SCHEME.test(candidate))return showToast('Only http and https URLs can be opened as a Page');
+
+    const already=loadedPageForUrl(candidate);
+    if(already){
+      bindPageToSlot(slot||activePageSlot(),already.page.id);
+      selectedTreeNode=already.page.id;state.selectedDocumentId=already.project.id;
+      renderAll();persist();
+      return showToast(`Already open: ${already.page.name}`);
+    }
+    showToast('Fetching…');
+    try{
+      const result=await window.electronAPI.fetchPageAtUrl(candidate);
+      const page=await addPageResultToDocument(result,slot||activePageSlot());
+      if(page)showToast(`Opened ${page.name}`);
+    }catch(error){
+      showToast(`Could not open that URL: ${error.message}`);
+    }
+  }
+
+  function urlFromDataTransfer(dataTransfer){
+    if(!dataTransfer)return '';
+    const list=dataTransfer.getData('text/uri-list')||'';
+    const first=list.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
+    const candidate=first||dataTransfer.getData('text/plain')||'';
+    return REMOTE_URL_SCHEME.test(candidate.trim())?candidate.trim():'';
+  }
+
+  function installDropZoneUrlFields(){
+    $$('.html-drop-zone').forEach(zone=>{
+      if(zone.querySelector('.drop-url'))return;
+      const slot=zone.dataset.dropSlot||null;
+      const row=document.createElement('div');
+      row.className='drop-url';
+      row.innerHTML=`<input type="url" class="drop-url-input" spellcheck="false" placeholder="https://example.com/page.html" aria-label="Open a page by URL">
+        <button type="button" class="drop-url-open">Open</button>`;
+      const input=row.querySelector('.drop-url-input');
+      const button=row.querySelector('.drop-url-open');
+      const submit=()=>{const value=input.value;input.value='';openPageFromUrl(value,slot);};
+      // The zone itself opens the file picker on click, so the field has to keep
+      // its own clicks and keys to itself.
+      ['click','pointerdown','dblclick'].forEach(type=>row.addEventListener(type,event=>event.stopPropagation()));
+      input.addEventListener('keydown',event=>{
+        event.stopPropagation();
+        if(event.key==='Enter'){event.preventDefault();submit();}
+      });
+      button.addEventListener('click',event=>{event.preventDefault();submit();});
+      zone.appendChild(row);
+    });
+  }
+
   async function handleHtmlDrop(event, slot){
     event.preventDefault(); event.stopPropagation();
     if(slot==='right'&&atlassianPreviewState){
@@ -3935,7 +4001,11 @@
     const zone=event.currentTarget.querySelector?.('.html-drop-zone') || event.currentTarget;
     zone?.classList.remove('drag-over');
     const file=[...(event.dataTransfer?.files||[])].find(isHtmlFile);
-    if(!file) return showToast('Drop an HTML, Markdown, JSON, XML, or PDF page or image');
+    if(!file){
+      const droppedUrl=urlFromDataTransfer(event.dataTransfer);
+      if(droppedUrl)return withUnsavedInspectorGuard(()=>{openPageFromUrl(droppedUrl,slot);});
+      return showToast('Drop a page, a link, or paste a URL below');
+    }
 
     withUnsavedInspectorGuard(async()=>{
       try{
@@ -6907,6 +6977,7 @@
   renderPreviewDevicePresetOptions();
   installPreviewOrientationButtons();
   installPreviewZoomControls();
+  installDropZoneUrlFields();
   renderObjectsPalette();
   renderAll();
   updateAllPreviewZoomIndicators();

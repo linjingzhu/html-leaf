@@ -479,6 +479,21 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
 }
 .view-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
 .code-editor-pane.is-empty .html-drop-zone{display:none}
+/* URL entry lives in the drop zone, which already means "put a Page here" */
+.drop-url{display:flex;gap:6px;width:min(360px,86%);margin-top:12px}
+.drop-url-input{
+  flex:1;min-width:0;height:28px;padding:0 9px;
+  border:1px solid var(--border-strong);border-radius:var(--radius-control);
+  background:var(--panel);color:var(--foreground);font-size:12px
+}
+.drop-url-input::placeholder{color:var(--muted)}
+.drop-url-input:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-1px}
+.drop-url-open{
+  flex:none;height:28px;padding:0 12px;
+  border:1px solid var(--accent);border-radius:var(--radius-control);
+  background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600
+}
+.drop-url-open:hover{filter:brightness(1.06)}
 .html-drop-zone:hover{background:color-mix(in srgb,var(--accent) 5%,var(--canvas));border-color:var(--focus-ring)}
 .html-drop-zone:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-3px}
 .html-drop-zone.drag-over{background:color-mix(in srgb,var(--accent) 7%,var(--canvas));border-color:var(--focus-ring)}

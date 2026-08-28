@@ -746,6 +746,70 @@ check('A document-View selection brings its Used row into view',
 check('Highlighting instances from the list reveals that row too',
   /classList\.add\('instance-highlighted'\);\s*\n\s*revealUsedComponentRow\(token\);/.test(renderer));
 
+// --- Opening a Page by URL -------------------------------------------------
+// This is the first network code in the app, and a URL box in a desktop app is
+// an SSRF hole by default: main runs with full privileges, so an unguarded
+// fetch reaches the user's own localhost services, their LAN, and the cloud
+// metadata endpoint. Every guard below is load-bearing.
+const fetchSection = main.slice(
+  main.indexOf('const FETCH_PROTOCOLS'),
+  main.indexOf('function documentTypeForPath(')
+);
+check('URL fetch section is present', fetchSection.length > 2000, `${fetchSection.length} chars`);
+check('Only http and https are reachable',
+  /const FETCH_PROTOCOLS = new Set\(\['http:', 'https:'\]\)/.test(fetchSection)
+  && fetchSection.includes('if (!FETCH_PROTOCOLS.has(url.protocol))'));
+check('Link-local is refused on every hop, typed or not',
+  fetchSection.includes('function isLinkLocalAddress(')
+  && /v4\[0\] === 169 && v4\[1\] === 254/.test(fetchSection)
+  && fetchSection.includes('Refusing to fetch a link-local address'));
+checkIncludesAll('Loopback, LAN and CGNAT ranges are all classified as internal', fetchSection,
+  ['function isInternalAddress(', 'a === 127', 'a === 10',
+   'a === 172 && b >= 16 && b <= 31', 'a === 192 && b === 168', 'a === 100 && b >= 64 && b <= 127']);
+// The whole point of the redirect loop: a public site must not be able to 302
+// its way into loopback, while a dev server redirecting / to /index.html must
+// still work.
+check('An internal address is reachable only on the host the user typed',
+  fetchSection.includes('const sameHostAsTyped = originHost !== null')
+  && fetchSection.includes('if (isInternalAddress(address) && !sameHostAsTyped)')
+  && /for \(let hop = 0; hop <= FETCH_MAX_REDIRECTS; hop\+\+\)/.test(fetchSection)
+  && /await assertFetchableUrl\(next, \{ originHost \}\)/.test(fetchSection));
+check('A hostname is resolved before it is judged, so a name cannot hide an address',
+  fetchSection.includes('function addressesForHost(')
+  && fetchSection.includes("dns.lookup(bare, { all: true, verbatim: true })")
+  && fetchSection.includes('const addresses = await addressesForHost(url.hostname)'));
+check('Fetches carry no app cookies and are capped in size, time and hops',
+  fetchSection.includes("const FETCH_PARTITION = 'leaf-url-fetch'")
+  && fetchSection.includes('session: session.fromPartition(FETCH_PARTITION, { cache: false })')
+  && fetchSection.includes('useSessionCookies: false')
+  && fetchSection.includes('size > FETCH_MAX_BYTES')
+  && fetchSection.includes('FETCH_TIMEOUT_MS')
+  && fetchSection.includes('FETCH_MAX_REDIRECTS'));
+check('Redirects are followed by hand, not by the network stack',
+  fetchSection.includes("redirect: 'manual'"));
+// image/svg+xml and application/xhtml+xml both end in +xml, so a generic XML
+// rule placed first swallows them - that shipped broken once.
+check('Specific content types are matched before the generic +xml rule',
+  fetchSection.indexOf("'image'") < fetchSection.indexOf("[/^application\\/xml")
+  && fetchSection.indexOf("'html'") < fetchSection.indexOf("[/^application\\/xml"));
+check('A fetched Page has no local file, so Save stays disabled and Save As takes over',
+  /filePath: null/.test(fetchSection) && fetchSection.includes('sourceUrl: current'));
+check('A fetched binary is staged locally, because the preview CSP admits file: and not http:',
+  fetchSection.includes('await ensureSessionTempDir()')
+  && fetchSection.includes('previewUrl: pathToFileURL(staged).href'));
+check('The renderer cannot widen what is reachable',
+  preload.includes("ipcRenderer.invoke('net:fetchPage', url)")
+  && main.includes("ipcMain.handle('net:fetchPage', (_e, url) => fetchPageAtUrl(url))"));
+check('The URL field lives in the drop zone, and a dragged link works too',
+  renderer.includes('function installDropZoneUrlFields()')
+  && renderer.includes('installDropZoneUrlFields();')
+  && renderer.includes('function urlFromDataTransfer(')
+  && renderer.includes("getData('text/uri-list')")
+  && css.includes('.drop-url{')
+  && html.includes('or open a URL'));
+check('The URL field keeps its own clicks, so it does not open the file picker',
+  /\['click','pointerdown','dblclick'\]\.forEach\(type=>row\.addEventListener\(type,event=>event\.stopPropagation\(\)\)\)/.test(renderer));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;
