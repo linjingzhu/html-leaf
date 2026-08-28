@@ -933,8 +933,9 @@ check('No second window is ever opened, and http links go to the browser',
 // Pointing a preview frame at a PDF or an image IS a frame navigation, so a
 // subframe guard here would block the app's own rendering. That case is held by
 // the sandbox, frame-src 'none', and the renderer preventDefaulting every link.
-check('Subframe navigation is deliberately left to the preview sandbox',
-  !navSection.includes("'will-frame-navigate'")
+check('Subframe navigation is observed but never blocked',
+  navSection.includes("contents.on('will-frame-navigate'")
+  && !/will-frame-navigate[\s\S]{0,600}?event\.preventDefault\(\)/.test(navSection)
   && !navSection.includes("'will-redirect'")
   && renderer.includes("frame.src=page.previewUrl||")
   && /frame-src 'none'/.test(renderer));
@@ -996,6 +997,43 @@ check('The bridged runtime paints and clears its own marker',
 check('The panel shows which entry is marked',
   renderer.includes("const activeIndex=tocHighlight&&tocHighlight.slot===slot&&tocHighlight.pageId===selectedId?tocHighlight.index:-1;")
   && css.includes('.toc-entry.is-active{'));
+
+// --- The app follows a preview that navigated itself -----------------------
+// A fetched Page is a live page: its scripts run and its links really move the
+// frame. Both already happened; what did not was Leaf following. The outline,
+// the Code view and Save As kept describing the page the View started on, and
+// the next re-render rebuilt the frame from that stale model, throwing the
+// navigation away.
+const followSection = renderer.slice(
+  renderer.indexOf('let followingFrameNavigation=false;'),
+  renderer.indexOf('// ----- Opening a Page by URL')
+);
+check('Follow section is present', followSection.length > 900, `${followSection.length} chars`);
+// The frame is opaque-origin, so the renderer cannot read where it went. Main
+// reports it, and reports only - blocking here would break the navigation the
+// user asked for.
+check('Main reports where a preview frame went, and never blocks it',
+  main.includes("contents.on('will-frame-navigate', event => {")
+  && main.includes("const slot = /^leaf-view-(.+)$/.exec(event.frame?.name || '')?.[1];")
+  && main.includes("mainWindow.webContents.send('preview:frameNavigated', { slot, url: event.url });")
+  && !/will-frame-navigate[\s\S]{0,600}?event\.preventDefault\(\)/.test(main));
+check('Preview frames are named so the report can name a slot',
+  ['single','left','right','codePreview'].every(slot => html.includes(`name="leaf-view-${slot}"`)));
+check('Only a Page that was already remote follows',
+  followSection.includes("if(!page||!/^https?:/i.test(String(page.baseUrl||'')))return;")
+  && followSection.includes('if(String(page.baseUrl)===String(url))return;'));
+// Re-rendering would rebuild the frame from source and undo the navigation, so
+// only what reads the model is refreshed.
+check('Following refreshes the model, not the frame',
+  followSection.includes('renderTree();renderPageSelects();renderCrumbs();renderTocPanel(slot);')
+  && !/^\s*renderAll\(\);/m.test(followSection));
+check('A View that moved on while the fetch was in flight is not overwritten',
+  followSection.includes('if(!current||current.id!==page.id)return;')
+  && followSection.includes('followingFrameNavigation=true;')
+  && followSection.includes('finally{ followingFrameNavigation=false; }'));
+check('The destination goes through the same guarded fetch as the URL bar',
+  followSection.includes('await window.electronAPI.fetchPageAtUrl(url)')
+  && preload.includes("ipcRenderer.on('preview:frameNavigated', listener)"));
 
 const large = [];
 let pageCount = 0;

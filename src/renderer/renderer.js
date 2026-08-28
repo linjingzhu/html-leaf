@@ -4191,6 +4191,46 @@
     }catch(error){ showToast(`Font download failed: ${error.message}`); }
   });
 
+  // ----- Following a preview that navigated itself --------------------------
+  // A fetched Page is a live page: its scripts run and its links really move the
+  // frame. The frame is opaque-origin, so the renderer cannot read where it
+  // went; main reports it. Without this the app keeps describing the page the
+  // View started on - the outline, the Code view and Save As all stay on the old
+  // document, and the next re-render throws the navigation away.
+  let followingFrameNavigation=false;
+
+  async function followFrameNavigation({slot,url}){
+    if(!slot||!url||followingFrameNavigation)return;
+    const page=pageById(pageIdForSlot(slot));
+    // Only a Page that was already remote follows. A local file whose frame
+    // navigated is not something this should rewrite.
+    if(!page||!/^https?:/i.test(String(page.baseUrl||'')))return;
+    if(String(page.baseUrl)===String(url))return;
+    followingFrameNavigation=true;
+    try{
+      const result=await window.electronAPI.fetchPageAtUrl(url);
+      const current=pageById(pageIdForSlot(slot));
+      // The View may have moved on while the fetch was in flight.
+      if(!current||current.id!==page.id)return;
+      current.source=result.source||'';
+      current.loadedSource=result.loadedSource??result.source??'';
+      current.baseUrl=result.baseUrl||url;
+      current.name=result.title||current.name;
+      current.fileName=result.fileName||current.fileName;
+      current.isEmpty=!String(current.source||'').trim();
+      // Deliberately not renderAll(): that rebuilds the frame from source and
+      // would throw away the very navigation this is following, along with any
+      // state the page's own scripts hold. Only what reads the model is
+      // refreshed; the frame is already showing the right document.
+      renderTree();renderPageSelects();renderCrumbs();renderTocPanel(slot);
+      persist();
+    }catch(error){
+      showToast(`Could not follow that link: ${error.message}`);
+    }finally{ followingFrameNavigation=false; }
+  }
+
+  window.electronAPI.onPreviewFrameNavigated?.(payload=>{followFrameNavigation(payload||{});});
+
   // ----- Opening a Page by URL ----------------------------------------------
   // The drop zone already means "put a Page here", so the URL field belongs in
   // it rather than in a menu somewhere else.
