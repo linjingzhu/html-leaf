@@ -937,6 +937,30 @@ check('Subframe navigation is deliberately left to the preview sandbox',
   && renderer.includes("frame.src=page.previewUrl||")
   && /frame-src 'none'/.test(renderer));
 
+// --- A fetched page has to be allowed to be a page ------------------------
+// The scripted preview's policy was written when Leaf only opened local files,
+// where refusing external scripts cost nothing. Applied to a fetched page it
+// rendered most of the web as a blank frame: script-src carried 'unsafe-inline'
+// and no host, so every <script src> was blocked.
+const cspSection = renderer.slice(
+  renderer.indexOf('const remote=/^https?:/i.test'),
+  renderer.indexOf('const bridge=allowScripts')
+);
+check('A fetched Page may load its own scripts and call its own APIs',
+  cspSection.includes("script-src 'unsafe-inline' 'unsafe-eval' https: http:; connect-src https: http: data: blob:;"));
+check('A local file Page is not widened with it',
+  cspSection.includes("script-src 'unsafe-inline'; connect-src 'none';")
+  && cspSection.includes("const remote=/^https?:/i.test(String(page.baseUrl||''))"));
+// The widening is only safe because the sandbox, not the policy, is what keeps
+// a scripted preview away from Leaf: no allow-same-origin means an opaque
+// origin with no reach into the app, its storage, or any cookie.
+check('The scripted runtime stays on an opaque origin',
+  renderer.includes("frame.setAttribute('sandbox','allow-scripts');")
+  && !renderer.includes("'allow-scripts allow-same-origin'"));
+check('Nested frames and plugins stay refused in every preview',
+  (renderer.match(/frame-src 'none'/g) || []).length >= 2
+  && (renderer.match(/object-src 'none'/g) || []).length >= 2);
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;
