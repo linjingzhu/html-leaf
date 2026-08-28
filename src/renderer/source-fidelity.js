@@ -64,8 +64,10 @@
     if(!value)return;
     const footerVersion=document.getElementById('appVersion');
     const aboutVersion=document.getElementById('aboutVersion');
+    const splashVersion=document.getElementById('splashVersion');
     if(footerVersion)footerVersion.textContent=`Leaf v${value}`;
     if(aboutVersion)aboutVersion.textContent=`Version ${value}`;
+    if(splashVersion)splashVersion.textContent=`Version ${value}`;
     document.documentElement.dataset.appVersion=value;
   }
 

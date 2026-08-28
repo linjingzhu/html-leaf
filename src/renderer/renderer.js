@@ -38,6 +38,7 @@
     tableToolbar: $('#tableToolbar'), exportElementBtn: $('#exportElementBtn'),
     objectExportModal: $('#objectExportModal'), objectExportFormat: $('#objectExportFormat'), objectExportScale: $('#objectExportScale'), objectExportSummary: $('#objectExportSummary'),
     savePageAsModal: $('#savePageAsModal'), savePageAsFormat: $('#savePageAsFormat'), aboutModal: $('#aboutModal'),
+    splashModal: $('#splashModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -191,7 +192,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false },
+      preferences:{ scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false, splash:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -381,6 +382,8 @@
     document.documentElement.style.setProperty('--ui-scale', state.preferences.scale || 1);
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
+    const splashCheck=$('#prefSplashCheck');
+    if(splashCheck)splashCheck.textContent=state.preferences.splash===false?'':'✓';
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -486,6 +489,13 @@
       applyPreferences(); persist(); closeAllMenus();
     });
   });
+  $$('[data-pref-splash]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      state.preferences.splash=state.preferences.splash===false;
+      applyPreferences(); persist(); closeAllMenus();
+      showToast(state.preferences.splash?'The splash screen will open at startup':'The splash screen stays closed at startup');
+    });
+  });
 
   async function handleAction(action){
     switch(action){
@@ -510,6 +520,7 @@
       case 'redo': return redo();
       case 'extract-fonts': return openFontExportDialog();
       case 'about': return openAboutDialog();
+      case 'splash': return openSplash();
       default: throw new Error(`Unknown menu action: ${action}`);
     }
   }
@@ -532,31 +543,39 @@
 
         const item=recent[Number(button.dataset.recent)];
         if(!item) return;
-
-        withUnsavedInspectorGuard(async()=>{
-          try{
-            const loaded=state.documents.find(project=>project.filePath===item.filePath);
-            if(loaded){
-              focusDocument(loaded);
-              addRecent(item.filePath,loaded.name);
-              renderAll(); persist();
-              showToast('Recent document selected');
-            }else{
-              const result=await window.electronAPI.readProjectPath(item.filePath);
-              loadLeafProjectPayload(result.project,result.filePath);
-              showToast('Recent Leaf project opened');
-            }
-          }catch(error){
-            console.error('Recent project open failed',error);
-            state.recent=state.recent.filter(entry=>entry.filePath!==item.filePath);
-            persist();
-            renderRecentMenu();
-            showToast('Recent project is no longer available');
-          }finally{
-            closeAllMenus();
-          }
-        });
+        openRecentItem(item);
       });
+    });
+  }
+
+  // Both the Recent submenu and the splash screen open a recent project, so
+  // they share one implementation - two copies is how one of them quietly
+  // stops matching the other.
+  function openRecentItem(item){
+    if(!item) return;
+    withUnsavedInspectorGuard(async()=>{
+      try{
+        const loaded=state.documents.find(project=>project.filePath===item.filePath);
+        if(loaded){
+          focusDocument(loaded);
+          addRecent(item.filePath,loaded.name);
+          renderAll(); persist();
+          showToast('Recent document selected');
+        }else{
+          const result=await window.electronAPI.readProjectPath(item.filePath);
+          loadLeafProjectPayload(result.project,result.filePath);
+          showToast('Recent Leaf project opened');
+        }
+      }catch(error){
+        console.error('Recent project open failed',error);
+        state.recent=state.recent.filter(entry=>entry.filePath!==item.filePath);
+        persist();
+        renderRecentMenu();
+        renderSplash();
+        showToast('Recent project is no longer available');
+      }finally{
+        closeAllMenus();
+      }
     });
   }
 
@@ -1374,6 +1393,67 @@
   // Page renders and is editable the moment it exists; the text formats start
   // blank, because there is no equivalent of "valid but empty" to scaffold and a
   // blank Page is authorable on its own now.
+  // A new Page opens straight into the preview, so the scaffold brings its own
+  // baseline instead of the browser's: without one a new Page renders in Times
+  // New Roman, edge to edge, which is the first thing anyone would have had to
+  // undo. Custom properties keep it retheme-able from one block.
+  // The scaffold commits to light rather than following prefers-color-scheme.
+  // The author stares at this page inside light app chrome the whole time they
+  // are writing it; a scaffold that flipped to dark on a dark-mode machine
+  // would just be the same "first thing to undo" problem inverted. A dark
+  // block over these same properties is a short paste when a Page wants one.
+  // <main> is deliberate: WidgetRegistry.canContain accepts it, so a component
+  // dropped from the palette lands inside the measured column rather than
+  // full-bleed against the viewport edge.
+  const NEW_PAGE_STYLES=[
+    '      :root {',
+    '        color-scheme: light;',
+    '        --measure: 68ch;',
+    '        --bg: #ffffff;',
+    '        --fg: #1f2328;',
+    '        --muted: #5b6570;',
+    '        --rule: #d8dde3;',
+    '        --link: #2f6fed;',
+    '      }',
+    '      *, *::before, *::after { box-sizing: border-box; }',
+    '      body {',
+    '        margin: 0;',
+    '        background: var(--bg);',
+    '        color: var(--fg);',
+    '        font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;',
+    '      }',
+    '      main { max-width: var(--measure); margin: 0 auto; padding: 56px 24px 96px; }',
+    '      h1, h2, h3, h4 { line-height: 1.25; margin: 2.2em 0 0.6em; font-weight: 600; }',
+    '      h1 { margin-top: 0; font-size: 2.1rem; letter-spacing: -0.01em; }',
+    '      h2 { font-size: 1.5rem; }',
+    '      h3 { font-size: 1.2rem; }',
+    '      p, ul, ol, blockquote, pre, figure, table { margin: 0 0 1.15em; }',
+    '      a { color: var(--link); }',
+    '      blockquote {',
+    '        margin-left: 0;',
+    '        padding-left: 1em;',
+    '        border-left: 3px solid var(--rule);',
+    '        color: var(--muted);',
+    '      }',
+    '      pre {',
+    '        padding: 14px 16px;',
+    '        border: 1px solid var(--rule);',
+    '        border-radius: 6px;',
+    '        overflow: auto;',
+    '      }',
+    '      code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.9em; }',
+    '      img { max-width: 100%; height: auto; }',
+    '      table { border-collapse: collapse; width: 100%; }',
+    '      th, td {',
+    '        border: 1px solid var(--rule);',
+    '        padding: 8px 10px;',
+    '        text-align: left;',
+    '        vertical-align: top;',
+    '      }',
+    '      hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }',
+    '      @media (max-width: 640px) { main { padding: 32px 18px 64px; } }'
+  ];
+
   const NEW_PAGE_TYPES={
     html:{label:'HTML',extension:'html',template:name=>[
       '<!DOCTYPE html>',
@@ -1382,9 +1462,15 @@
       '  <meta charset="utf-8">',
       '  <meta name="viewport" content="width=device-width, initial-scale=1">',
       `  <title>${esc(name)}</title>`,
+      '  <style>',
+      ...NEW_PAGE_STYLES,
+      '  </style>',
       '</head>',
       '<body>',
-      `  <h1>${esc(name)}</h1>`,
+      '  <main>',
+      `    <h1>${esc(name)}</h1>`,
+      '    <p>Write the first paragraph here.</p>',
+      '  </main>',
       '</body>',
       '</html>',
       ''
@@ -2281,7 +2367,10 @@
   }
 
   function hierarchyChildren(el){
-    const meaningful=new Set(['MAIN','ARTICLE','SECTION','ASIDE','H1','H2','H3','H4','H5','H6','P','UL','OL','TABLE','PRE','BLOCKQUOTE','IMG','DIV','FIGURE','HR']);
+    // Rows and cells are listed so the Hierarchy can show what a cell holds and
+    // accept a drop into one. TR is structure only - canContain leaves it out,
+    // because a row may hold cells and nothing else.
+    const meaningful=new Set(['MAIN','ARTICLE','SECTION','ASIDE','H1','H2','H3','H4','H5','H6','P','UL','OL','TABLE','TR','TD','TH','PRE','BLOCKQUOTE','IMG','DIV','FIGURE','HR']);
     const result=[];
     [...el.children].forEach(child=>{
       if(child.dataset?.editorOverlay || child.dataset?.adfMarker) return;
@@ -2526,7 +2615,11 @@
   }
 
   function viewportAuthorTarget(event,doc,existingElement=null){
-    let target=event.target?.closest?.('[data-hbe-object],main,article,section,aside,div,p,h1,h2,h3,h4,h5,h6,table,pre,blockquote,figure,img,ul,ol')||doc.body;
+    // td and th come before table in the walk up from the drop point, so a drop
+    // on a cell resolves to that cell rather than to the whole table. Without
+    // them canContain never sees the cell and the component lands beside the
+    // table instead of in it.
+    let target=event.target?.closest?.('[data-hbe-object],main,article,section,aside,div,p,h1,h2,h3,h4,h5,h6,td,th,table,pre,blockquote,figure,img,ul,ol')||doc.body;
     if(target?.dataset?.editorOverlay)target=doc.body;
     if(existingElement&&(target===existingElement||existingElement.contains(target)))target=existingElement.parentElement||doc.body;
     return target;
@@ -7140,6 +7233,81 @@
     if(event.key==='Escape'||event.key==='Enter'){event.preventDefault();closeAboutDialog();}
   });
 
+  // ----- Splash -----
+  // Blender's splash is a launcher rather than a progress bar: the app behind it
+  // is already usable, every row does something, and clicking away dismisses it.
+  function splashParentFolder(filePath){
+    const parts=String(filePath||'').split(/[\\/]/).filter(Boolean);
+    return parts.length>1?parts[parts.length-2]:'';
+  }
+
+  function renderSplash(){
+    const version=document.documentElement.dataset.appVersion||'';
+    const versionLabel=$('#splashVersion');
+    if(versionLabel)versionLabel.textContent=version?`Version ${version}`:'';
+
+    const newList=$('#splashNewList');
+    if(newList){
+      newList.innerHTML=Object.entries(NEW_PAGE_TYPES).map(([type,definition])=>
+        `<button type="button" data-splash-new="${esc(type)}"><span class="splash-item-name">${esc(definition.label)} Page</span><span class="splash-item-note">.${esc(definition.extension)}</span></button>`
+      ).join('');
+      newList.querySelectorAll('[data-splash-new]').forEach(button=>{
+        button.addEventListener('click',()=>{closeSplash();splashNewPage(button.dataset.splashNew);});
+      });
+    }
+
+    const recentList=$('#splashRecentList');
+    if(recentList){
+      const recent=(state.recent||[]).slice(0,8);
+      recentList.innerHTML=recent.length
+        ? recent.map((item,index)=>
+            `<button type="button" data-splash-recent="${index}" title="${esc(item.filePath||'')}"><span class="splash-item-name">${esc(item.name)}</span><span class="splash-item-note">${esc(splashParentFolder(item.filePath))}</span></button>`
+          ).join('')
+        : '<p class="splash-empty">No recent projects yet.</p>';
+      recentList.querySelectorAll('[data-splash-recent]').forEach(button=>{
+        button.addEventListener('click',()=>{
+          const item=recent[Number(button.dataset.splashRecent)];
+          if(!item)return;
+          closeSplash();
+          openRecentItem(item);
+        });
+      });
+    }
+  }
+
+  // Same guard and the same call as the tree's own New Page, so a Page made from
+  // the splash is indistinguishable from one made in the tree.
+  function splashNewPage(documentType){
+    const project=activeDocument();
+    if(!project){showToast('Create or select a document first');return;}
+    addEmptyPage(project,null,{asChild:false,documentType});
+  }
+
+  function openSplash(){
+    renderSplash();
+    refs.splashModal.classList.add('show');
+    setTimeout(()=>refs.splashModal.querySelector('.splash-list button, .splash-link')?.focus(),0);
+  }
+  function closeSplash(){refs.splashModal.classList.remove('show');}
+
+  refs.splashModal.addEventListener('click',event=>{
+    if(event.target===refs.splashModal)closeSplash();
+  });
+  refs.splashModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.splashModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeSplash();}
+  });
+  refs.splashModal.querySelectorAll('[data-splash-action]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const action=button.dataset.splashAction;
+      closeSplash();
+      handleAction(action).catch(error=>{
+        console.error('Splash action failed',action,error);
+        showToast(`Could not run ${action}`);
+      });
+    });
+  });
+
   // ----- Modal -----
   function openModal(title,desc,placeholder,initial,action){$('#modalTitle').textContent=title;$('#modalDesc').textContent=desc;$('#modalInput').placeholder=placeholder;$('#modalInput').value=initial||'';modalAction=action;$('#inputModal').classList.add('show');setTimeout(()=>$('#modalInput').focus(),0);}
   function closeModal(){$('#inputModal').classList.remove('show');modalAction=null;}
@@ -7299,6 +7467,7 @@
     document.documentElement.dataset.leafReady='true';
     const startup=$('#appStartup');startup?.classList.add('is-complete');
     setTimeout(()=>startup?.remove(),220);
+    if(state.preferences.splash!==false)openSplash();
     emitLifecycle('leaf-renderer-ready',{});
   },0);
 })();

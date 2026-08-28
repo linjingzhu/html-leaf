@@ -1110,6 +1110,112 @@ check('Markdown link hrefs stay restricted to schemes Leaf follows',
     && !markdownRender('[x](//evil.test/x)').includes('<a ')
     && markdownRender('[x](#section)').includes('<a href="#section">'));
 
+// The splash is a launcher, so every row on it has to reach a real action. A
+// button whose data-splash-action names no handleAction case would look alive
+// and do nothing - that is the failure mode this guards.
+const splashActions = [...html.matchAll(/data-splash-action="([a-z-]+)"/g)].map(match => match[1]);
+const handledActions = new Set([...renderer.matchAll(/case '([a-z-]+)':/g)].map(match => match[1]));
+check('Splash footer offers actions', splashActions.length >= 3, splashActions.join(', '));
+check('Every splash footer action is a real handleAction case',
+  splashActions.every(action => handledActions.has(action)),
+  splashActions.filter(action => !handledActions.has(action)).join(', '));
+checkIncludesAll('Splash markup carries the hooks the renderer fills', html, [
+  'id="splashModal"', 'id="splashNewList"', 'id="splashRecentList"',
+  'id="splashVersion"', 'class="splash-art"'
+]);
+check('Help menu can reopen the splash',
+  html.includes('data-action="splash"') && renderer.includes("case 'splash': return openSplash();"));
+check('Splash is on by default and the startup honours the preference',
+  renderer.includes('splash:true') && renderer.includes("if(state.preferences.splash!==false)openSplash();"));
+check('Preference menu exposes the splash toggle',
+  html.includes('data-pref-splash') && html.includes('id="prefSplashCheck"')
+    && renderer.includes('[data-pref-splash]'));
+// The Recent submenu and the splash must not drift into two implementations.
+check('Splash and the Recent submenu share one open path',
+  renderer.includes('function openRecentItem(item)')
+    && (renderer.match(/openRecentItem\(item\)/g) || []).length >= 3
+    && !/readProjectPath[\s\S]{0,400}readProjectPath/.test(renderer));
+check('Splash New Page rows are built from the same templates as the tree',
+  renderer.includes('Object.entries(NEW_PAGE_TYPES).map') && renderer.includes('addEmptyPage(project,null,{asChild:false,documentType})'));
+checkIncludesAll('Splash styles are defined', css, [
+  '.splash-modal', '.splash-art', '.splash-columns', '.splash-list button', '.splash-foot'
+]);
+
+// A component belongs in a table cell as much as anywhere else that holds flow
+// content. Three separate gates had to agree before a drop could land there, so
+// each is guarded: the registry's container test, the viewport's target walk,
+// and the Hierarchy's node filter. canContain runs for real rather than being
+// matched as text.
+const canContainFn = (() => {
+  const vm = require('node:vm');
+  const context = { window: {}, crypto: { randomUUID: () => 'x' } };
+  vm.createContext(context);
+  vm.runInContext(read('src/renderer/widget-registry.js'), context);
+  return context.window.WidgetRegistry.canContain;
+})();
+const asElement = tagName => ({ tagName, getAttribute: () => null });
+check('A table cell can hold components',
+  canContainFn(asElement('TD')) === true && canContainFn(asElement('TH')) === true);
+check('A table and a row still cannot hold components directly',
+  canContainFn(asElement('TABLE')) === false && canContainFn(asElement('TR')) === false,
+  'a <p> dropped into <table> or <tr> is hoisted back out by the parser');
+check('Existing containers still accept components',
+  ['BODY','MAIN','ARTICLE','SECTION','ASIDE','DIV'].every(tag => canContainFn(asElement(tag)) === true));
+check('A panel widget stays a container whatever its tag',
+  canContainFn({ tagName: 'SPAN', getAttribute: name => name === 'data-hbe-object' ? 'card' : null }) === true
+    && canContainFn({ tagName: 'SPAN', getAttribute: name => name === 'data-hbe-object' ? 'callout' : null }) === false,
+  'card is kind:panel, callout is not');
+// The walk up from the drop point returns the first match, so td/th must be
+// listed ahead of table or a drop on a cell resolves to the whole table.
+const authorTargetSelector = (renderer.match(/let target=event\.target\?\.closest\?\.\('([^']+)'\)/) || [])[1] || '';
+check('The viewport drop target resolves a cell before the table',
+  authorTargetSelector.includes('td') && authorTargetSelector.includes('th')
+    && authorTargetSelector.indexOf('td,th') < authorTargetSelector.indexOf('table'),
+  authorTargetSelector);
+check('The Hierarchy lists rows and cells so a cell can be a drop target',
+  /const meaningful=new Set\(\[[^\]]*'TR','TD','TH'[^\]]*\]\)/.test(renderer));
+
+// The scaffold's stylesheet is evaluated rather than grepped: these assertions
+// are about the CSS a new Page actually ships with, not about how the array
+// that builds it happens to be written.
+const scaffoldCss = (() => {
+  const vm = require('node:vm');
+  const literal = renderer.slice(
+    renderer.indexOf('const NEW_PAGE_STYLES=['),
+    renderer.indexOf('const NEW_PAGE_TYPES={')
+  );
+  const array = literal.slice(literal.indexOf('['), literal.lastIndexOf(']') + 1);
+  return vm.runInNewContext(array).join('\n');
+})();
+check('A new Page ships a stylesheet instead of the browser defaults',
+  scaffoldCss.length > 200 && newPageTypes.includes("'  <style>'") && newPageTypes.includes('...NEW_PAGE_STYLES'));
+const bodyRule = (scaffoldCss.match(/\bbody\s*\{[^}]*\}/) || [''])[0];
+const mainRule = (scaffoldCss.match(/\bmain\s*\{[^}]*\}/) || [''])[0];
+check('The scaffold clears the body margin the browser adds',
+  /margin:\s*0\s*;/.test(bodyRule), bodyRule.replace(/\s+/g, ' ').slice(0, 90));
+check('The scaffold sets a real font stack instead of the serif default',
+  /font:[^;]*system-ui/.test(bodyRule));
+checkIncludesAll('The scaffold resets box sizing and constrains the column', scaffoldCss, [
+  'box-sizing: border-box',
+  'max-width: var(--measure)'
+]);
+check('The scaffold gives the column a readable measure and centres it',
+  /--measure:\s*\d+ch/.test(scaffoldCss) && /main\s*\{[^}]*margin:\s*0 auto/.test(scaffoldCss),
+  (scaffoldCss.match(/--measure:[^;]+;/) || [])[0] || 'no measure');
+// The author looks at this page inside light app chrome the whole time they
+// write it, so the scaffold commits to light rather than following the OS.
+check('The scaffold commits to one palette instead of following the OS',
+  scaffoldCss.includes('color-scheme: light') && !scaffoldCss.includes('prefers-color-scheme'),
+  'a dark block would flip every new Page on a dark-mode machine');
+check('The scaffold themes through custom properties, so it is retheme-able',
+  ['--bg','--fg','--muted','--rule','--link'].every(token => scaffoldCss.includes(`${token}:`)));
+// main is what makes a dropped component land in the column rather than
+// full-bleed on body, so the tag and the container rule have to agree.
+check('The scaffold wraps its content in a container the palette can drop into',
+  newPageTypes.includes("'  <main>'") && canContainFn(asElement('MAIN')) === true);
+check('Scaffold table cells align to the top, for cells holding blocks',
+  /th,\s*td\s*\{[\s\S]*?vertical-align:\s*top/.test(scaffoldCss));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

@@ -203,12 +203,17 @@
           <div class="menu-label">Appearance</div>
           <button data-pref-theme="dark">Dark <span class="check theme-dark"></span></button>
           <button data-pref-theme="light">Light <span class="check theme-light">✓</span></button>
+          <div class="separator"></div>
+          <div class="menu-label">Startup</div>
+          <button data-pref-splash="toggle">Splash Screen <span class="check" id="prefSplashCheck"></span></button>
         </div>
       </div>
 
       <div class="menu">
         <button class="menu-trigger">Help</button>
         <div class="menu-popup">
+          <button data-action="splash">Splash Screen</button>
+          <div class="separator"></div>
           <button data-action="about">About Leaf</button>
         </div>
       </div>
@@ -588,6 +593,36 @@
     <div class="modal-actions">
       <button class="btn" id="savePageAsCancel">Cancel</button>
       <button class="btn primary" id="savePageAsConfirm">Save As…</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop splash-backdrop" id="splashModal" role="presentation">
+  <div class="modal splash-modal" role="dialog" aria-modal="true" aria-labelledby="splashTitle">
+    <div class="splash-art">
+      <img class="splash-icon" src="./assets/product-icon.png" alt="">
+      <div class="splash-brand">
+        <h2 class="splash-wordmark" id="splashTitle">Leaf</h2>
+        <span class="splash-tagline">Visual project editor</span>
+      </div>
+      <span class="splash-version" id="splashVersion"></span>
+    </div>
+    <div class="splash-columns">
+      <section class="splash-column">
+        <h3>New Page</h3>
+        <div class="splash-list" id="splashNewList"></div>
+      </section>
+      <section class="splash-column">
+        <h3>Open Recent</h3>
+        <div class="splash-list" id="splashRecentList"></div>
+      </section>
+    </div>
+    <div class="splash-foot">
+      <button type="button" class="splash-link" data-splash-action="new-document">New Document</button>
+      <button type="button" class="splash-link" data-splash-action="open-project">Open Project&hellip;</button>
+      <button type="button" class="splash-link" data-splash-action="import">Import Pages&hellip;</button>
+      <div class="spacer"></div>
+      <button type="button" class="splash-link" data-splash-action="about">About</button>
     </div>
   </div>
 </div>
