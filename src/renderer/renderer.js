@@ -38,6 +38,7 @@
     tableToolbar: $('#tableToolbar'), exportElementBtn: $('#exportElementBtn'),
     objectExportModal: $('#objectExportModal'), objectExportFormat: $('#objectExportFormat'), objectExportScale: $('#objectExportScale'), objectExportSummary: $('#objectExportSummary'),
     savePageAsModal: $('#savePageAsModal'), savePageAsFormat: $('#savePageAsFormat'), aboutModal: $('#aboutModal'),
+    splashModal: $('#splashModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -191,7 +192,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false },
+      preferences:{ scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false, splash:true },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -381,6 +382,8 @@
     document.documentElement.style.setProperty('--ui-scale', state.preferences.scale || 1);
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
+    const splashCheck=$('#prefSplashCheck');
+    if(splashCheck)splashCheck.textContent=state.preferences.splash===false?'':'✓';
     sidebarWidth = state.preferences.sidebarWidth || 260;
     inspectorWidth = state.preferences.inspectorWidth || 290;
     splitRatio = state.layout?.splitRatio ?? 0.5;
@@ -486,6 +489,13 @@
       applyPreferences(); persist(); closeAllMenus();
     });
   });
+  $$('[data-pref-splash]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      state.preferences.splash=state.preferences.splash===false;
+      applyPreferences(); persist(); closeAllMenus();
+      showToast(state.preferences.splash?'The splash screen will open at startup':'The splash screen stays closed at startup');
+    });
+  });
 
   async function handleAction(action){
     switch(action){
@@ -510,6 +520,7 @@
       case 'redo': return redo();
       case 'extract-fonts': return openFontExportDialog();
       case 'about': return openAboutDialog();
+      case 'splash': return openSplash();
       default: throw new Error(`Unknown menu action: ${action}`);
     }
   }
@@ -532,31 +543,39 @@
 
         const item=recent[Number(button.dataset.recent)];
         if(!item) return;
-
-        withUnsavedInspectorGuard(async()=>{
-          try{
-            const loaded=state.documents.find(project=>project.filePath===item.filePath);
-            if(loaded){
-              focusDocument(loaded);
-              addRecent(item.filePath,loaded.name);
-              renderAll(); persist();
-              showToast('Recent document selected');
-            }else{
-              const result=await window.electronAPI.readProjectPath(item.filePath);
-              loadLeafProjectPayload(result.project,result.filePath);
-              showToast('Recent Leaf project opened');
-            }
-          }catch(error){
-            console.error('Recent project open failed',error);
-            state.recent=state.recent.filter(entry=>entry.filePath!==item.filePath);
-            persist();
-            renderRecentMenu();
-            showToast('Recent project is no longer available');
-          }finally{
-            closeAllMenus();
-          }
-        });
+        openRecentItem(item);
       });
+    });
+  }
+
+  // Both the Recent submenu and the splash screen open a recent project, so
+  // they share one implementation - two copies is how one of them quietly
+  // stops matching the other.
+  function openRecentItem(item){
+    if(!item) return;
+    withUnsavedInspectorGuard(async()=>{
+      try{
+        const loaded=state.documents.find(project=>project.filePath===item.filePath);
+        if(loaded){
+          focusDocument(loaded);
+          addRecent(item.filePath,loaded.name);
+          renderAll(); persist();
+          showToast('Recent document selected');
+        }else{
+          const result=await window.electronAPI.readProjectPath(item.filePath);
+          loadLeafProjectPayload(result.project,result.filePath);
+          showToast('Recent Leaf project opened');
+        }
+      }catch(error){
+        console.error('Recent project open failed',error);
+        state.recent=state.recent.filter(entry=>entry.filePath!==item.filePath);
+        persist();
+        renderRecentMenu();
+        renderSplash();
+        showToast('Recent project is no longer available');
+      }finally{
+        closeAllMenus();
+      }
     });
   }
 
@@ -7140,6 +7159,81 @@
     if(event.key==='Escape'||event.key==='Enter'){event.preventDefault();closeAboutDialog();}
   });
 
+  // ----- Splash -----
+  // Blender's splash is a launcher rather than a progress bar: the app behind it
+  // is already usable, every row does something, and clicking away dismisses it.
+  function splashParentFolder(filePath){
+    const parts=String(filePath||'').split(/[\\/]/).filter(Boolean);
+    return parts.length>1?parts[parts.length-2]:'';
+  }
+
+  function renderSplash(){
+    const version=document.documentElement.dataset.appVersion||'';
+    const versionLabel=$('#splashVersion');
+    if(versionLabel)versionLabel.textContent=version?`Version ${version}`:'';
+
+    const newList=$('#splashNewList');
+    if(newList){
+      newList.innerHTML=Object.entries(NEW_PAGE_TYPES).map(([type,definition])=>
+        `<button type="button" data-splash-new="${esc(type)}"><span class="splash-item-name">${esc(definition.label)} Page</span><span class="splash-item-note">.${esc(definition.extension)}</span></button>`
+      ).join('');
+      newList.querySelectorAll('[data-splash-new]').forEach(button=>{
+        button.addEventListener('click',()=>{closeSplash();splashNewPage(button.dataset.splashNew);});
+      });
+    }
+
+    const recentList=$('#splashRecentList');
+    if(recentList){
+      const recent=(state.recent||[]).slice(0,8);
+      recentList.innerHTML=recent.length
+        ? recent.map((item,index)=>
+            `<button type="button" data-splash-recent="${index}" title="${esc(item.filePath||'')}"><span class="splash-item-name">${esc(item.name)}</span><span class="splash-item-note">${esc(splashParentFolder(item.filePath))}</span></button>`
+          ).join('')
+        : '<p class="splash-empty">No recent projects yet.</p>';
+      recentList.querySelectorAll('[data-splash-recent]').forEach(button=>{
+        button.addEventListener('click',()=>{
+          const item=recent[Number(button.dataset.splashRecent)];
+          if(!item)return;
+          closeSplash();
+          openRecentItem(item);
+        });
+      });
+    }
+  }
+
+  // Same guard and the same call as the tree's own New Page, so a Page made from
+  // the splash is indistinguishable from one made in the tree.
+  function splashNewPage(documentType){
+    const project=activeDocument();
+    if(!project){showToast('Create or select a document first');return;}
+    addEmptyPage(project,null,{asChild:false,documentType});
+  }
+
+  function openSplash(){
+    renderSplash();
+    refs.splashModal.classList.add('show');
+    setTimeout(()=>refs.splashModal.querySelector('.splash-list button, .splash-link')?.focus(),0);
+  }
+  function closeSplash(){refs.splashModal.classList.remove('show');}
+
+  refs.splashModal.addEventListener('click',event=>{
+    if(event.target===refs.splashModal)closeSplash();
+  });
+  refs.splashModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.splashModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeSplash();}
+  });
+  refs.splashModal.querySelectorAll('[data-splash-action]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const action=button.dataset.splashAction;
+      closeSplash();
+      handleAction(action).catch(error=>{
+        console.error('Splash action failed',action,error);
+        showToast(`Could not run ${action}`);
+      });
+    });
+  });
+
   // ----- Modal -----
   function openModal(title,desc,placeholder,initial,action){$('#modalTitle').textContent=title;$('#modalDesc').textContent=desc;$('#modalInput').placeholder=placeholder;$('#modalInput').value=initial||'';modalAction=action;$('#inputModal').classList.add('show');setTimeout(()=>$('#modalInput').focus(),0);}
   function closeModal(){$('#inputModal').classList.remove('show');modalAction=null;}
@@ -7299,6 +7393,7 @@
     document.documentElement.dataset.leafReady='true';
     const startup=$('#appStartup');startup?.classList.add('is-complete');
     setTimeout(()=>startup?.remove(),220);
+    if(state.preferences.splash!==false)openSplash();
     emitLifecycle('leaf-renderer-ready',{});
   },0);
 })();

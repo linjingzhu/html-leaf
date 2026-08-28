@@ -1110,6 +1110,37 @@ check('Markdown link hrefs stay restricted to schemes Leaf follows',
     && !markdownRender('[x](//evil.test/x)').includes('<a ')
     && markdownRender('[x](#section)').includes('<a href="#section">'));
 
+// The splash is a launcher, so every row on it has to reach a real action. A
+// button whose data-splash-action names no handleAction case would look alive
+// and do nothing - that is the failure mode this guards.
+const splashActions = [...html.matchAll(/data-splash-action="([a-z-]+)"/g)].map(match => match[1]);
+const handledActions = new Set([...renderer.matchAll(/case '([a-z-]+)':/g)].map(match => match[1]));
+check('Splash footer offers actions', splashActions.length >= 3, splashActions.join(', '));
+check('Every splash footer action is a real handleAction case',
+  splashActions.every(action => handledActions.has(action)),
+  splashActions.filter(action => !handledActions.has(action)).join(', '));
+checkIncludesAll('Splash markup carries the hooks the renderer fills', html, [
+  'id="splashModal"', 'id="splashNewList"', 'id="splashRecentList"',
+  'id="splashVersion"', 'class="splash-art"'
+]);
+check('Help menu can reopen the splash',
+  html.includes('data-action="splash"') && renderer.includes("case 'splash': return openSplash();"));
+check('Splash is on by default and the startup honours the preference',
+  renderer.includes('splash:true') && renderer.includes("if(state.preferences.splash!==false)openSplash();"));
+check('Preference menu exposes the splash toggle',
+  html.includes('data-pref-splash') && html.includes('id="prefSplashCheck"')
+    && renderer.includes('[data-pref-splash]'));
+// The Recent submenu and the splash must not drift into two implementations.
+check('Splash and the Recent submenu share one open path',
+  renderer.includes('function openRecentItem(item)')
+    && (renderer.match(/openRecentItem\(item\)/g) || []).length >= 3
+    && !/readProjectPath[\s\S]{0,400}readProjectPath/.test(renderer));
+check('Splash New Page rows are built from the same templates as the tree',
+  renderer.includes('Object.entries(NEW_PAGE_TYPES).map') && renderer.includes('addEmptyPage(project,null,{asChild:false,documentType})'));
+checkIncludesAll('Splash styles are defined', css, [
+  '.splash-modal', '.splash-art', '.splash-columns', '.splash-list button', '.splash-foot'
+]);
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
