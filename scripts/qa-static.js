@@ -703,8 +703,10 @@ check('A reachable preview scrolls its own element; the isolated runtime goes th
   && /if\(\['interactive-isolated','direct-source-editor','pdf-native-editor'\]\.includes\(frame\.dataset\.previewRuntime\)\)return null/.test(tocSection)
   && tocSection.includes("target?.el?.scrollIntoView("));
 check('The preview bridge answers the outline scroll message',
-  /__leafViewTocScroll===true && event\.data\.token===TOKEN/.test(renderer)
-  && /document\.querySelectorAll\('h1,h2,h3,h4,h5,h6'\)\[event\.data\.index\]\?\.scrollIntoView/.test(renderer));
+  /__leafViewTocScroll===true/.test(renderer)
+  && /event\.data\.token===TOKEN/.test(renderer)
+  && /const target=document\.querySelectorAll\('h1,h2,h3,h4,h5,h6'\)\[event\.data\.index\]/.test(renderer)
+  && /target\.scrollIntoView\(\{block:'start',inline:'nearest'\}\)/.test(renderer));
 check('A Page with no headings explains itself instead of showing a blank panel',
   tocSection.includes('toc-panel-empty')
   && tocSection.includes('have no headings to extract')
@@ -960,6 +962,40 @@ check('The scripted runtime stays on an opaque origin',
 check('Nested frames and plugins stay refused in every preview',
   (renderer.match(/frame-src 'none'/g) || []).length >= 2
   && (renderer.match(/object-src 'none'/g) || []).length >= 2);
+
+// --- Clicking an outline entry marks the heading ---------------------------
+// Contents was built on injecting nothing into the Page, and the highlight must
+// not be the thing that breaks that. It is a positioned overlay carrying
+// data-editor-overlay - the same shape the Used-instance marker uses - so the
+// export stripper removes it and the edit-session mutation check reads it as
+// not-a-change. The heading's own style attribute is never touched.
+const tocHighlightSection = renderer.slice(
+  renderer.indexOf("const TOC_HIGHLIGHT_MARK="),
+  renderer.indexOf('function scrollSlotToHeading(')
+);
+check('Heading highlight section is present', tocHighlightSection.length > 700, `${tocHighlightSection.length} chars`);
+check('The mark is a runtime overlay, not a write to the Page',
+  tocHighlightSection.includes("marker.dataset.editorOverlay=TOC_HIGHLIGHT_MARK;")
+  && tocHighlightSection.includes("position:'absolute'")
+  && tocHighlightSection.includes("pointerEvents:'none'")
+  && !/element\.style\./.test(tocHighlightSection)
+  && !/\.setAttribute\('style'/.test(tocHighlightSection));
+check('Only one heading is ever marked',
+  renderer.includes('clearTocHighlight();\n    tocHighlight={slot,pageId,index};')
+  && tocHighlightSection.includes('function clearTocHighlight('));
+check('The mark is put away when the panel closes or the outlined Page changes',
+  /clearTocHighlight\(\);setTocVisible\(false\)/.test(renderer)
+  && /clearTocHighlight\(\);tocSelection\.set\(slot,event\.target\.value\)/.test(renderer)
+  && renderer.includes('tocHighlight.pageId!==pageIdForSlot(slot))tocHighlight=null;'));
+// The isolated runtime's document is unreachable from the renderer, so it draws
+// its own marker over the same bridge the scroll already uses.
+check('The bridged runtime paints and clears its own marker',
+  renderer.includes('__leafViewTocHighlight===true')
+  && /marker\.dataset\.editorOverlay='toc-heading-highlight'/.test(renderer)
+  && renderer.includes(`document.querySelectorAll('[data-editor-overlay="toc-heading-highlight"]').forEach(node=>node.remove());`));
+check('The panel shows which entry is marked',
+  renderer.includes("const activeIndex=tocHighlight&&tocHighlight.slot===slot&&tocHighlight.pageId===selectedId?tocHighlight.index:-1;")
+  && css.includes('.toc-entry.is-active{'));
 
 const large = [];
 let pageCount = 0;

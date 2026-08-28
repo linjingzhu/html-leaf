@@ -1671,13 +1671,47 @@
         :'No headings in this Page')}</div>`;
       return;
     }
+    const activeIndex=tocHighlight&&tocHighlight.slot===slot&&tocHighlight.pageId===selectedId?tocHighlight.index:-1;
     list.innerHTML=headings.map(item=>
-      `<button type="button" class="toc-entry" data-toc-index="${item.index}" style="padding-left:${8+Math.min(item.level-minLevel,5)*13}px" title="${esc(item.text)}">
+      `<button type="button" class="toc-entry${item.index===activeIndex?' is-active':''}" data-toc-index="${item.index}" style="padding-left:${8+Math.min(item.level-minLevel,5)*13}px" title="${esc(item.text)}">
          <span class="toc-entry-level">H${item.level}</span><span class="toc-entry-text">${esc(item.text||'(untitled heading)')}</span>
        </button>`).join('');
   }
 
   function renderAllTocPanels(){TOC_SLOTS.forEach(renderTocPanel);}
+
+  // A runtime overlay, never a change to the Page. It carries data-editor-overlay
+  // so stripEditorArtifactsFromDocument removes it from every export and Save,
+  // and so the edit-session mutation check does not read it as a change. The
+  // heading element's own style is left alone for the same reason.
+  const TOC_HIGHLIGHT_MARK='toc-heading-highlight';
+  let tocHighlight=null;
+
+  function clearTocHighlight({keepState=false}={}){
+    [refs.singleFrame,refs.leftFrame,refs.rightFrame,refs.codePreviewFrame].forEach(frame=>{
+      try{frame?.contentDocument?.querySelectorAll(`[data-editor-overlay="${TOC_HIGHLIGHT_MARK}"]`).forEach(node=>node.remove());}catch{}
+      const token=frame?.dataset.snapshotToken;
+      if(token&&frame.dataset.previewRuntime==='interactive-isolated'){
+        try{frame.contentWindow.postMessage({__leafViewTocHighlight:true,token,index:-1},'*');}catch{}
+      }
+    });
+    if(!keepState)tocHighlight=null;
+    $$('.toc-entry.is-active').forEach(entry=>entry.classList.remove('is-active'));
+  }
+
+  function paintTocHighlight(doc,element){
+    if(!doc?.body||!element)return;
+    const rect=element.getBoundingClientRect();
+    if(!rect.width&&!rect.height)return;
+    const marker=doc.createElement('div');
+    marker.dataset.editorOverlay=TOC_HIGHLIGHT_MARK;
+    Object.assign(marker.style,{position:'absolute',zIndex:2147483644,pointerEvents:'none',
+      left:`${rect.left+doc.defaultView.scrollX-4}px`,top:`${rect.top+doc.defaultView.scrollY-3}px`,
+      width:`${rect.width+8}px`,height:`${rect.height+6}px`,
+      border:'2px solid #2f6fed',background:'rgba(47,111,237,.14)',
+      borderRadius:'4px',boxSizing:'border-box'});
+    doc.body.appendChild(marker);
+  }
 
   function scrollSlotToHeading(slot,index,text){
     const frame=frameForEditSlot(slot);
@@ -1696,6 +1730,8 @@
     const byIndex=headings[index];
     const target=(byIndex&&(!text||byIndex.text===text))?byIndex:(text?headings.find(item=>item.text===text):null)||byIndex;
     target?.el?.scrollIntoView({block:'start',inline:'nearest',behavior:'auto'});
+    // After the scroll, so the rect is the one the reader is looking at.
+    if(target?.el)paintTocHighlight(doc,target.el);
   }
 
   async function jumpToHeading(slot,pageId,index,text){
@@ -1709,7 +1745,10 @@
         frame.addEventListener('load',()=>{clearTimeout(timer);resolve();},{once:true});
       });
     }
+    clearTocHighlight();
+    tocHighlight={slot,pageId,index};
     scrollSlotToHeading(slot,index,text);
+    renderTocPanel(slot);
   }
 
   function buildTocPanel(slot,pane){
@@ -1725,9 +1764,9 @@
     // The panel sits over the preview; clicks in it must not be read as the
     // viewport activation gesture underneath.
     panel.addEventListener('pointerdown',event=>event.stopPropagation());
-    panel.querySelector('.toc-panel-close').addEventListener('click',event=>{event.stopPropagation();setTocVisible(false);});
+    panel.querySelector('.toc-panel-close').addEventListener('click',event=>{event.stopPropagation();clearTocHighlight();setTocVisible(false);});
     panel.querySelector('.toc-panel-pages').addEventListener('change',event=>{
-      event.stopPropagation();tocSelection.set(slot,event.target.value);renderTocPanel(slot);
+      event.stopPropagation();clearTocHighlight();tocSelection.set(slot,event.target.value);renderTocPanel(slot);
     });
     panel.querySelector('.toc-panel-list').addEventListener('click',event=>{
       const entry=event.target.closest('[data-toc-index]');
@@ -3211,8 +3250,23 @@
         addEventListener('message', event => {
           if(event.data && event.data.__leafViewportChromeScale===true && event.data.token===TOKEN){const style=document.querySelector('[data-leaf-scrollbar-runtime]');if(style&&typeof event.data.css==='string'&&event.data.css.length<1200)style.textContent=event.data.css;return;}
           if(event.data && event.data.__leafViewSearch===true && event.data.token===TOKEN){runSearch(event.data.query,event.data.index);return;}
-          if(event.data && event.data.__leafViewTocScroll===true && event.data.token===TOKEN){
-            try{ document.querySelectorAll('h1,h2,h3,h4,h5,h6')[event.data.index]?.scrollIntoView({block:'start',inline:'nearest'}); }catch{}
+          if((event.data && event.data.__leafViewTocScroll===true || event.data && event.data.__leafViewTocHighlight===true) && event.data.token===TOKEN){
+            try{
+              document.querySelectorAll('[data-editor-overlay="toc-heading-highlight"]').forEach(node=>node.remove());
+              const target=document.querySelectorAll('h1,h2,h3,h4,h5,h6')[event.data.index];
+              if(!target)return;
+              if(event.data.__leafViewTocScroll===true)target.scrollIntoView({block:'start',inline:'nearest'});
+              const rect=target.getBoundingClientRect();
+              if(!rect.width && !rect.height)return;
+              const marker=document.createElement('div');
+              marker.dataset.editorOverlay='toc-heading-highlight';
+              Object.assign(marker.style,{position:'absolute',zIndex:2147483644,pointerEvents:'none',
+                left:(rect.left+scrollX-4)+'px',top:(rect.top+scrollY-3)+'px',
+                width:(rect.width+8)+'px',height:(rect.height+6)+'px',
+                border:'2px solid #2f6fed',background:'rgba(47,111,237,.14)',
+                borderRadius:'4px',boxSizing:'border-box'});
+              document.body.appendChild(marker);
+            }catch{}
             return;
           }
           if(event.data && event.data.__hbeSnapshotRequest===TOKEN) sendSnapshot();
@@ -3445,6 +3499,7 @@
     const slot=previewSlotForFrame(frame);
     if(slot)applyPreviewScrollbarCompensation(slot);
     if(slot)requestAnimationFrame(()=>updateViewportFloatingInsets(slot));
+    if(slot&&tocHighlight&&tocHighlight.slot===slot&&tocHighlight.pageId!==pageIdForSlot(slot))tocHighlight=null;
     if(slot)renderTocPanel(slot);
     installLocalAnchorNavigation(frame);
     if(frame.dataset.previewRuntime==='direct-source-editor'){
