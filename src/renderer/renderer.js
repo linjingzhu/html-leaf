@@ -3292,8 +3292,25 @@
       return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>html{color-scheme:light}body{margin:0;padding:30px 36px;color:#20242a;background:#fff;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.json-valid,.json-error{position:sticky;top:0;margin:0 0 14px;padding:9px 12px;border-radius:6px}.json-valid{color:#176b3a;background:#e7f6ed}.json-error{display:flex;gap:10px;color:#9b2525;background:#fdecec}pre{margin:0;padding:18px;overflow:auto;border:1px solid #d9dde3;border-radius:7px;background:#f7f8fa;color:#172033;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Consolas,'SFMono-Regular',monospace}</style></head><body>${diagnostic}<pre>${esc(raw)}</pre></body></html>`;
     }
     const base=page.baseUrl?`<base href="${esc(page.baseUrl)}">`:'';
+    // A Page fetched from the web is a live page, and the live web is external
+    // scripts and fetch. The strict policy below was written when Leaf only
+    // opened local files, where refusing both was a cheap default; applied to a
+    // fetched page it renders most of the web as a blank frame - which is
+    // exactly what it did.
+    //
+    // What isolates a scripted preview is not this policy but the sandbox: the
+    // frame runs with allow-scripts and WITHOUT allow-same-origin, so its
+    // scripts live on an opaque origin with no reach into Leaf, the app's
+    // storage, or any cookie. Letting such a page load its own scripts and call
+    // its own APIs is what "show me this page" means, and is what a browser tab
+    // does. A local file gets no such widening: there, blocking them still
+    // costs nothing.
+    const remote=/^https?:/i.test(String(page.baseUrl||''));
+    const scriptSources=remote
+      ? `script-src 'unsafe-inline' 'unsafe-eval' https: http:; connect-src https: http: data: blob:;`
+      : `script-src 'unsafe-inline'; connect-src 'none';`;
     const csp=allowScripts
-      ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; connect-src 'none'; object-src 'none'; frame-src 'none';">`
+      ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${scriptSources} img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; object-src 'none'; frame-src 'none';">`
       : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src file: data: blob: https: http:; style-src 'unsafe-inline' file: https: http:; font-src file: data: https: http:; media-src file: data: blob: https: http:; object-src 'none'; frame-src 'none';">`;
     const bridge=allowScripts && bridgeToken ? snapshotBridgeScript(bridgeToken) : '';
     let source=page.source||'';

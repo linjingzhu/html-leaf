@@ -912,6 +912,68 @@ function armPdfAnnotationSave({ sourcePath, url } = {}) {
   return { armed: true };
 }
 
+// ----- Navigation guards ----------------------------------------------------
+// The app is one window showing one local page; nothing in it should ever
+// navigate anywhere. That was true by construction while Leaf only opened local
+// files, but previews now render fetched pages and their own scripts, so the
+// guarantee is made explicit rather than left to hold by accident.
+//
+// Bound through web-contents-created so it covers the main window, the hidden
+// print window, and any webContents added later - wiring one window would leave
+// the next one unguarded.
+// Resolved on first use rather than at load: nothing here should run as a side
+// effect of requiring the module.
+let appEntryUrl = null;
+function appEntryHref() {
+  if (!appEntryUrl) {
+    appEntryUrl = pathToFileURL(path.join(__dirname, 'renderer', 'index.html')).href.replace(/[?#].*$/, '');
+  }
+  return appEntryUrl;
+}
+
+function isAppEntry(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'file:') return false;
+    // Compare the path only: a reload or an in-page hash must not be refused.
+    return `${url.origin}${url.pathname}` === appEntryHref();
+  } catch { return false; }
+}
+
+// A print window renders one temp file, so that file is its legitimate entry.
+function isPrintableTemp(rawUrl) {
+  if (!sessionTempDir || !rawUrl) return false;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'file:') return false;
+    return path.resolve(fileURLToPath(url)).startsWith(path.resolve(sessionTempDir) + path.sep);
+  } catch { return false; }
+}
+
+function installNavigationGuards(contents) {
+  // Nothing in Leaf opens a second window. Every request is denied, and an
+  // http(s) target is handed to the system browser instead of being dropped.
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(String(url || ''))) openExternalLink(url).catch(() => {});
+    return { action: 'deny' };
+  });
+
+  // Top-level only. Subframe navigation is deliberately left alone: pointing a
+  // preview frame at a PDF or an image IS a frame navigation, so guarding those
+  // here would block the app's own rendering. Preview content is already held by
+  // the sandbox, frame-src 'none', and the renderer preventDefaulting every
+  // link - this guard exists for the one window that must never leave its page.
+  contents.on('will-navigate', (event, url) => {
+    if (isAppEntry(url) || isPrintableTemp(url)) return;
+    event.preventDefault();
+    let protocol = '';
+    try { protocol = new URL(url).protocol; } catch {}
+    if (protocol === 'http:' || protocol === 'https:') openExternalLink(url).catch(() => {});
+    console.warn(`Blocked top-level navigation to ${String(url).slice(0, 120)}`);
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1660,
@@ -941,6 +1003,8 @@ function createWindow() {
   registerPdfAnnotationCapture(mainWindow.webContents.session);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
+
+app.on('web-contents-created', (_event, contents) => installNavigationGuards(contents));
 
 app.whenReady().then(() => {
   ipcMain.handle('app:version', () => app.getVersion());

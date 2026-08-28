@@ -898,6 +898,69 @@ check('The Code pane stays a drop target, with the affordance owned by the bridg
 check('No URL field is placed in a zone that is only visible mid-drag',
   renderer.includes("if(zone.classList.contains('code-drop-zone'))return;"));
 
+// --- Navigation guards -----------------------------------------------------
+// One window showing one local page; nothing in it should ever navigate away.
+// That held by construction while Leaf only opened local files, but previews now
+// render fetched pages and their own scripts, so it is stated rather than left
+// to hold by accident.
+const navSection = main.slice(
+  main.indexOf('let appEntryUrl = null;'),
+  main.indexOf('function createWindow()')
+);
+check('Navigation guard section is present', navSection.length > 800, `${navSection.length} chars`);
+// main.js is evaluated in a bare vm context by the main-process QA, so nothing
+// at module scope may touch __dirname - resolving the entry URL eagerly crashed
+// three suites at load.
+check('The entry URL is resolved on first use, not at module load',
+  navSection.includes('function appEntryHref()')
+  && !/^const APP_ENTRY_URL/m.test(main));
+check('Guards are bound for every webContents, not one wired window',
+  main.includes("app.on('web-contents-created', (_event, contents) => installNavigationGuards(contents));"));
+check('Top-level navigation away from the app page is refused',
+  navSection.includes("contents.on('will-navigate'")
+  && navSection.includes('event.preventDefault();')
+  && navSection.includes('if (isAppEntry(url) || isPrintableTemp(url)) return;'));
+check('A reload and the print window are not caught by it',
+  navSection.includes('function isAppEntry(')
+  && navSection.includes('return `${url.origin}${url.pathname}` === appEntryHref();')
+  && navSection.includes('function isPrintableTemp('));
+check('No second window is ever opened, and http links go to the browser',
+  navSection.includes('contents.setWindowOpenHandler(')
+  && navSection.includes("return { action: 'deny' };")
+  && /openExternalLink\(url\)\.catch\(\(\) => \{\}\)/.test(navSection));
+// Pointing a preview frame at a PDF or an image IS a frame navigation, so a
+// subframe guard here would block the app's own rendering. That case is held by
+// the sandbox, frame-src 'none', and the renderer preventDefaulting every link.
+check('Subframe navigation is deliberately left to the preview sandbox',
+  !navSection.includes("'will-frame-navigate'")
+  && !navSection.includes("'will-redirect'")
+  && renderer.includes("frame.src=page.previewUrl||")
+  && /frame-src 'none'/.test(renderer));
+
+// --- A fetched page has to be allowed to be a page ------------------------
+// The scripted preview's policy was written when Leaf only opened local files,
+// where refusing external scripts cost nothing. Applied to a fetched page it
+// rendered most of the web as a blank frame: script-src carried 'unsafe-inline'
+// and no host, so every <script src> was blocked.
+const cspSection = renderer.slice(
+  renderer.indexOf('const remote=/^https?:/i.test'),
+  renderer.indexOf('const bridge=allowScripts')
+);
+check('A fetched Page may load its own scripts and call its own APIs',
+  cspSection.includes("script-src 'unsafe-inline' 'unsafe-eval' https: http:; connect-src https: http: data: blob:;"));
+check('A local file Page is not widened with it',
+  cspSection.includes("script-src 'unsafe-inline'; connect-src 'none';")
+  && cspSection.includes("const remote=/^https?:/i.test(String(page.baseUrl||''))"));
+// The widening is only safe because the sandbox, not the policy, is what keeps
+// a scripted preview away from Leaf: no allow-same-origin means an opaque
+// origin with no reach into the app, its storage, or any cookie.
+check('The scripted runtime stays on an opaque origin',
+  renderer.includes("frame.setAttribute('sandbox','allow-scripts');")
+  && !renderer.includes("'allow-scripts allow-same-origin'"));
+check('Nested frames and plugins stay refused in every preview',
+  (renderer.match(/frame-src 'none'/g) || []).length >= 2
+  && (renderer.match(/object-src 'none'/g) || []).length >= 2);
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;
