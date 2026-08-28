@@ -14,6 +14,7 @@ const fidelity = read('src/renderer/source-fidelity.js');
 const scriptedHtmlEdit = read('src/renderer/scripted-html-edit.js');
 const registry = read('src/renderer/widget-registry.js');
 const imageWidgetEdit = read('src/renderer/image-widget-edit.js');
+const dropBridge = read('src/renderer/view-drop-bridge.js');
 
 const checks = [];
 function check(name, condition, detail = '') {
@@ -551,7 +552,11 @@ check('The startup reset carries the user app settings across',
   renderer.includes('function startFreshProject(stored){')
   && renderer.includes('fresh.preferences=carried.preferences;')
   && renderer.includes('fresh.layout=carried.layout;')
-  && renderer.includes('fresh.previewSizes=carried.previewSizes;'));
+  && renderer.includes('fresh.previewSizes=carried.previewSizes;')
+  // Recent is app history, not the project. Wiping it made File > Recent a menu
+  // that could never list anything: the launch after the one that filled it
+  // started from an empty list, every time.
+  && renderer.includes('fresh.recent=carried.recent;'));
 check('A corrupt stored state still yields a usable fresh project',
   /catch\{ return fresh; \}/.test(renderer));
 // The discarded project must not linger in storage waiting for some later edit
@@ -869,6 +874,29 @@ check('The dialog states the licence position instead of implying reuse is free'
 check('Checkbox indices address the same list they were rendered from',
   renderer.includes('pendingFontRows=rows;')
   && renderer.includes('pendingFontRows[Number(box.dataset.fontIndex)]'));
+
+// --- No settings that only pretend to apply --------------------------------
+// Preference carried a Language switch that stored a value, moved a tick, and
+// changed nothing else: there is no i18n layer and the UI is English only. A
+// control that reports a state the app does not have is worse than no control.
+check('No Language setting is offered while there is nothing to translate',
+  !html.includes('data-pref-lang')
+  && !renderer.includes("state.preferences.language")
+  && !renderer.includes('.lang-ko')
+  && !renderer.includes('.lang-en'));
+check('The Preference settings that remain all reach something real',
+  html.includes('data-pref-scale') && /font-size:calc\(12px \* var\(--ui-scale\)\)/.test(css)
+  && html.includes('data-pref-theme') && renderer.includes("document.body.dataset.theme = state.preferences.theme"));
+// The Code pane is its own drop target; the zone over it is only an affordance,
+// and it has to stay out of the way at rest or an empty Page cannot be typed
+// into. view-drop-bridge.js owns bringing it back mid-drag.
+check('The Code pane stays a drop target, with the affordance owned by the bridge',
+  renderer.includes("bindDropTarget('#codeView .code-editor-pane','codePage');")
+  && css.includes('.code-editor-pane.is-empty .html-drop-zone{display:none}')
+  && dropBridge.includes('.code-editor-pane.${OVER_CLASS} .html-drop-zone')
+  && dropBridge.includes("{ slot: 'codePage', pane: '#codeView .code-editor-pane'"));
+check('No URL field is placed in a zone that is only visible mid-drag',
+  renderer.includes("if(zone.classList.contains('code-drop-zone'))return;"));
 
 const large = [];
 let pageCount = 0;

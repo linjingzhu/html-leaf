@@ -478,6 +478,10 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
   color:var(--text-secondary);text-align:center;pointer-events:none
 }
 .view-pane.is-empty .html-drop-zone{display:flex;pointer-events:auto;cursor:pointer}
+/* Hidden at rest so it cannot cover the Code editor - an empty Page has to stay
+   typeable. view-drop-bridge.js injects the drag-over rules that bring it back
+   while a file is over the pane, and those are injected after this sheet, so
+   they win on equal specificity. The pane itself is the drop target either way. */
 .code-editor-pane.is-empty .html-drop-zone{display:none}
 /* Download Page Fonts */
 .font-export-modal{width:min(560px,92vw)}

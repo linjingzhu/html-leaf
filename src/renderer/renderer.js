@@ -191,7 +191,7 @@
       projectName:'Untitled Leaf Project',
       projectFilePath:null,
       mode:'preview',
-      preferences:{ language:'ko', scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false },
+      preferences:{ scale:1, theme:'light', sidebarCollapsed:false, inspectorCollapsed:false, sidebarWidth:260, inspectorWidth:290, inspectorPreview:true, hierarchyNameMode:true, usedPreviewVisible:true, tocVisible:false },
       layout:{ splitRatio:0.5, codeRatio:0.5, usedPreviewRatio:0.42 },
       previewSizes:{
         single:{preset:'responsive',width:null,height:null},
@@ -289,6 +289,10 @@
     fresh.preferences=carried.preferences;
     fresh.layout=carried.layout;
     fresh.previewSizes=carried.previewSizes;
+    // Recent is app history, not part of the project. Dropping it left
+    // File > Recent permanently empty - it could never list anything, because
+    // the list was wiped on the launch after the one that filled it.
+    fresh.recent=carried.recent;
     return fresh;
   }
 
@@ -375,8 +379,6 @@
   function applyPreferences(){
     document.body.dataset.theme = state.preferences.theme || 'light';
     document.documentElement.style.setProperty('--ui-scale', state.preferences.scale || 1);
-    $$('.lang-ko').forEach(e=>e.textContent=state.preferences.language==='ko'?'✓':'');
-    $$('.lang-en').forEach(e=>e.textContent=state.preferences.language==='en'?'✓':'');
     $$('.theme-dark').forEach(e=>e.textContent=state.preferences.theme==='dark'?'✓':'');
     $$('.theme-light').forEach(e=>e.textContent=state.preferences.theme==='light'?'✓':'');
     sidebarWidth = state.preferences.sidebarWidth || 260;
@@ -472,12 +474,6 @@
     });
   });
 
-  $$('[data-pref-lang]').forEach(button=>{
-    button.addEventListener('click',()=>{
-      state.preferences.language=button.dataset.prefLang;
-      applyPreferences(); persist(); closeAllMenus();
-    });
-  });
   $$('[data-pref-scale]').forEach(button=>{
     button.addEventListener('click',()=>{
       state.preferences.scale=Number(button.dataset.prefScale);
@@ -4169,6 +4165,9 @@
   function installDropZoneUrlFields(){
     $$('.html-drop-zone').forEach(zone=>{
       if(zone.querySelector('.drop-url'))return;
+      // The Code pane's zone only appears mid-drag, so a field inside it could
+      // never be typed into. That pane takes a URL through its Preview half.
+      if(zone.classList.contains('code-drop-zone'))return;
       const slot=zone.dataset.dropSlot||null;
       const row=document.createElement('div');
       row.className='drop-url';
