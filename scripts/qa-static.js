@@ -1067,6 +1067,49 @@ const [moved] = order.splice(from, 1);
 order.splice(to, 0, moved);
 check('Project drag reorder invariant B,A,C', order.join(',') === 'B,A,C', order.join(','));
 
+// Markdown rendering is exercised for real, not matched as text: the parser is
+// loaded into a bare context and its output inspected. Front matter as body,
+// pipes instead of a table, and relative links dropped to plain text were all
+// shipped defects, and all three are invisible to a substring check.
+const markdownRender = (() => {
+  const vm = require('node:vm');
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(read('src/renderer/jira-export.js'), context);
+  return context.window.JiraExport.markdownToRichHtml;
+})();
+const markdownSample = [
+  '---',
+  'title: Getting Started',
+  'outline: [2, 3]',
+  '---',
+  '',
+  '# Getting Started',
+  '',
+  '| Option | Type |',
+  '| ------ | ---: |',
+  '| base | string |',
+  '',
+  'See [the reference](./reference.md) and [home](../index.html).'
+].join('\n');
+const markdownHtml = markdownRender(markdownSample);
+check('Markdown front matter is stripped, not rendered as body',
+  !/title\s*:\s*Getting Started/.test(markdownHtml) && !markdownHtml.includes('<hr>'),
+  markdownHtml.slice(0, 120));
+check('Markdown GFM table becomes a real table',
+  /<table>/.test(markdownHtml) && /<th[^>]*>Option<\/th>/.test(markdownHtml)
+    && /<tbody>/.test(markdownHtml) && /text-align:right/.test(markdownHtml),
+  markdownHtml.slice(0, 160));
+check('Markdown relative links stay links so Leaf can follow them',
+  markdownHtml.includes('<a href="./reference.md">') && markdownHtml.includes('<a href="../index.html">'),
+  markdownHtml.slice(-160));
+check('Markdown thematic break outside front matter still renders',
+  markdownRender('a\n\n---\n\nb').includes('<hr>'));
+check('Markdown link hrefs stay restricted to schemes Leaf follows',
+  !markdownRender('[x](javascript:alert(1))').includes('<a ')
+    && !markdownRender('[x](//evil.test/x)').includes('<a ')
+    && markdownRender('[x](#section)').includes('<a href="#section">'));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

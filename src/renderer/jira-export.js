@@ -307,10 +307,57 @@
     const href=String(value||'').trim();
     if(!href)return null;
     if(href.startsWith('#'))return href;
-    try{
-      const url=new URL(href);
-      return ['http:','https:','mailto:'].includes(url.protocol)?url.href:null;
-    }catch{return null;}
+    // A scheme has to be one Leaf will follow. javascript:, data: and the rest
+    // parse as URLs and are refused here.
+    if(/^[a-z][a-z0-9+.-]*:/i.test(href)){
+      try{
+        const url=new URL(href);
+        return ['http:','https:','mailto:'].includes(url.protocol)?url.href:null;
+      }catch{return null;}
+    }
+    // Everything else is a relative reference, which is how one document links
+    // to its neighbour - ./other.md, ../api/index.html, assets/x.png. Refusing
+    // these was why a Markdown Page's links came out as plain text and Leaf's
+    // own link following could never reach them. The preview carries a <base>
+    // of the Page's own URL, so they resolve against the right place, and
+    // followPreviewLink still decides what may actually be opened.
+    // Protocol-relative //host is not a neighbour, so it stays refused.
+    if(href.startsWith('//'))return null;
+    return href;
+  }
+
+  // Every static site generator - VitePress, Hugo, Jekyll, Astro, Docusaurus -
+  // opens a document with a YAML block. Rendering it as body text put "title:"
+  // and friends on the page between two rules.
+  function stripFrontmatter(markdown) {
+    const text=String(markdown||'');
+    const match=/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+    if(!match)return text;
+    // A document may legitimately open with a thematic break, so the block has
+    // to look like front matter before it is removed: at least one key, and no
+    // heading inside it.
+    const body=match[1];
+    const lines=body.split(/\r?\n/).filter(line=>line.trim());
+    if(!lines.length)return text.slice(match[0].length);
+    if(lines.some(line=>/^\s*#/.test(line)))return text;
+    if(!lines.some(line=>/^[A-Za-z_][\w.-]*\s*:/.test(line)))return text;
+    return text.slice(match[0].length);
+  }
+
+  const TABLE_SEPARATOR=/^\s*\|?(?:\s*:?-{2,}:?\s*\|)*\s*:?-{2,}:?\s*\|?\s*$/;
+
+  function markdownTableCells(line) {
+    let text=String(line).trim();
+    if(text.startsWith('|'))text=text.slice(1);
+    if(text.endsWith('|')&&!text.endsWith('\\|'))text=text.slice(0,-1);
+    return text.split(/(?<!\\)\|/).map(cell=>cell.trim().replace(/\\\|/g,'|'));
+  }
+
+  function markdownTableAlignments(line) {
+    return markdownTableCells(line).map(cell=>{
+      const left=cell.startsWith(':'),right=cell.endsWith(':');
+      return left&&right?'center':right?'right':left?'left':'';
+    });
   }
 
   function markdownInlineToRich(value) {
@@ -333,13 +380,36 @@
   }
 
   function markdownToRichHtml(markdown) {
-    const lines=String(markdown||'').replace(/\r\n?/g,'\n').split('\n');
+    const lines=stripFrontmatter(String(markdown||'')).replace(/\r\n?/g,'\n').split('\n');
     const out=[];
     let listType=null;
     let inCode=false;
     let code=[];
     const closeList=()=>{if(listType){out.push(`</${listType}>`);listType=null;}};
-    for(const line of lines){
+    // A GFM table is a header row plus a separator row, so the parser has to be
+    // able to look at the next line before it commits to the current one.
+    const tableAt=index=>{
+      const header=lines[index];
+      const separator=lines[index+1];
+      if(typeof separator!=='string')return null;
+      if(!header.includes('|')||!TABLE_SEPARATOR.test(separator))return null;
+      const columns=markdownTableCells(header);
+      const alignments=markdownTableAlignments(separator);
+      if(columns.length<2||alignments.length!==columns.length)return null;
+      const rows=[];
+      let cursor=index+2;
+      while(cursor<lines.length&&lines[cursor].includes('|')&&lines[cursor].trim()){
+        rows.push(markdownTableCells(lines[cursor]));
+        cursor+=1;
+      }
+      return {columns,alignments,rows,end:cursor};
+    };
+    const cell=(tag,value,align)=>{
+      const style=align?` style="text-align:${align}"`:'';
+      return `<${tag}${style}>${markdownInlineToRich(value)}</${tag}>`;
+    };
+    for(let index=0;index<lines.length;index+=1){
+      const line=lines[index];
       if(/^\s*```/.test(line)){
         closeList();
         if(inCode){out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);code=[];inCode=false;}
@@ -350,6 +420,18 @@
       const heading=line.match(/^\s*(#{1,6})\s+(.+)$/);
       if(heading){closeList();const level=heading[1].length;out.push(`<h${level}>${markdownInlineToRich(heading[2])}</h${level}>`);continue;}
       if(/^\s*(---+|___+|\*\*\*+)\s*$/.test(line)){closeList();out.push('<hr>');continue;}
+      const table=line.includes('|')?tableAt(index):null;
+      if(table){
+        closeList();
+        const head=table.columns.map((value,column)=>cell('th',value,table.alignments[column])).join('');
+        const body=table.rows.map(row=>{
+          const cells=table.columns.map((_column,column)=>cell('td',row[column]||'',table.alignments[column])).join('');
+          return `<tr>${cells}</tr>`;
+        }).join('');
+        out.push(`<table><thead><tr>${head}</tr></thead>${body?`<tbody>${body}</tbody>`:''}</table>`);
+        index=table.end-1;
+        continue;
+      }
       const bullet=line.match(/^\s*[-*+]\s+(.+)$/);
       const ordered=line.match(/^\s*\d+[.)]\s+(.+)$/);
       if(bullet||ordered){const nextType=ordered?'ol':'ul';if(listType!==nextType){closeList();listType=nextType;out.push(`<${listType}>`);}out.push(`<li>${markdownInlineToRich((bullet||ordered)[1])}</li>`);continue;}
