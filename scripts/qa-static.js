@@ -1272,6 +1272,115 @@ check('A new Markdown Page opens with a heading the outline can find',
 check('The Markdown template stays Markdown, not HTML-escaped',
   pageTemplates.markdown.template('Tools & Parts').includes('# Tools & Parts'));
 
+// --- GitHub ----------------------------------------------------------------
+const preloadGithub = preload.slice(preload.indexOf('github: Object.freeze({'), preload.indexOf('openProject:'));
+check('The bridge exposes GitHub verbs and no way to read the token',
+  /status:|connect:|disconnect:|repositories:|repository:|branches:|tree:|read:/.test(preloadGithub)
+  && !/token\s*:|getToken|readToken/i.test(preloadGithub),
+  preloadGithub.replace(/\s+/g, ' ').slice(0, 100));
+check('The token never crosses the bridge',
+  !main.includes("ipcMain.handle('github:token'")
+  && !/return\s+(?:await\s+)?readStoredToken\(\)/.test(main.replace(/async function readStoredToken[\s\S]*?\n}/, '')));
+// An Error crossing contextBridge keeps only its message, so the failure kind
+// has to travel as data or the UI cannot tell a spent rate limit from a bad token.
+check('GitHub failures cross the bridge as a typed envelope',
+  main.includes('const githubReply = run =>')
+  && /ok:\s*false,\s*\n?\s*kind,/.test(main)
+  && [...main.matchAll(/ipcMain\.handle\('github:[a-z]+',\s*([a-zA-Z]+)/g)]
+       .every(match => match[1] === 'githubReply'),
+  'every github: handler must be wrapped in githubReply');
+check('A transport failure is named rather than shown as a Chromium code',
+  main.includes('function githubTransportKind') && main.includes('net::ERR_'));
+// Comments mention safeStorage to explain the storage note, so the check is on
+// code rather than on the word appearing anywhere in the file.
+const rendererCode = renderer.replace(/^\s*\/\/.*$/gm, '');
+check('The token is stored through the OS, never in project state',
+  main.includes('safeStorage.encryptString') && main.includes('0o600')
+  && !/safeStorage\s*\./.test(rendererCode)
+  && !/githubToken\s*[:=]\s*['"`]/.test(rendererCode),
+  'the renderer must not touch the token store');
+
+// The tree-to-nodes mapping is the whole adaptation from a repository to Leaf's
+// own shape, so it is run rather than read.
+const githubNodes = (() => {
+  const vm = require('node:vm');
+  const openable = renderer.slice(renderer.indexOf('const GITHUB_OPENABLE'), renderer.indexOf('let githubModalState'));
+  const start = renderer.indexOf('  function githubNodesFromTree(');
+  const end = renderer.indexOf('  function githubDocumentType(');
+  const typeStart = end;
+  const typeEnd = renderer.indexOf('  async function connectGithubRepository(');
+  let counter = 0;
+  const context = { uid: prefix => `${prefix}${++counter}` };
+  vm.createContext(context);
+  vm.runInContext(
+    `${openable}\n${renderer.slice(start, end)}\n${renderer.slice(typeStart, typeEnd)}\n`,
+    context
+  );
+  return {
+    fromTree: vm.runInContext('githubNodesFromTree', context),
+    typeOf: vm.runInContext('githubDocumentType', context)
+  };
+})();
+
+const REPO_TREE = [
+  { path: 'docs', type: 'dir' },
+  { path: 'docs/guide.md', type: 'file', sha: 'a', size: 10 },
+  { path: 'docs/api', type: 'dir' },
+  { path: 'docs/api/index.html', type: 'file', sha: 'b', size: 20 },
+  { path: 'src', type: 'dir' },
+  { path: 'src/app.js', type: 'file', sha: 'c', size: 30 },
+  { path: 'node_modules', type: 'dir' },
+  { path: 'node_modules/left-pad/index.js', type: 'file', sha: 'd', size: 40 },
+  { path: 'README.md', type: 'file', sha: 'e', size: 50 }
+];
+
+const mapped = githubNodes.fromTree(REPO_TREE);
+const names = mapped.map(node => `${node.type}:${node.name}`).sort();
+check('Only files Leaf can open become Pages',
+  mapped.filter(node => node.type === 'page').map(node => node.name).sort().join(',') === 'README.md,guide.md,index.html',
+  names.join(' '));
+check('A folder holding nothing openable is dropped, not left as an empty shell',
+  !mapped.some(node => node.type === 'group' && (node.name === 'src' || node.name === 'node_modules')),
+  names.join(' '));
+const docs = mapped.find(node => node.type === 'group' && node.name === 'docs');
+const api = mapped.find(node => node.type === 'group' && node.name === 'api');
+check('Nested folders keep their parent', !!docs && !!api && api.parentId === docs.id);
+check('A file sits under its own folder',
+  mapped.find(node => node.name === 'guide.md')?.parentId === docs.id
+  && mapped.find(node => node.name === 'index.html')?.parentId === api.id
+  && mapped.find(node => node.name === 'README.md')?.parentId === null);
+// The stub is what keeps a large repository cheap: real in the tree, fetched on
+// first open.
+check('Every Page starts as an unloaded stub carrying its path and sha',
+  mapped.filter(node => node.type === 'page').every(node =>
+    node.remote && node.remote.loaded === false && node.remote.path && node.remote.sha
+    && node.source === '' && node.loadedSource === ''),
+  JSON.stringify(mapped.find(node => node.type === 'page')?.remote));
+
+const scoped = githubNodes.fromTree(REPO_TREE, { root: 'docs' });
+check('A folder root scopes the tree and re-roots what is inside it',
+  scoped.filter(node => node.type === 'page').map(node => node.name).sort().join(',') === 'guide.md,index.html'
+  && scoped.find(node => node.name === 'guide.md')?.parentId === null,
+  scoped.map(node => node.name).join(' '));
+
+const everything = githubNodes.fromTree(REPO_TREE, { showAllFiles: true });
+check('Show all files brings back what the filter hid',
+  everything.filter(node => node.type === 'page').length === 5
+  && everything.some(node => node.name === 'app.js'),
+  String(everything.filter(node => node.type === 'page').length));
+
+check('Each extension maps to the Page type that can open it',
+  githubNodes.typeOf('a.md') === 'markdown' && githubNodes.typeOf('a.markdown') === 'markdown'
+  && githubNodes.typeOf('a.html') === 'html' && githubNodes.typeOf('a.htm') === 'html'
+  && githubNodes.typeOf('a.json') === 'json' && githubNodes.typeOf('a.xml') === 'xml'
+  && githubNodes.typeOf('a.svg') === 'xml' && githubNodes.typeOf('a.pdf') === 'pdf'
+  && githubNodes.typeOf('a.png') === 'image');
+
+check('A GitHub URL in the drop-zone field is recognised as a repository',
+  /const GITHUB_URL\s*=/.test(renderer)
+  && renderer.includes("case 'connect-github': return openGithubModal();")
+  && html.includes('data-action="connect-github"'));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session, safeStorage } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -1054,11 +1054,231 @@ app.whenReady().then(() => {
   ipcMain.handle('project:save', (_e, payload) => saveProjectFile(payload));
   ipcMain.handle('project:saveAs', (_e, payload) => saveProjectFileAs(payload));
 
+  // Envelopes rather than throws: an Error crossing contextBridge keeps only its
+  // message, and it arrives wrapped in "Error invoking remote method ...". The
+  // kind is what decides whether the UI offers a re-sign-in, a wait, or a
+  // narrower folder, so it has to survive as data.
+  const githubReply = run => async (...args) => {
+    try {
+      return { ok: true, value: await run(...args) };
+    } catch (error) {
+      const kind = error?.kind || githubTransportKind(error);
+      return {
+        ok: false,
+        kind,
+        message: kind === 'network'
+          ? githubTransportMessage(error)
+          : String(error?.message || 'GitHub could not be reached.')
+      };
+    }
+  };
+
+  ipcMain.handle('github:status', githubReply(() => githubStatus()));
+  ipcMain.handle('github:connect', githubReply((_e, payload) => githubConnect(payload)));
+  ipcMain.handle('github:disconnect', githubReply(() => githubDisconnect()));
+  ipcMain.handle('github:repos', githubReply(() => githubRepositories()));
+  ipcMain.handle('github:repo', githubReply((_e, payload) => githubRepository(payload)));
+  ipcMain.handle('github:branches', githubReply((_e, payload) => githubBranches(payload)));
+  ipcMain.handle('github:tree', githubReply((_e, payload) => githubTree(payload)));
+  ipcMain.handle('github:read', githubReply((_e, payload) => githubRead(payload)));
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// GitHub
+//
+// The token lives here and only here. Nothing on this surface returns it, and
+// the renderer never receives it: it names an action, the main process attaches
+// the credential. That is the whole reason these are verbs rather than a
+// getToken().
+
+// Required lazily. main.js is evaluated in a bare vm context by the legacy QA
+// suites, whose require shim resolves from scripts/ and cannot see this path; a
+// module-scope require would break them the moment the file is loaded. Nothing
+// touches GitHub until a handler runs, so deferring costs nothing.
+let githubModule = null;
+function githubApi() {
+  if (!githubModule) githubModule = require('./github-client.js');
+  return githubModule;
+}
+
+function githubTokenPath() {
+  return path.join(app.getPath('userData'), 'github-token.bin');
+}
+
+// safeStorage on Linux falls back to a "basic text" backend when no keyring is
+// present. It still reports as available, so the backend name is passed to the
+// UI rather than hidden - a user storing a token deserves to know whether the
+// OS is really protecting it.
+function githubStorageBackend() {
+  if (!safeStorage.isEncryptionAvailable()) return 'unavailable';
+  try {
+    if (process.platform !== 'linux') return 'os';
+    const backend = safeStorage.getSelectedStorageBackend?.();
+    return backend === 'basic_text' ? 'weak' : 'os';
+  } catch {
+    return 'os';
+  }
+}
+
+async function readStoredToken() {
+  try {
+    const encrypted = await fs.readFile(githubTokenPath());
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const token = safeStorage.decryptString(encrypted);
+    return token && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredToken(token) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('This system has no secure storage, so Leaf will not keep a GitHub token here.');
+  }
+  const encrypted = safeStorage.encryptString(String(token));
+  await fs.writeFile(githubTokenPath(), encrypted, { mode: 0o600 });
+  // writeFile only applies the mode when it creates the file, so an existing
+  // one keeps whatever permissions it had.
+  try { await fs.chmod(githubTokenPath(), 0o600); } catch {}
+}
+
+let githubClientInstance = null;
+function githubClient() {
+  if (githubClientInstance) return githubClientInstance;
+  githubClientInstance = githubApi().createGitHubClient({
+  request: (url, { headers } = {}) => new Promise((resolve, reject) => {
+    const request = net.request({ method: 'GET', url, redirect: 'manual' });
+    for (const [name, value] of Object.entries(headers || {})) request.setHeader(name, value);
+    request.on('response', response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks).toString('utf8')
+      }));
+      response.on('error', reject);
+    });
+    // redirect:'manual' still emits this; answering it keeps the stream alive
+    // long enough for the response handler to see the 3xx.
+    request.on('redirect', () => { try { request.abort(); } catch {} });
+    request.on('error', reject);
+    request.end();
+  })
+  });
+  return githubClientInstance;
+}
+
+// Every handler funnels through here so a GitHubError keeps its kind on the way
+// to the renderer, where the kind decides what the UI offers.
+async function withGitHubToken(run) {
+  const token = await readStoredToken();
+  if (!token) {
+    const error = new Error('Connect a GitHub account first.');
+    error.name = 'GitHubError';
+    error.kind = 'no-token';
+    throw error;
+  }
+  try {
+    return await run(token);
+  } catch (error) {
+    if (error instanceof githubApi().GitHubError) {
+      const relayed = new Error(error.message);
+      relayed.name = 'GitHubError';
+      relayed.kind = error.kind;
+      throw relayed;
+    }
+    throw error;
+  }
+}
+
+// A transport failure never reaches the HTTP classifier, so it would otherwise
+// surface to the user as a raw Chromium code like net::ERR_CERT_AUTHORITY_INVALID.
+// Offline, blocked DNS and an untrusted proxy certificate are all states the UI
+// has to be able to describe.
+const TRANSPORT_PATTERN = /^(?:net::ERR_|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT|UNABLE_TO_VERIFY)/;
+
+function githubTransportKind(error) {
+  return TRANSPORT_PATTERN.test(String(error?.message || '')) ? 'network' : 'unknown';
+}
+
+function githubTransportMessage(error) {
+  const code = String(error?.message || '');
+  if (/CERT|UNABLE_TO_VERIFY/i.test(code)) {
+    return `Leaf could not verify GitHub's certificate. A proxy or security tool may be intercepting the connection. (${code})`;
+  }
+  if (/ENOTFOUND|EAI_AGAIN|NAME_NOT_RESOLVED/i.test(code)) {
+    return 'GitHub could not be found. Check the network connection.';
+  }
+  if (/TIMED?_?OUT/i.test(code)) {
+    return 'GitHub did not answer in time. Try again in a moment.';
+  }
+  return `Leaf could not reach GitHub. (${code})`;
+}
+
+async function githubStatus() {
+  const token = await readStoredToken();
+  return {
+    connected: !!token,
+    storage: githubStorageBackend(),
+    login: token ? (githubLogin || null) : null
+  };
+}
+
+let githubLogin = null;
+
+async function githubConnect({ token } = {}) {
+  const candidate = String(token || '').trim();
+  if (!candidate) throw new Error('Paste a personal access token to connect.');
+  // Verified before it is stored, so a typo never becomes a saved credential.
+  const identity = await githubClient().identity(candidate);
+  await writeStoredToken(candidate);
+  githubLogin = identity.login;
+  return { login: identity.login, name: identity.name, storage: githubStorageBackend() };
+}
+
+async function githubDisconnect() {
+  githubLogin = null;
+  try { await fs.unlink(githubTokenPath()); } catch {}
+  return { connected: false };
+}
+
+function githubRepositories() {
+  return withGitHubToken(token => githubClient().listRepositories(token));
+}
+
+function githubRepository({ owner, repo } = {}) {
+  return withGitHubToken(token => githubClient().repository(token, { owner, repo }));
+}
+
+function githubBranches({ owner, repo } = {}) {
+  return withGitHubToken(token => githubClient().listBranches(token, { owner, repo }));
+}
+
+function githubTree({ owner, repo, ref } = {}) {
+  return withGitHubToken(token => githubClient().readTree(token, { owner, repo, ref }));
+}
+
+async function githubRead({ owner, repo, ref, path: filePath } = {}) {
+  return withGitHubToken(async token => {
+    const file = await githubClient().readFile(token, { owner, repo, ref, path: filePath });
+    const directory = String(filePath).split('/').slice(0, -1).join('/');
+    return {
+      text: file.text,
+      sha: file.sha,
+      size: file.size,
+      path: file.path,
+      // The preview resolves relative images and links against this, so a
+      // repository document behaves the way it does on GitHub.
+      baseUrl: githubClient().rawUrlFor({ owner, repo, ref, path: directory ? `${directory}/` : '' })
+    };
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
