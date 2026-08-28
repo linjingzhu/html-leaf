@@ -2300,7 +2300,10 @@
   }
 
   function hierarchyChildren(el){
-    const meaningful=new Set(['MAIN','ARTICLE','SECTION','ASIDE','H1','H2','H3','H4','H5','H6','P','UL','OL','TABLE','PRE','BLOCKQUOTE','IMG','DIV','FIGURE','HR']);
+    // Rows and cells are listed so the Hierarchy can show what a cell holds and
+    // accept a drop into one. TR is structure only - canContain leaves it out,
+    // because a row may hold cells and nothing else.
+    const meaningful=new Set(['MAIN','ARTICLE','SECTION','ASIDE','H1','H2','H3','H4','H5','H6','P','UL','OL','TABLE','TR','TD','TH','PRE','BLOCKQUOTE','IMG','DIV','FIGURE','HR']);
     const result=[];
     [...el.children].forEach(child=>{
       if(child.dataset?.editorOverlay || child.dataset?.adfMarker) return;
@@ -2545,7 +2548,11 @@
   }
 
   function viewportAuthorTarget(event,doc,existingElement=null){
-    let target=event.target?.closest?.('[data-hbe-object],main,article,section,aside,div,p,h1,h2,h3,h4,h5,h6,table,pre,blockquote,figure,img,ul,ol')||doc.body;
+    // td and th come before table in the walk up from the drop point, so a drop
+    // on a cell resolves to that cell rather than to the whole table. Without
+    // them canContain never sees the cell and the component lands beside the
+    // table instead of in it.
+    let target=event.target?.closest?.('[data-hbe-object],main,article,section,aside,div,p,h1,h2,h3,h4,h5,h6,td,th,table,pre,blockquote,figure,img,ul,ol')||doc.body;
     if(target?.dataset?.editorOverlay)target=doc.body;
     if(existingElement&&(target===existingElement||existingElement.contains(target)))target=existingElement.parentElement||doc.body;
     return target;

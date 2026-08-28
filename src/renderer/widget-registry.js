@@ -245,12 +245,18 @@
   ];
   const map=new Map(defs.map(d=>[d.type,d]));
 
+  // A table cell holds flow content, so it can hold whatever the palette makes -
+  // a callout beside a paragraph, a code block under a heading. TABLE itself
+  // stays out: a <p> dropped straight into <table> is invalid and the parser
+  // hoists it back out of the table, so offering it would be a lie.
+  const CONTAINER_TAGS=['BODY','MAIN','ARTICLE','SECTION','ASIDE','DIV','TD','TH'];
+
   function canContain(element){
     if(!element) return false;
     const type=element.getAttribute?.('data-hbe-object');
     const def=map.get(type);
     if(def?.kind==='panel') return true;
-    return ['BODY','MAIN','ARTICLE','SECTION','ASIDE','DIV'].includes(element.tagName);
+    return CONTAINER_TAGS.includes(element.tagName);
   }
 
   window.WidgetRegistry={

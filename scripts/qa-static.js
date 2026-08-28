@@ -1141,6 +1141,40 @@ checkIncludesAll('Splash styles are defined', css, [
   '.splash-modal', '.splash-art', '.splash-columns', '.splash-list button', '.splash-foot'
 ]);
 
+// A component belongs in a table cell as much as anywhere else that holds flow
+// content. Three separate gates had to agree before a drop could land there, so
+// each is guarded: the registry's container test, the viewport's target walk,
+// and the Hierarchy's node filter. canContain runs for real rather than being
+// matched as text.
+const canContainFn = (() => {
+  const vm = require('node:vm');
+  const context = { window: {}, crypto: { randomUUID: () => 'x' } };
+  vm.createContext(context);
+  vm.runInContext(read('src/renderer/widget-registry.js'), context);
+  return context.window.WidgetRegistry.canContain;
+})();
+const asElement = tagName => ({ tagName, getAttribute: () => null });
+check('A table cell can hold components',
+  canContainFn(asElement('TD')) === true && canContainFn(asElement('TH')) === true);
+check('A table and a row still cannot hold components directly',
+  canContainFn(asElement('TABLE')) === false && canContainFn(asElement('TR')) === false,
+  'a <p> dropped into <table> or <tr> is hoisted back out by the parser');
+check('Existing containers still accept components',
+  ['BODY','MAIN','ARTICLE','SECTION','ASIDE','DIV'].every(tag => canContainFn(asElement(tag)) === true));
+check('A panel widget stays a container whatever its tag',
+  canContainFn({ tagName: 'SPAN', getAttribute: name => name === 'data-hbe-object' ? 'card' : null }) === true
+    && canContainFn({ tagName: 'SPAN', getAttribute: name => name === 'data-hbe-object' ? 'callout' : null }) === false,
+  'card is kind:panel, callout is not');
+// The walk up from the drop point returns the first match, so td/th must be
+// listed ahead of table or a drop on a cell resolves to the whole table.
+const authorTargetSelector = (renderer.match(/let target=event\.target\?\.closest\?\.\('([^']+)'\)/) || [])[1] || '';
+check('The viewport drop target resolves a cell before the table',
+  authorTargetSelector.includes('td') && authorTargetSelector.includes('th')
+    && authorTargetSelector.indexOf('td,th') < authorTargetSelector.indexOf('table'),
+  authorTargetSelector);
+check('The Hierarchy lists rows and cells so a cell can be a drop target',
+  /const meaningful=new Set\(\[[^\]]*'TR','TD','TH'[^\]]*\]\)/.test(renderer));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
