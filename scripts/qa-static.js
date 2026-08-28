@@ -1175,6 +1175,47 @@ check('The viewport drop target resolves a cell before the table',
 check('The Hierarchy lists rows and cells so a cell can be a drop target',
   /const meaningful=new Set\(\[[^\]]*'TR','TD','TH'[^\]]*\]\)/.test(renderer));
 
+// The scaffold's stylesheet is evaluated rather than grepped: these assertions
+// are about the CSS a new Page actually ships with, not about how the array
+// that builds it happens to be written.
+const scaffoldCss = (() => {
+  const vm = require('node:vm');
+  const literal = renderer.slice(
+    renderer.indexOf('const NEW_PAGE_STYLES=['),
+    renderer.indexOf('const NEW_PAGE_TYPES={')
+  );
+  const array = literal.slice(literal.indexOf('['), literal.lastIndexOf(']') + 1);
+  return vm.runInNewContext(array).join('\n');
+})();
+check('A new Page ships a stylesheet instead of the browser defaults',
+  scaffoldCss.length > 200 && newPageTypes.includes("'  <style>'") && newPageTypes.includes('...NEW_PAGE_STYLES'));
+const bodyRule = (scaffoldCss.match(/\bbody\s*\{[^}]*\}/) || [''])[0];
+const mainRule = (scaffoldCss.match(/\bmain\s*\{[^}]*\}/) || [''])[0];
+check('The scaffold clears the body margin the browser adds',
+  /margin:\s*0\s*;/.test(bodyRule), bodyRule.replace(/\s+/g, ' ').slice(0, 90));
+check('The scaffold sets a real font stack instead of the serif default',
+  /font:[^;]*system-ui/.test(bodyRule));
+checkIncludesAll('The scaffold resets box sizing and constrains the column', scaffoldCss, [
+  'box-sizing: border-box',
+  'max-width: var(--measure)'
+]);
+check('The scaffold gives the column a readable measure and centres it',
+  /--measure:\s*\d+ch/.test(scaffoldCss) && /main\s*\{[^}]*margin:\s*0 auto/.test(scaffoldCss),
+  (scaffoldCss.match(/--measure:[^;]+;/) || [])[0] || 'no measure');
+// The author looks at this page inside light app chrome the whole time they
+// write it, so the scaffold commits to light rather than following the OS.
+check('The scaffold commits to one palette instead of following the OS',
+  scaffoldCss.includes('color-scheme: light') && !scaffoldCss.includes('prefers-color-scheme'),
+  'a dark block would flip every new Page on a dark-mode machine');
+check('The scaffold themes through custom properties, so it is retheme-able',
+  ['--bg','--fg','--muted','--rule','--link'].every(token => scaffoldCss.includes(`${token}:`)));
+// main is what makes a dropped component land in the column rather than
+// full-bleed on body, so the tag and the container rule have to agree.
+check('The scaffold wraps its content in a container the palette can drop into',
+  newPageTypes.includes("'  <main>'") && canContainFn(asElement('MAIN')) === true);
+check('Scaffold table cells align to the top, for cells holding blocks',
+  /th,\s*td\s*\{[\s\S]*?vertical-align:\s*top/.test(scaffoldCss));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

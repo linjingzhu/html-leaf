@@ -1393,6 +1393,67 @@
   // Page renders and is editable the moment it exists; the text formats start
   // blank, because there is no equivalent of "valid but empty" to scaffold and a
   // blank Page is authorable on its own now.
+  // A new Page opens straight into the preview, so the scaffold brings its own
+  // baseline instead of the browser's: without one a new Page renders in Times
+  // New Roman, edge to edge, which is the first thing anyone would have had to
+  // undo. Custom properties keep it retheme-able from one block.
+  // The scaffold commits to light rather than following prefers-color-scheme.
+  // The author stares at this page inside light app chrome the whole time they
+  // are writing it; a scaffold that flipped to dark on a dark-mode machine
+  // would just be the same "first thing to undo" problem inverted. A dark
+  // block over these same properties is a short paste when a Page wants one.
+  // <main> is deliberate: WidgetRegistry.canContain accepts it, so a component
+  // dropped from the palette lands inside the measured column rather than
+  // full-bleed against the viewport edge.
+  const NEW_PAGE_STYLES=[
+    '      :root {',
+    '        color-scheme: light;',
+    '        --measure: 68ch;',
+    '        --bg: #ffffff;',
+    '        --fg: #1f2328;',
+    '        --muted: #5b6570;',
+    '        --rule: #d8dde3;',
+    '        --link: #2f6fed;',
+    '      }',
+    '      *, *::before, *::after { box-sizing: border-box; }',
+    '      body {',
+    '        margin: 0;',
+    '        background: var(--bg);',
+    '        color: var(--fg);',
+    '        font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;',
+    '      }',
+    '      main { max-width: var(--measure); margin: 0 auto; padding: 56px 24px 96px; }',
+    '      h1, h2, h3, h4 { line-height: 1.25; margin: 2.2em 0 0.6em; font-weight: 600; }',
+    '      h1 { margin-top: 0; font-size: 2.1rem; letter-spacing: -0.01em; }',
+    '      h2 { font-size: 1.5rem; }',
+    '      h3 { font-size: 1.2rem; }',
+    '      p, ul, ol, blockquote, pre, figure, table { margin: 0 0 1.15em; }',
+    '      a { color: var(--link); }',
+    '      blockquote {',
+    '        margin-left: 0;',
+    '        padding-left: 1em;',
+    '        border-left: 3px solid var(--rule);',
+    '        color: var(--muted);',
+    '      }',
+    '      pre {',
+    '        padding: 14px 16px;',
+    '        border: 1px solid var(--rule);',
+    '        border-radius: 6px;',
+    '        overflow: auto;',
+    '      }',
+    '      code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.9em; }',
+    '      img { max-width: 100%; height: auto; }',
+    '      table { border-collapse: collapse; width: 100%; }',
+    '      th, td {',
+    '        border: 1px solid var(--rule);',
+    '        padding: 8px 10px;',
+    '        text-align: left;',
+    '        vertical-align: top;',
+    '      }',
+    '      hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }',
+    '      @media (max-width: 640px) { main { padding: 32px 18px 64px; } }'
+  ];
+
   const NEW_PAGE_TYPES={
     html:{label:'HTML',extension:'html',template:name=>[
       '<!DOCTYPE html>',
@@ -1401,9 +1462,15 @@
       '  <meta charset="utf-8">',
       '  <meta name="viewport" content="width=device-width, initial-scale=1">',
       `  <title>${esc(name)}</title>`,
+      '  <style>',
+      ...NEW_PAGE_STYLES,
+      '  </style>',
       '</head>',
       '<body>',
-      `  <h1>${esc(name)}</h1>`,
+      '  <main>',
+      `    <h1>${esc(name)}</h1>`,
+      '    <p>Write the first paragraph here.</p>',
+      '  </main>',
       '</body>',
       '</html>',
       ''
