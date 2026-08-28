@@ -89,6 +89,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   writeRichClipboard: (payload) => ipcRenderer.invoke('clipboard:writeRich', payload),
   writeTextClipboard: (text) => ipcRenderer.invoke('clipboard:writeText', text),
+  // Verbs only. There is deliberately no way to ask for the token itself - the
+  // main process holds it and attaches it, so a compromised renderer cannot
+  // read it out.
+  github: Object.freeze({
+    status: () => ipcRenderer.invoke('github:status'),
+    connect: (token) => ipcRenderer.invoke('github:connect', { token }),
+    disconnect: () => ipcRenderer.invoke('github:disconnect'),
+    repositories: () => ipcRenderer.invoke('github:repos'),
+    repository: (payload) => ipcRenderer.invoke('github:repo', payload),
+    branches: (payload) => ipcRenderer.invoke('github:branches', payload),
+    tree: (payload) => ipcRenderer.invoke('github:tree', payload),
+    read: (payload) => ipcRenderer.invoke('github:read', payload)
+  }),
   openProject: () => ipcRenderer.invoke('project:open'),
   readProjectPath: (filePath) => ipcRenderer.invoke('project:readPath', filePath),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),

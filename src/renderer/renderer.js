@@ -39,6 +39,7 @@
     objectExportModal: $('#objectExportModal'), objectExportFormat: $('#objectExportFormat'), objectExportScale: $('#objectExportScale'), objectExportSummary: $('#objectExportSummary'),
     savePageAsModal: $('#savePageAsModal'), savePageAsFormat: $('#savePageAsFormat'), aboutModal: $('#aboutModal'),
     splashModal: $('#splashModal'),
+    githubModal: $('#githubModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -521,6 +522,7 @@
       case 'extract-fonts': return openFontExportDialog();
       case 'about': return openAboutDialog();
       case 'splash': return openSplash();
+      case 'connect-github': return openGithubModal();
       default: throw new Error(`Unknown menu action: ${action}`);
     }
   }
@@ -3033,7 +3035,14 @@
   }
 
   function bindPageToSlot(slot,nextPageId){
-    if(!pageById(nextPageId))return false;
+    const nextPage=pageById(nextPageId);
+    if(!nextPage)return false;
+    // A repository Page is a stub until it is first opened. Fetching it here
+    // rather than making this function async keeps every existing caller
+    // unchanged; the render happens again once the text arrives.
+    if(nextPage.remote&&!nextPage.remote.loaded){
+      ensureGithubPageLoaded(nextPage).then(loaded=>{if(loaded)renderAll();});
+    }
     if(slot==='codePreview'||slot==='codePage'){
       state.views.codePreview=nextPageId;
       state.views.codePage=nextPageId;
@@ -7256,6 +7265,328 @@
     if(event.key==='Escape'||event.key==='Enter'){event.preventDefault();closeAboutDialog();}
   });
 
+  // ----- GitHub -----
+  // A repository is a Document: folders become group nodes, files become page
+  // nodes. Nothing new is needed for the tree, search, tile view, split view,
+  // outline or Inspector - they all already work on that shape.
+  //
+  // The whole tree arrives in one call and costs nothing to hold, but a file's
+  // contents are only fetched when the Page is first opened. Until then the
+  // node is a stub: real in the tree, empty in the editor.
+
+  const GITHUB_URL = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s?#]+)(?:\/(?:tree|blob)\/([^/\s?#]+)((?:\/[^\s?#]*)?))?/i;
+
+  // Only what Leaf can actually open is listed, so a code repository does not
+  // bury three documents under a thousand source files. Show all files lifts it.
+  const GITHUB_OPENABLE = /\.(?:html?|md|markdown|json|xml|svg|pdf|png|jpe?g|gif|webp)$/i;
+
+  let githubModalState = null;
+
+  function githubRepoUrlParts(value) {
+    const match = GITHUB_URL.exec(String(value || '').trim());
+    if (!match) return null;
+    const [, owner, repo, ref, rest] = match;
+    const path = String(rest || '').replace(/^\/+/, '').replace(/\/+$/, '');
+    return {
+      owner,
+      repo: repo.replace(/\.git$/i, ''),
+      ref: ref || null,
+      // A /blob/ URL points at a file, a /tree/ URL at a folder.
+      root: /\/blob\//i.test(match[0]) ? path.split('/').slice(0, -1).join('/') : path,
+      file: /\/blob\//i.test(match[0]) ? path : null
+    };
+  }
+
+  // The main process answers with an envelope so the failure kind survives the
+  // bridge. This turns it back into something throwable, with the kind intact.
+  async function github(call) {
+    const reply = await call;
+    if (reply && reply.ok) return reply.value;
+    const error = new Error(reply?.message || 'GitHub could not be reached.');
+    error.kind = reply?.kind || 'unknown';
+    throw error;
+  }
+
+  function githubError(error) {
+    return {
+      kind: error?.kind || 'unknown',
+      message: String(error?.message || 'GitHub could not be reached.')
+    };
+  }
+
+  function setGithubError(error) {
+    const box = $('#githubError');
+    if (!box) return;
+    if (!error) { box.hidden = true; box.textContent = ''; return; }
+    box.hidden = false;
+    box.textContent = githubError(error).message;
+  }
+
+  async function openGithubModal(prefill = null) {
+    githubModalState = { prefill, repos: [], selected: null, branches: [] };
+    setGithubError(null);
+    const status = await github(window.electronAPI.github.status()).catch(() => ({ connected: false, storage: 'unavailable' }));
+    githubModalState.status = status;
+    renderGithubModal();
+    refs.githubModal.classList.add('show');
+    setTimeout(() => (status.connected ? $('#githubRepoInput') : $('#githubToken'))?.focus(), 0);
+    if (status.connected) loadGithubRepositories();
+  }
+
+  function closeGithubModal() {
+    refs.githubModal.classList.remove('show');
+    githubModalState = null;
+  }
+
+  function renderGithubModal() {
+    const modal = githubModalState;
+    if (!modal) return;
+    const connected = !!modal.status?.connected;
+    $('#githubSignIn').hidden = connected;
+    $('#githubPick').hidden = !connected;
+    $('#githubDisconnect').hidden = !connected;
+    $('#githubSubmit').textContent = connected ? 'Open repository' : 'Connect';
+    $('#githubTitle').textContent = connected ? 'Open a GitHub repository' : 'Connect GitHub';
+
+    const account = $('#githubAccount');
+    account.hidden = !connected || !modal.status?.login;
+    account.textContent = modal.status?.login ? `Signed in as ${modal.status.login}` : '';
+
+    // Storage honesty: on a Linux box with no keyring safeStorage still reports
+    // as available while barely protecting anything, so say which it is.
+    const note = $('#githubStorageNote');
+    const storage = modal.status?.storage;
+    note.textContent = storage === 'unavailable'
+      ? 'This system has no secure storage, so Leaf cannot keep a token here.'
+      : storage === 'weak'
+        ? 'No system keyring was found, so the token is only lightly obscured on this machine.'
+        : 'The token is encrypted with your operating system\u2019s secure storage and never leaves this machine.';
+
+    if (modal.prefill && connected) {
+      $('#githubRepoInput').value = `${modal.prefill.owner}/${modal.prefill.repo}`;
+      if (modal.prefill.root) $('#githubRoot').value = modal.prefill.root;
+    }
+    renderGithubRepoList();
+  }
+
+  function renderGithubRepoList() {
+    const list = $('#githubRepoList');
+    const modal = githubModalState;
+    if (!list || !modal) return;
+    const query = String($('#githubRepoInput')?.value || '').trim().toLowerCase();
+    const matches = (modal.repos || []).filter(repo => !query || repo.fullName.toLowerCase().includes(query));
+    list.innerHTML = matches.length
+      ? matches.slice(0, 20).map((repo, index) =>
+          `<button type="button" data-github-repo="${index}"><span>${esc(repo.fullName)}</span><span class="github-repo-meta">${repo.private ? 'private' : 'public'} \u00b7 ${esc(repo.defaultBranch)}</span></button>`
+        ).join('')
+      : '<p class="github-note">Type owner/repo, or pick one once the list loads.</p>';
+    list.querySelectorAll('[data-github-repo]').forEach(button => {
+      button.addEventListener('click', () => {
+        const repo = matches[Number(button.dataset.githubRepo)];
+        if (!repo) return;
+        $('#githubRepoInput').value = repo.fullName;
+        selectGithubRepository(repo.owner, repo.name);
+      });
+    });
+  }
+
+  async function loadGithubRepositories() {
+    try {
+      const repos = await github(window.electronAPI.github.repositories());
+      if (!githubModalState) return;
+      githubModalState.repos = repos || [];
+      renderGithubRepoList();
+      const typed = String($('#githubRepoInput')?.value || '').trim();
+      if (typed.includes('/')) {
+        const [owner, repo] = typed.split('/');
+        selectGithubRepository(owner, repo);
+      }
+    } catch (error) { setGithubError(error); }
+  }
+
+  async function selectGithubRepository(owner, repo) {
+    if (!owner || !repo) return;
+    setGithubError(null);
+    try {
+      const [info, branches] = await Promise.all([
+        github(window.electronAPI.github.repository({ owner, repo })),
+        github(window.electronAPI.github.branches({ owner, repo }))
+      ]);
+      if (!githubModalState) return;
+      githubModalState.selected = info;
+      githubModalState.branches = branches || [];
+      const select = $('#githubBranch');
+      const wanted = githubModalState.prefill?.ref || info.defaultBranch;
+      select.innerHTML = (branches || []).map(name =>
+        `<option value="${esc(name)}"${name === wanted ? ' selected' : ''}>${esc(name)}</option>`).join('');
+      if (!branches?.includes(wanted) && wanted) {
+        select.insertAdjacentHTML('afterbegin', `<option value="${esc(wanted)}" selected>${esc(wanted)}</option>`);
+      }
+    } catch (error) { setGithubError(error); }
+  }
+
+  // A repository tree is a flat path list. Turning it into Leaf nodes is the
+  // whole adaptation: a folder with no openable file under it is dropped, or
+  // src/ and node_modules/ would fill the tree with empty shells.
+  function githubNodesFromTree(entries, { root = '', showAllFiles = false } = {}) {
+    const prefix = root ? `${root.replace(/\/+$/, '')}/` : '';
+    const within = entries.filter(entry => !prefix || entry.path.startsWith(prefix));
+    const files = within.filter(entry => entry.type === 'file'
+      && (showAllFiles || GITHUB_OPENABLE.test(entry.path)));
+
+    const keptDirs = new Set();
+    for (const file of files) {
+      const parts = file.path.slice(prefix.length).split('/');
+      parts.pop();
+      let walked = '';
+      for (const part of parts) {
+        walked = walked ? `${walked}/${part}` : part;
+        keptDirs.add(walked);
+      }
+    }
+
+    const nodes = [];
+    const idByPath = new Map();
+    const order = new Map();
+    const nextOrder = parentId => {
+      const key = parentId || '';
+      const value = order.get(key) || 0;
+      order.set(key, value + 1);
+      return value;
+    };
+
+    [...keptDirs].sort().forEach(dirPath => {
+      const parts = dirPath.split('/');
+      const parentPath = parts.slice(0, -1).join('/');
+      const id = uid('group');
+      idByPath.set(dirPath, id);
+      const parentId = parentPath ? idByPath.get(parentPath) || null : null;
+      nodes.push({
+        id, type: 'group', name: parts[parts.length - 1], parentId,
+        order: nextOrder(parentId), expanded: false, container: true,
+        remote: { path: prefix + dirPath }
+      });
+    });
+
+    files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
+      const relative = file.path.slice(prefix.length);
+      const parts = relative.split('/');
+      const fileName = parts.pop();
+      const parentPath = parts.join('/');
+      const parentId = parentPath ? idByPath.get(parentPath) || null : null;
+      nodes.push({
+        id: uid('page'), type: 'page', name: fileName, fileName,
+        documentType: githubDocumentType(fileName),
+        parentId, order: nextOrder(parentId),
+        source: '', loadedSource: '', baseUrl: null, sourcePath: null, previewUrl: null,
+        isEmpty: false,
+        // loaded:false is what makes this a stub. The tree is honest about the
+        // repository's shape while only opened files are ever downloaded.
+        remote: { path: file.path, sha: file.sha, size: file.size, loaded: false }
+      });
+    });
+
+    return nodes;
+  }
+
+  function githubDocumentType(fileName) {
+    const lower = String(fileName || '').toLowerCase();
+    if (/\.html?$/.test(lower)) return 'html';
+    if (/\.(?:md|markdown)$/.test(lower)) return 'markdown';
+    if (/\.json$/.test(lower)) return 'json';
+    if (/\.(?:xml|svg)$/.test(lower)) return 'xml';
+    if (/\.pdf$/.test(lower)) return 'pdf';
+    return 'image';
+  }
+
+  async function connectGithubRepository() {
+    const modal = githubModalState;
+    if (!modal) return;
+    setGithubError(null);
+
+    if (!modal.status?.connected) {
+      const token = String($('#githubToken')?.value || '').trim();
+      if (!token) { setGithubError({ message: 'Paste a token to connect.' }); return; }
+      try {
+        const identity = await github(window.electronAPI.github.connect(token));
+        $('#githubToken').value = '';
+        modal.status = { connected: true, login: identity.login, storage: identity.storage };
+        renderGithubModal();
+        await loadGithubRepositories();
+        showToast(`Connected as ${identity.login}`);
+      } catch (error) { setGithubError(error); }
+      return;
+    }
+
+    const typed = String($('#githubRepoInput')?.value || '').trim();
+    const [owner, repo] = typed.split('/').map(part => part.trim());
+    if (!owner || !repo) { setGithubError({ message: 'Name the repository as owner/repo.' }); return; }
+    const ref = String($('#githubBranch')?.value || '').trim()
+      || modal.selected?.defaultBranch || 'main';
+    const root = String($('#githubRoot')?.value || '').trim().replace(/^\/+|\/+$/g, '');
+
+    try {
+      const tree = await github(window.electronAPI.github.tree({ owner, repo, ref }));
+      const nodes = githubNodesFromTree(tree.entries, { root });
+      if (!nodes.some(node => node.type === 'page')) {
+        setGithubError({ message: root
+          ? `Nothing Leaf can open under ${root}.`
+          : 'Nothing Leaf can open in that repository.' });
+        return;
+      }
+      const project = {
+        id: uid('document'),
+        name: `${owner}/${repo}`,
+        color: '#5873d4',
+        filePath: null,
+        expanded: true,
+        remote: {
+          owner, repo, ref, root,
+          defaultBranch: modal.selected?.defaultBranch || ref,
+          truncated: !!tree.truncated,
+          showAllFiles: false,
+          entries: tree.entries
+        },
+        nodes
+      };
+      state.documents.push(project);
+      state.selectedDocumentId = project.id;
+      focusDocument(project);
+      closeGithubModal();
+      clearInspector();
+      renderAll();
+      persist();
+      if (tree.truncated) {
+        showToast('GitHub truncated this listing - narrow it to a folder to see everything');
+      } else {
+        showToast(`Opened ${owner}/${repo}`);
+      }
+    } catch (error) { setGithubError(error); }
+  }
+
+  // Called when a stub Page is first bound to a view. Everything downstream -
+  // preview runtimes, outline, Inspector - then sees an ordinary Page.
+  async function ensureGithubPageLoaded(page) {
+    const project = state.documents.find(document => document.nodes?.some(node => node.id === page?.id));
+    const remote = project?.remote;
+    if (!remote || !page?.remote || page.remote.loaded) return false;
+    try {
+      const file = await github(window.electronAPI.github.read({
+        owner: remote.owner, repo: remote.repo, ref: remote.ref, path: page.remote.path
+      }));
+      page.source = file.text;
+      page.loadedSource = file.text;
+      page.baseUrl = file.baseUrl;
+      page.isEmpty = !file.text.trim();
+      page.remote = { ...page.remote, sha: file.sha, size: file.size, loaded: true };
+      persist();
+      return true;
+    } catch (error) {
+      showToast(githubError(error).message);
+      return false;
+    }
+  }
+
   // ----- Splash -----
   // Blender's splash is a launcher rather than a progress bar: the app behind it
   // is already usable, every row does something, and clicking away dismisses it.
@@ -7312,6 +7643,33 @@
     setTimeout(()=>refs.splashModal.querySelector('.splash-list button, .splash-link')?.focus(),0);
   }
   function closeSplash(){refs.splashModal.classList.remove('show');}
+
+  $('#connectGithub')?.addEventListener('click',()=>{openGithubModal();});
+  $('#githubCancel')?.addEventListener('click',closeGithubModal);
+  $('#githubSubmit')?.addEventListener('click',()=>{connectGithubRepository();});
+  $('#githubRepoInput')?.addEventListener('input',()=>{renderGithubRepoList();});
+  $('#githubRepoInput')?.addEventListener('change',()=>{
+    const [owner,repo]=String($('#githubRepoInput').value||'').split('/').map(part=>part.trim());
+    if(owner&&repo)selectGithubRepository(owner,repo);
+  });
+  $('#githubMakeToken')?.addEventListener('click',()=>{
+    // Scopes are pre-filled so nobody has to guess which boxes to tick.
+    window.electronAPI.openExternalLink('https://github.com/settings/tokens/new?scopes=repo&description=Leaf')
+      .catch(error=>showToast(`Could not open GitHub: ${error.message}`));
+  });
+  $('#githubDisconnect')?.addEventListener('click',async()=>{
+    await github(window.electronAPI.github.disconnect()).catch(()=>{});
+    if(githubModalState){githubModalState.status={connected:false,storage:githubModalState.status?.storage};renderGithubModal();}
+    showToast('Signed out of GitHub');
+  });
+  refs.githubModal.addEventListener('click',event=>{
+    if(event.target===refs.githubModal)closeGithubModal();
+  });
+  refs.githubModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.githubModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeGithubModal();}
+    if(event.key==='Enter'&&event.target.tagName!=='BUTTON'){event.preventDefault();connectGithubRepository();}
+  });
 
   refs.splashModal.addEventListener('click',event=>{
     if(event.target===refs.splashModal)closeSplash();
