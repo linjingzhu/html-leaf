@@ -810,6 +810,66 @@ check('The URL field lives in the drop zone, and a dragged link works too',
 check('The URL field keeps its own clicks, so it does not open the file picker',
   /\['click','pointerdown','dblclick'\]\.forEach\(type=>row\.addEventListener\(type,event=>event\.stopPropagation\(\)\)\)/.test(renderer));
 
+// --- Downloading the fonts a page uses -------------------------------------
+// @font-face is the only place a font's URL is written down: document.fonts
+// reports the families but carries no src at all, so the stylesheets are the
+// route and both readable and unreadable sheets have to be covered.
+const fontScan = renderer.slice(
+  renderer.indexOf('const FONT_SRC_ENTRY'),
+  renderer.indexOf('// ----- Download Page Fonts dialog')
+);
+check('Font scan section is present', fontScan.length > 2500, `${fontScan.length} chars`);
+check('src is parsed into url(), local() and format() parts',
+  fontScan.includes('function parseFontSrc(')
+  && fontScan.includes("entries.push({kind:'url'")
+  && fontScan.includes("entries.push({kind:'local'")
+  && fontScan.includes('function preferredFontSource('));
+// A sheet on a CDN saying /f/x.woff2 means the CDN's root, not the page's.
+check('A relative src resolves against the stylesheet, not the Page',
+  fontScan.includes('function resolveAgainst(')
+  && fontScan.includes("const sheetBase=sheet.href||page?.baseUrl||''")
+  && fontScan.includes('resolveAgainst(face.sheetBase,chosen.value)'));
+check('A cross-origin stylesheet is fetched as text rather than silently dropped',
+  fontScan.includes('function parseFontFacesFromText(')
+  && fontScan.includes('window.electronAPI.fetchStylesheetText(href)')
+  && fontScan.includes('unreadable.push(sheet.href)'));
+check('Only families the document actually renders with are offered',
+  fontScan.includes('function renderedFamilies(')
+  && fontScan.includes('if(!used.has(normalizeFamilyName(face.family)))continue;'));
+check('Embedded and system-only faces are classified, not queued for download',
+  fontScan.includes("kind:url.startsWith('data:')?'embedded':localOnly?'system':url?'network':'unknown'"));
+check('woff2 is preferred when a face offers several formats',
+  /const FONT_FORMAT_RANK=\{woff2:0,woff:1/.test(fontScan));
+const fontMain = main.slice(main.indexOf('const FONT_MAX_BYTES'), main.indexOf('function documentTypeForPath('));
+check('Font downloads run through the same guarded fetch as the URL bar',
+  fontMain.includes('await fetchGuardedBytes(source)')
+  && main.includes('async function fetchGuardedBytes(rawUrl)')
+  && main.includes('const fetched = await fetchGuardedBytes(rawUrl);'));
+check('A data: font is decoded locally instead of being fetched',
+  fontMain.includes("if (source.startsWith('data:'))")
+  && fontMain.includes("Buffer.from(source.slice(comma + 1), 'base64')"));
+check('Font writes are staged and rolled back, and are size-capped',
+  fontMain.includes('FONT_MAX_BYTES')
+  && fontMain.includes('FONT_TOTAL_MAX_BYTES')
+  && fontMain.includes('leaf-stage-')
+  && /await Promise\.allSettled\(staged\.map\(item => fs\.unlink\(item\.stagePath\)\)\)/.test(fontMain));
+check('A usable fonts.css is generated beside the files',
+  fontMain.includes("const cssPath = path.join(directory, 'fonts.css')")
+  && fontMain.includes('@font-face{')
+  && /licence before redistributing/.test(fontMain));
+check('One font failing does not lose the rest',
+  fontMain.includes('failed.push({ family:') && fontMain.includes('continue;'));
+check('The dialog states the licence position instead of implying reuse is free',
+  html.includes('id="fontExportModal"')
+  && /Licences differ by family/.test(html)
+  && html.includes('data-action="extract-fonts"')
+  && renderer.includes("case 'extract-fonts': return openFontExportDialog();"));
+// The checkbox index addresses the full row list; a filtered copy silently
+// downloads the wrong faces.
+check('Checkbox indices address the same list they were rendered from',
+  renderer.includes('pendingFontRows=rows;')
+  && renderer.includes('pendingFontRows[Number(box.dataset.fontIndex)]'));
+
 const large = [];
 let pageCount = 0;
 let groupCount = 0;

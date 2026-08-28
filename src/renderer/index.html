@@ -169,6 +169,7 @@
           <div class="separator"></div>
           <button data-action="import">Import Pages…</button>
           <button data-action="export">Export HTML</button>
+          <button data-action="extract-fonts">Download Page Fonts…</button>
           <div class="separator"></div>
           <button data-action="jira-export">Jira / Atlassian Export…</button>
           <button data-action="copy-jira">Copy for Jira</button>
@@ -690,6 +691,19 @@
     <div class="modal-actions">
       <button class="btn" id="viewportSizeCancel">Cancel</button>
       <button class="btn primary" id="viewportSizeApply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="fontExportModal" role="presentation">
+  <div class="modal font-export-modal" role="dialog" aria-modal="true" aria-labelledby="fontExportTitle">
+    <h3 id="fontExportTitle">Download Page Fonts</h3>
+    <p id="fontExportDescription">Web fonts declared by this Page and actually used to render it.</p>
+    <div class="font-export-list" id="fontExportList"></div>
+    <p class="font-export-note">Saved with a generated <code>fonts.css</code>. Licences differ by family &mdash; open licences such as Google Fonts allow reuse, while most foundry web fonts are licensed to one site and may not be redistributed.</p>
+    <div class="modal-actions">
+      <button class="btn" id="fontExportCancel">Cancel</button>
+      <button class="btn primary" id="fontExportConfirm">Download</button>
     </div>
   </div>
 </div>

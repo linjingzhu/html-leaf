@@ -290,7 +290,9 @@ function requestOnce(url) {
   });
 }
 
-async function fetchPageAtUrl(rawUrl) {
+// Every network read in the app goes through here, so the guards cannot be
+// bypassed by adding a second caller that forgets one.
+async function fetchGuardedBytes(rawUrl) {
   let url;
   try {
     url = new URL(String(rawUrl || '').trim());
@@ -311,8 +313,27 @@ async function fetchPageAtUrl(rawUrl) {
   }
   if (!result) throw new Error('Too many redirects.');
   if (result.status >= 400) throw new Error(`The server answered ${result.status}.`);
+  return {
+    body: result.body,
+    finalUrl: current,
+    contentType: [].concat(result.headers?.['content-type'] || []).join('; ')
+  };
+}
 
-  const contentType = [].concat(result.headers?.['content-type'] || []).join('; ');
+// A stylesheet the renderer could not read through cssRules - a cross-origin
+// sheet - is fetched as text instead, so @font-face stays discoverable either
+// way rather than depending on one of them working.
+async function fetchStylesheetText(rawUrl) {
+  const { body, finalUrl, contentType } = await fetchGuardedBytes(rawUrl);
+  if (body.length > 5_000_000) throw new Error('That stylesheet is too large.');
+  return { text: body.toString('utf8'), finalUrl, contentType };
+}
+
+async function fetchPageAtUrl(rawUrl) {
+  const fetched = await fetchGuardedBytes(rawUrl);
+  const result = { body: fetched.body };
+  const current = fetched.finalUrl;
+  const contentType = fetched.contentType;
   const documentType = fetchedDocumentType(contentType, current);
   if (!documentType) throw new Error(`Leaf opens HTML, Markdown, JSON, XML, PDF and images - not ${contentType || 'that content type'}.`);
 
@@ -340,6 +361,129 @@ async function fetchPageAtUrl(rawUrl) {
   }
   const source = result.body.toString('utf8');
   return { ...common, source, loadedSource: source };
+}
+
+// ----- Downloading the fonts a page uses ------------------------------------
+const FONT_MAX_BYTES = 20_000_000;
+const FONT_TOTAL_MAX_BYTES = 200_000_000;
+const FONT_EXTENSION_BY_FORMAT = {
+  woff2: '.woff2', woff: '.woff', truetype: '.ttf', opentype: '.otf',
+  embedded_opentype: '.eot', svg: '.svg', 'collection': '.ttc'
+};
+const FONT_EXTENSION_BY_MIME = {
+  'font/woff2': '.woff2', 'font/woff': '.woff', 'font/ttf': '.ttf', 'font/otf': '.otf',
+  'application/font-woff2': '.woff2', 'application/font-woff': '.woff',
+  'application/x-font-ttf': '.ttf', 'application/x-font-opentype': '.otf',
+  'application/vnd.ms-fontobject': '.eot'
+};
+
+function fontExtension({ format, contentType, url }) {
+  const byFormat = FONT_EXTENSION_BY_FORMAT[String(format || '').toLowerCase()];
+  if (byFormat) return byFormat;
+  const mime = String(contentType || '').split(';')[0].trim().toLowerCase();
+  if (FONT_EXTENSION_BY_MIME[mime]) return FONT_EXTENSION_BY_MIME[mime];
+  const fromPath = path.extname(String(url || '').split('?')[0]).toLowerCase();
+  if (['.woff2', '.woff', '.ttf', '.otf', '.eot', '.ttc'].includes(fromPath)) return fromPath;
+  return '.font';
+}
+
+function safeFontBase(font, index) {
+  const family = String(font?.family || 'font').replace(/["']/g, '').trim() || 'font';
+  const weight = String(font?.weight || '').replace(/[^\w]+/g, '') || '400';
+  const style = String(font?.style || '').toLowerCase() === 'italic' ? '-italic' : '';
+  const base = `${family}-${weight}${style}`.replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '-');
+  return base.replace(/^-+|-+$/g, '') || `font-${index + 1}`;
+}
+
+// The renderer sends what it read out of @font-face; every URL is fetched
+// through the same guards the URL bar uses, so a page cannot point the
+// downloader at somewhere the user could not have opened themselves.
+async function downloadPageFonts({ fonts }) {
+  if (!Array.isArray(fonts) || !fonts.length || fonts.length > 200) {
+    throw new Error('Supply between 1 and 200 fonts to download.');
+  }
+  const chosen = await dialog.showOpenDialog(mainWindow, {
+    title: 'Save fonts to folder',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (chosen.canceled || !chosen.filePaths[0]) return { canceled: true };
+  const directory = chosen.filePaths[0];
+
+  const used = new Set();
+  const staged = [];
+  const written = [];
+  const saved = [];
+  const failed = [];
+  let total = 0;
+
+  try {
+    for (let index = 0; index < fonts.length; index += 1) {
+      const font = fonts[index] || {};
+      const source = String(font.url || '');
+      let body = null;
+      let contentType = '';
+      try {
+        if (source.startsWith('data:')) {
+          const comma = source.indexOf(',');
+          const meta = source.slice(5, comma);
+          if (!/;base64$/i.test(meta)) throw new Error('Only base64 data URIs are supported.');
+          contentType = meta.replace(/;base64$/i, '');
+          body = Buffer.from(source.slice(comma + 1), 'base64');
+        } else {
+          const fetched = await fetchGuardedBytes(source);
+          body = fetched.body;
+          contentType = fetched.contentType;
+        }
+        if (body.length > FONT_MAX_BYTES) throw new Error('That font file is too large.');
+        total += body.length;
+        if (total > FONT_TOTAL_MAX_BYTES) throw new Error('The fonts add up to more than 200 MB.');
+      } catch (error) {
+        failed.push({ family: font.family || '(unnamed)', url: source, reason: error.message });
+        continue;
+      }
+
+      const base = safeFontBase(font, index);
+      const extension = fontExtension({ format: font.format, contentType, url: source });
+      let candidate = `${base}${extension}`;
+      let suffix = 2;
+      while (used.has(candidate.toLowerCase()) || fsSync.existsSync(path.join(directory, candidate))) {
+        candidate = `${base}-${suffix++}${extension}`;
+      }
+      used.add(candidate.toLowerCase());
+      const filePath = path.join(directory, candidate);
+      const stagePath = path.join(directory, `.${candidate}.leaf-stage-${process.pid}-${Date.now()}-${index}`);
+      await atomicWriteFile(stagePath, body);
+      staged.push({ stagePath, filePath });
+      saved.push({ ...font, fileName: candidate, bytes: body.length });
+    }
+
+    // A stylesheet that points at the saved files, so the download is usable
+    // rather than a folder of loose binaries.
+    if (saved.length) {
+      const css = [
+        '/* Generated by Leaf. Check each family\'s licence before redistributing. */',
+        ...saved.map(font => [
+          '@font-face{',
+          `  font-family:'${String(font.family || 'Font').replace(/["'\\]/g, '')}';`,
+          `  src:url('${font.fileName}')${font.format ? ` format('${String(font.format).replace(/[^\w-]/g, '')}')` : ''};`,
+          font.weight ? `  font-weight:${String(font.weight).replace(/[^\w\s.-]/g, '')};` : '',
+          font.style ? `  font-style:${String(font.style).replace(/[^\w-]/g, '')};` : '',
+          '}'
+        ].filter(Boolean).join('\n'))
+      ].join('\n\n') + '\n';
+      const cssPath = path.join(directory, 'fonts.css');
+      const cssStage = path.join(directory, `.fonts.css.leaf-stage-${process.pid}-${Date.now()}`);
+      await atomicWriteFile(cssStage, css, 'utf8');
+      staged.push({ stagePath: cssStage, filePath: cssPath });
+    }
+
+    for (const item of staged) { await fs.rename(item.stagePath, item.filePath); written.push(item.filePath); }
+    return { canceled: false, directory, saved, failed, files: written };
+  } catch (error) {
+    await Promise.allSettled(staged.map(item => fs.unlink(item.stagePath)));
+    await Promise.allSettled(written.map(filePath => fs.unlink(filePath)));
+    throw error;
+  }
 }
 
 function documentTypeForPath(filePath) {
@@ -808,6 +952,8 @@ app.whenReady().then(() => {
   ipcMain.handle('file:resolveLinkTarget', (_e, payload) => resolveLinkTarget(payload));
   ipcMain.handle('shell:openExternal', (_e, url) => openExternalLink(url));
   ipcMain.handle('net:fetchPage', (_e, url) => fetchPageAtUrl(url));
+  ipcMain.handle('net:fetchStylesheet', (_e, url) => fetchStylesheetText(url));
+  ipcMain.handle('fonts:download', (_e, payload) => downloadPageFonts(payload || {}));
   ipcMain.handle('pdf:armAnnotationSave', (_e, payload) => armPdfAnnotationSave(payload));
   ipcMain.handle('file:readDocumentPath', (_e, filePath) => readDocumentPath(filePath)); // v0.5.14 compatibility
   ipcMain.handle('file:exportHtml', (_e, payload) => exportHtml(payload));

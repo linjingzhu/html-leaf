@@ -55,6 +55,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (!url) return Promise.reject(new Error('A URL is required.'));
     return ipcRenderer.invoke('net:fetchPage', url);
   },
+  fetchStylesheetText: (url) => {
+    if (!url) return Promise.reject(new Error('A stylesheet URL is required.'));
+    return ipcRenderer.invoke('net:fetchStylesheet', url);
+  },
+  downloadFonts: (payload) => ipcRenderer.invoke('fonts:download', payload),
   armPdfAnnotationSave: (payload) => ipcRenderer.invoke('pdf:armAnnotationSave', payload),
   onPdfAnnotationSaved: (callback) => {
     const listener = (_event, result) => callback(result || {});

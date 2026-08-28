@@ -512,6 +512,7 @@
       case 'export-adf': return exportCurrentPageAdf();
       case 'undo': return undo();
       case 'redo': return redo();
+      case 'extract-fonts': return openFontExportDialog();
       case 'about': return openAboutDialog();
       default: throw new Error(`Unknown menu action: ${action}`);
     }
@@ -3924,6 +3925,204 @@
   // ----- Explorer Page Drag & Drop -----
   function isHtmlFile(file){ return !!file && /\.(html?|md|markdown|json|xml|pdf|png|jpe?g|webp|gif|svg)$/i.test(file.name || ''); }
   function isAtlassianPreviewFile(file){return !!file&&/\.(md|markdown|json)$/i.test(file.name||'');}
+  // ----- Fonts the Page actually uses ---------------------------------------
+  // @font-face is the only place a font's URL is written down. document.fonts
+  // reports the families but carries no src, so the stylesheets are the route.
+  const FONT_SRC_ENTRY=/(url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)|local\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\))(?:\s*format\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\))?/gi;
+
+  function parseFontSrc(src){
+    const entries=[];
+    for(const match of String(src||'').matchAll(FONT_SRC_ENTRY)){
+      const url=match[2]??match[3]??match[4];
+      const localName=match[5]??match[6]??match[7];
+      const format=(match[8]??match[9]??match[10]??'').trim().replace(/["']/g,'');
+      if(url!==undefined&&url!=='')entries.push({kind:'url',value:url.trim(),format});
+      else if(localName!==undefined&&localName!=='')entries.push({kind:'local',value:localName.trim(),format});
+    }
+    return entries;
+  }
+
+  // A relative src resolves against the stylesheet that declared it, not against
+  // the Page - a sheet on a CDN pointing at /f/x.woff2 means the CDN's root.
+  function resolveAgainst(base,value){
+    try{ return new URL(value,base||undefined).href; }catch{ return ''; }
+  }
+
+  const FONT_FORMAT_RANK={woff2:0,woff:1,opentype:2,truetype:3,collection:4,'embedded-opentype':5,svg:6};
+  function preferredFontSource(entries){
+    const urls=entries.filter(entry=>entry.kind==='url');
+    if(!urls.length)return null;
+    return [...urls].sort((a,b)=>
+      (FONT_FORMAT_RANK[a.format?.toLowerCase()]??9)-(FONT_FORMAT_RANK[b.format?.toLowerCase()]??9))[0];
+  }
+
+  function normalizeFamilyName(value){
+    return String(value||'').split(',')[0].replace(/["']/g,'').trim().toLocaleLowerCase();
+  }
+
+  // Only families the document actually renders with. A stylesheet often
+  // declares far more faces than a given page uses, and shipping the unused
+  // ones is both slower and a bigger licence surface.
+  function renderedFamilies(doc){
+    const families=new Set();
+    const elements=[doc.documentElement,doc.body,...doc.body.querySelectorAll('*')]
+      .filter(element=>element&&!element.closest?.('[data-editor-overlay]'));
+    for(const element of elements){
+      const stack=doc.defaultView.getComputedStyle(element).fontFamily||'';
+      for(const part of stack.split(',')){
+        const name=normalizeFamilyName(part);
+        if(name)families.add(name);
+      }
+    }
+    return families;
+  }
+
+  function fontFacesFromRules(rules,sheetBase,out){
+    for(const rule of rules){
+      if(rule.cssRules&&!rule.style){ fontFacesFromRules(rule.cssRules,sheetBase,out); continue; }
+      if(!rule.style||typeof rule.style.getPropertyValue!=='function')continue;
+      const family=rule.style.getPropertyValue('font-family');
+      const src=rule.style.getPropertyValue('src');
+      if(!family||!src)continue;
+      out.push({
+        family:String(family).replace(/["']/g,'').trim(),
+        weight:(rule.style.getPropertyValue('font-weight')||'400').trim(),
+        style:(rule.style.getPropertyValue('font-style')||'normal').trim(),
+        entries:parseFontSrc(src),
+        sheetBase
+      });
+    }
+  }
+
+  function parseFontFacesFromText(cssText,sheetBase,out){
+    for(const block of String(cssText||'').matchAll(/@font-face\s*\{([^}]*)\}/gi)){
+      const body=block[1];
+      const pick=name=>{
+        const found=new RegExp(`${name}\\s*:\\s*([^;]+)`,'i').exec(body);
+        return found?found[1].trim():'';
+      };
+      const family=pick('font-family').replace(/["']/g,'').trim();
+      const src=pick('src');
+      if(!family||!src)continue;
+      out.push({family,weight:pick('font-weight')||'400',style:pick('font-style')||'normal',
+        entries:parseFontSrc(src),sheetBase});
+    }
+  }
+
+  async function collectPageFonts(slot){
+    const pageId=pageIdForSlot(slot);
+    const doc=reachableTocDocument(slot,pageId);
+    if(!doc)return {ok:false,reason:'Fonts can be read from an HTML or Markdown Page shown in a View.'};
+    const page=pageById(pageId);
+    const faces=[];
+    const unreadable=[];
+    for(const sheet of [...doc.styleSheets]){
+      const sheetBase=sheet.href||page?.baseUrl||'';
+      let rules=null;
+      try{ rules=sheet.cssRules; }catch{ if(sheet.href)unreadable.push(sheet.href); continue; }
+      fontFacesFromRules(rules,sheetBase,faces);
+    }
+    // A sheet the renderer could not read is fetched as text instead, so a
+    // cross-origin stylesheet does not silently drop its faces.
+    for(const href of unreadable){
+      try{
+        const fetched=await window.electronAPI.fetchStylesheetText(href);
+        parseFontFacesFromText(fetched.text,fetched.finalUrl||href,faces);
+      }catch{ /* reported as a skipped sheet below */ }
+    }
+
+    const used=renderedFamilies(doc);
+    const rows=[];
+    const seen=new Set();
+    for(const face of faces){
+      if(!used.has(normalizeFamilyName(face.family)))continue;
+      const chosen=preferredFontSource(face.entries);
+      const localOnly=!chosen&&face.entries.some(entry=>entry.kind==='local');
+      const url=chosen?(chosen.value.startsWith('data:')?chosen.value:resolveAgainst(face.sheetBase,chosen.value)):'';
+      const key=`${normalizeFamilyName(face.family)}|${face.weight}|${face.style}|${url}`;
+      if(seen.has(key))continue;
+      seen.add(key);
+      rows.push({
+        family:face.family,weight:face.weight,style:face.style,
+        format:chosen?.format||'',url,
+        kind:url.startsWith('data:')?'embedded':localOnly?'system':url?'network':'unknown'
+      });
+    }
+    const systemOnly=[...used].filter(name=>name&&!rows.some(row=>normalizeFamilyName(row.family)===name));
+    return {ok:true,rows,systemOnly,skippedSheets:unreadable.length&&!faces.length?unreadable.length:0};
+  }
+
+  // ----- Download Page Fonts dialog -----------------------------------------
+  let pendingFontRows=[];
+
+  function fontKindLabel(kind){
+    return kind==='embedded'?'Embedded in the page'
+      :kind==='system'?'System font - nothing to download'
+      :kind==='network'?'Downloadable':'Source unknown';
+  }
+
+  function renderFontExportList(result){
+    const list=$('#fontExportList');
+    if(!list)return;
+    // The checkbox index addresses this list, so it stays the full list - a
+    // filtered copy would make every index off by the rows it dropped.
+    const rows=result.rows||[];
+    pendingFontRows=rows;
+    if(!rows.length){
+      const extra=result.systemOnly?.length
+        ? ` This Page renders with system fonts only (${esc(result.systemOnly.slice(0,4).join(', '))}).`
+        : '';
+      list.innerHTML=`<div class="font-export-empty">No downloadable web fonts were found.${extra}</div>`;
+      return;
+    }
+    list.innerHTML=rows.map((row,index)=>{
+      const selectable=row.kind==='network'||row.kind==='embedded';
+      // The source is worth showing: it is how someone tells a self-hosted face
+      // from one pulled off a CDN, which is what the licence question turns on.
+      const source=row.kind==='embedded'?'Embedded data URI':row.url||'';
+      return `<label class="font-export-row${selectable?'':' is-unavailable'}" title="${esc(source)}"
+          data-font-kind="${esc(row.kind)}" data-font-url="${esc(row.url||'')}">
+        <input type="checkbox" data-font-index="${index}" ${selectable?'checked':'disabled'}>
+        <span class="font-export-name">${esc(row.family)}</span>
+        <span class="font-export-meta">${esc(row.weight)}${row.style&&row.style!=='normal'?` · ${esc(row.style)}`:''}${row.format?` · ${esc(row.format)}`:''}</span>
+        <span class="font-export-kind">${esc(fontKindLabel(row.kind))}</span>
+      </label>`;
+    }).join('');
+  }
+
+  async function openFontExportDialog(){
+    const slot=activePageSlot();
+    const result=await collectPageFonts(slot);
+    if(!result.ok)return showToast(result.reason);
+    renderFontExportList(result);
+    const confirm=$('#fontExportConfirm');
+    if(confirm)confirm.disabled=!(result.rows||[]).some(row=>row.kind==='network'||row.kind==='embedded');
+    $('#fontExportModal')?.classList.add('show');
+  }
+
+  function closeFontExportDialog(){ $('#fontExportModal')?.classList.remove('show'); }
+
+  $('#fontExportCancel')?.addEventListener('click',closeFontExportDialog);
+  $('#fontExportModal')?.addEventListener('click',event=>{ if(event.target===$('#fontExportModal'))closeFontExportDialog(); });
+  $('#fontExportConfirm')?.addEventListener('click',async()=>{
+    const fonts=[...document.querySelectorAll('#fontExportList [data-font-index]')]
+      .filter(box=>box.checked&&!box.disabled)
+      .map(box=>pendingFontRows[Number(box.dataset.fontIndex)])
+      .filter(row=>row&&(row.kind==='network'||row.kind==='embedded'));
+    if(!fonts.length)return showToast('Select at least one font');
+    closeFontExportDialog();
+    showToast(`Downloading ${fonts.length} font${fonts.length===1?'':'s'}…`);
+    try{
+      const report=await window.electronAPI.downloadFonts({fonts});
+      if(report?.canceled)return;
+      const saved=report?.saved?.length||0;
+      const failed=report?.failed?.length||0;
+      showToast(failed
+        ? `Saved ${saved} font${saved===1?'':'s'}; ${failed} could not be fetched`
+        : `Saved ${saved} font${saved===1?'':'s'} and fonts.css`);
+    }catch(error){ showToast(`Font download failed: ${error.message}`); }
+  });
+
   // ----- Opening a Page by URL ----------------------------------------------
   // The drop zone already means "put a Page here", so the URL field belongs in
   // it rather than in a menu somewhere else.
