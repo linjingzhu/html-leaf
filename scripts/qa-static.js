@@ -641,9 +641,8 @@ check('New Page takes its type, extension and source from the template table',
   && renderer.includes("isEmpty:!source.trim()"));
 checkIncludesAll('The HTML template is a real scaffold, not a blank document', newPageTypes,
   ["'<!DOCTYPE html>'", '\'<html lang="en">\'', "'<head>'", "'<body>'", '${esc(name)}</title>', "'</html>'"]);
-check('Markdown, JSON and XML Pages start blank',
-  ['markdown', 'json', 'xml'].every(type =>
-    new RegExp(`${type}:\\{[^}]*template:\\(\\)=>''`).test(newPageTypes)));
+// Blank was the old rule here. It is gone deliberately: see the template
+// validity checks further down, which parse what each template produces.
 // The drop zone used to be painted over the code pane and the editor hidden
 // underneath it, which is what made an empty Page unauthorable.
 // newPage() (Ctrl+Shift+N and the File menu) is the second creation path. It
@@ -1215,6 +1214,63 @@ check('The scaffold wraps its content in a container the palette can drop into',
   newPageTypes.includes("'  <main>'") && canContainFn(asElement('MAIN')) === true);
 check('Scaffold table cells align to the top, for cells holding blocks',
   /th,\s*td\s*\{[\s\S]*?vertical-align:\s*top/.test(scaffoldCss));
+
+// Every New Page template is run and its output parsed with the parser for its
+// own format. A blank JSON Page used to fail JSON.parse and a blank XML Page had
+// no root element, so both opened in a state their own source editor reported as
+// broken - a substring check would never have noticed.
+const pageTemplates = (() => {
+  const vm = require('node:vm');
+  const block = renderer.slice(
+    renderer.indexOf('const NEW_PAGE_TYPES={'),
+    renderer.indexOf('function addEmptyPage(')
+  );
+  const context = {
+    esc: value => String(value ?? '').replace(/[&<>"']/g,
+      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+    NEW_PAGE_STYLES: scaffoldCss.split('\n')
+  };
+  vm.createContext(context);
+  vm.runInContext(block.slice(0, block.lastIndexOf('};') + 2), context);
+  return vm.runInContext('NEW_PAGE_TYPES', context);
+})();
+
+// A stack scan is enough to catch the failure that matters: no root element, or
+// a root that never closes.
+function xmlIsBalanced(text) {
+  const stack = [];
+  for (const [, closing, name, selfClosing] of text.matchAll(/<(\/?)([A-Za-z_][\w.-]*)[^>]*?(\/?)>/g)) {
+    if (text.startsWith('<?xml') && name === 'xml') continue;
+    if (selfClosing) continue;
+    if (closing) { if (stack.pop() !== name) return false; }
+    else stack.push(name);
+  }
+  return stack.length === 0;
+}
+
+check('Every Page type offers a template that produces something',
+  ['html', 'markdown', 'json', 'xml'].every(type =>
+    typeof pageTemplates[type]?.template === 'function'
+    && pageTemplates[type].template('Sample').trim().length > 0),
+  ['html', 'markdown', 'json', 'xml']
+    .filter(type => !(pageTemplates[type]?.template('Sample') || '').trim()).join(', '));
+check('A new JSON Page parses as JSON', (() => {
+  try {
+    const parsed = JSON.parse(pageTemplates.json.template('Quarterly "Report"'));
+    return parsed.title === 'Quarterly "Report"';   // JSON-escaped, not HTML-escaped
+  } catch { return false; }
+})(), pageTemplates.json.template('Sample').replace(/\n/g, ' '));
+check('A new XML Page has a declaration and one balanced root', (() => {
+  const xml = pageTemplates.xml.template('Tools & Parts');
+  return xml.startsWith('<?xml version="1.0" encoding="utf-8"?>')
+    && xmlIsBalanced(xml)
+    && xml.includes('Tools &amp; Parts');          // XML-escaped, not raw
+})(), pageTemplates.xml.template('Sample').replace(/\n/g, ' '));
+check('A new Markdown Page opens with a heading the outline can find',
+  /^#\s+Sample Page$/m.test(pageTemplates.markdown.template('Sample Page')),
+  pageTemplates.markdown.template('Sample').replace(/\n/g, ' '));
+check('The Markdown template stays Markdown, not HTML-escaped',
+  pageTemplates.markdown.template('Tools & Parts').includes('# Tools & Parts'));
 
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');

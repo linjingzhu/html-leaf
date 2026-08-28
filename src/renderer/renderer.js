@@ -1475,9 +1475,32 @@
       '</html>',
       ''
     ].join('\n')},
-    markdown:{label:'Markdown',extension:'md',template:()=>''},
-    json:{label:'JSON',extension:'json',template:()=>''},
-    xml:{label:'XML',extension:'xml',template:()=>''}
+    // Each template is the least a document of that format needs to be valid and
+    // immediately editable. Blank was fine for Markdown but wrong for the other
+    // two: JSON.parse('') throws and an XML document with no root element is a
+    // parse error, so a new JSON or XML Page opened in a state its own source
+    // editor reports as broken.
+    // The escaping differs per format and has to: esc() would corrupt a JSON
+    // string and Markdown wants the name verbatim.
+    markdown:{label:'Markdown',extension:'md',template:name=>[
+      `# ${name}`,
+      '',
+      'Write the first paragraph here.',
+      ''
+    ].join('\n')},
+    json:{label:'JSON',extension:'json',template:name=>[
+      '{',
+      `  "title": ${JSON.stringify(String(name ?? ''))}`,
+      '}',
+      ''
+    ].join('\n')},
+    xml:{label:'XML',extension:'xml',template:name=>[
+      '<?xml version="1.0" encoding="utf-8"?>',
+      '<document>',
+      `  <title>${esc(name)}</title>`,
+      '</document>',
+      ''
+    ].join('\n')}
   };
 
   function addEmptyPage(project,targetNode,{asChild=false,documentType='html'}={}){
