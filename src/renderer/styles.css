@@ -202,9 +202,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   color:var(--muted);font-size:11px
 }
+/* min-width rather than width: these hold a single glyph most of the time, and
+   28px is the square that gives. But a few carry a word - Preview in the Used
+   panel overflowed its box by 13px - and a fixed width has no way to say so.
+   With border-box the padding sits inside the 28px, so a glyph button is
+   unchanged and a labelled one grows to fit instead of spilling. */
 .panel-toggle-top,.tiny-btn{
-  width:28px;height:28px;border:0;border-radius:var(--radius-control);
-  background:transparent;color:var(--muted)
+  min-width:28px;height:28px;padding:0 6px;border:0;border-radius:var(--radius-control);
+  background:transparent;color:var(--muted);white-space:nowrap
 }
 .sidebar-toggle-top{margin-left:3px}
 .inspector-toggle-top{margin-left:7px}

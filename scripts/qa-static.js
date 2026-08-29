@@ -1453,6 +1453,19 @@ check('The Documents toolbar keeps its buttons on the search row',
   /grid-auto-flow:\s*column/.test(searchToolbar),
   `${toolbarButtons} tiny-btn in the sidebar; ${searchToolbar}`);
 
+// A .tiny-btn is a 28px square for a single glyph, but several carry a word.
+// A fixed width has no way to say so: Preview in the Used panel overflowed its
+// box by 13px. min-width keeps the square for glyphs and lets a label grow.
+const tinyBtnRule = (/\.panel-toggle-top,\.tiny-btn\{([^}]+)\}/.exec(css) || [])[1] || '';
+check('A labelled tiny button can grow instead of spilling out of its box',
+  /min-width:\s*28px/.test(tinyBtnRule) && !/(^|;)\s*width:/.test(tinyBtnRule),
+  tinyBtnRule.replace(/\s+/g, ' ').trim());
+const labelledTinyButtons = [...html.matchAll(/class="tiny-btn[^"]*"[^>]*>([^<]+)</g)]
+  .map(match => match[1].trim())
+  .filter(label => /[A-Za-z]{2}/.test(label));
+check('Some tiny buttons really do carry words, so the rule above matters',
+  labelledTinyButtons.length > 0, labelledTinyButtons.join(', '));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
