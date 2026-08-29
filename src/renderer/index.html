@@ -160,6 +160,7 @@
           <button data-action="new-project">New Project <kbd>Ctrl+N</kbd></button>
           <button data-action="open-project">Open Project…</button>
           <button data-action="connect-github">Connect GitHub Repository…</button>
+          <button data-action="connect-drive">Connect Google Drive…</button>
           <button data-action="save-project">Save Project <kbd>Ctrl+S</kbd></button>
           <button data-action="save-project-as">Save Project As <kbd>Ctrl+Shift+S</kbd></button>
           <div class="separator"></div>
@@ -641,6 +642,39 @@
       <div class="spacer"></div>
       <button class="btn" type="button" id="githubCancel">Cancel</button>
       <button class="btn primary" type="button" id="githubSubmit">Connect</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="driveModal" role="presentation">
+  <div class="modal github-modal" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
+    <div class="github-head">
+      <h3 id="driveTitle">Connect Google Drive</h3>
+      <span class="github-account" id="driveAccount" hidden></span>
+    </div>
+
+    <section class="github-step" id="driveSignIn">
+      <p>Signing in opens your browser. Leaf never sees your Google password, and it only asks for the files you give it.</p>
+      <p class="github-note" id="driveStorageNote"></p>
+    </section>
+
+    <section class="github-step" id="drivePick" hidden>
+      <div class="github-repo-list" id="driveFileList"></div>
+      <p class="github-note">Google only lets Leaf see the files it created. Save a page with Send to Drive and it appears here.</p>
+      <label class="modal-field">
+        <span>Send a page to Drive</span>
+        <select id="driveUploadPage"></select>
+      </label>
+    </section>
+
+    <p class="github-error" id="driveError" hidden></p>
+
+    <div class="modal-actions">
+      <button class="btn" type="button" id="driveDisconnect" hidden>Sign out</button>
+      <div class="spacer"></div>
+      <button class="btn" type="button" id="driveUpload" hidden>Send to Drive</button>
+      <button class="btn" type="button" id="driveCancel">Cancel</button>
+      <button class="btn primary" type="button" id="driveSubmit">Connect</button>
     </div>
   </div>
 </div>

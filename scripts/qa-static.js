@@ -1571,6 +1571,88 @@ check('Disconnecting revokes the grant with Google, not just locally',
 check('The Drive QA suite is wired into the package scripts',
   pkg.scripts?.['qa:google-drive'] === 'node scripts/qa-google-drive.js');
 
+// The Drive panel's own logic, run rather than matched. These three functions
+// are what turn Google's answers into things the rest of Leaf understands, and
+// a string search would not notice any of them getting it wrong.
+const driveUi = (() => {
+  const vm = require('node:vm');
+  const slice = (from, to) => renderer.slice(renderer.indexOf(from), renderer.indexOf(to));
+  let counter = 0;
+  const context = {
+    uid: prefix => `${prefix}${++counter}`,
+    state: { documents: [], selectedDocumentId: null },
+    // The DOM and the rest of the app are not the subject here.
+    $: () => null, showToast: () => {}, persist: () => {}, renderAll: () => {},
+    clearInspector: () => {}, focusDocument: () => {}, setDriveError: () => {},
+    closeDriveModal: () => {}, isBinaryPage: () => false
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    slice('  function githubDocumentType(', '  async function connectGithubRepository(')
+    + slice('  function driveNodesFromFiles(', '  async function uploadPageToDrive('),
+    context
+  );
+  return {
+    nodesFrom: vm.runInContext('driveNodesFromFiles', context),
+    openDocument: vm.runInContext('openDriveDocument', context),
+    state: context.state
+  };
+})();
+
+const DRIVE_FILES = [
+  { id: 'f1', name: 'notes.md', mimeType: 'text/markdown', isFolder: false, readOnly: false, exportAs: null },
+  { id: 'f2', name: 'Plan', mimeType: 'application/vnd.google-apps.document', isFolder: false, readOnly: true, exportAs: 'text/html' },
+  { id: 'f3', name: 'Archive', mimeType: 'application/vnd.google-apps.folder', isFolder: true, readOnly: false },
+  { id: 'f4', name: 'page.html', mimeType: 'text/html', isFolder: false, readOnly: false, exportAs: null }
+];
+
+const driveNodes = driveUi.nodesFrom(DRIVE_FILES);
+check('A Drive folder does not become a Page',
+  driveNodes.length === 3 && !driveNodes.some(node => node.fileName === 'Archive'),
+  driveNodes.map(node => node.fileName).join(','));
+check('A Drive file arrives as an unloaded stub, so nothing is downloaded until it is opened',
+  driveNodes.every(node => node.remote.loaded === false && node.source === ''));
+check('A Drive file keeps its id, which is the only handle Drive has',
+  driveNodes.map(node => node.remote.driveId).join(',') === 'f1,f2,f4');
+// A Google Doc has no extension, so its type has to come from what it exports
+// as - otherwise the HTML that comes back would open as a plain image.
+check('A Google document is typed by its export format, not its name',
+  driveNodes.find(node => node.remote.driveId === 'f2').documentType === 'html',
+  driveNodes.map(node => `${node.fileName}:${node.documentType}`).join(' '));
+check('An ordinary Drive file is typed by its name',
+  driveNodes.find(node => node.remote.driveId === 'f1').documentType === 'markdown');
+check('A Google document carries its read-only state into the Page',
+  driveNodes.find(node => node.remote.driveId === 'f2').remote.readOnly === true
+  && driveNodes.find(node => node.remote.driveId === 'f1').remote.readOnly === false);
+
+driveUi.openDocument(DRIVE_FILES);
+check('Opening Drive adds one document', driveUi.state.documents.length === 1);
+driveUi.openDocument(DRIVE_FILES);
+check('Re-opening Drive does not stack a second copy of the same files',
+  driveUi.state.documents.length === 1 && driveUi.state.documents[0].nodes.length === 3,
+  `${driveUi.state.documents.length} documents, ${driveUi.state.documents[0].nodes.length} nodes`);
+driveUi.openDocument([...DRIVE_FILES, { id: 'f5', name: 'new.md', mimeType: 'text/markdown', isFolder: false }]);
+check('Re-opening Drive adds only what is new',
+  driveUi.state.documents[0].nodes.length === 4,
+  String(driveUi.state.documents[0].nodes.length));
+
+// Save on a Drive-backed page has to reach Drive. Falling through to the export
+// dialog would leave the user with a local copy that quietly stopped matching
+// the file they opened.
+check('Saving a Drive-backed page writes back to Drive instead of opening a file dialog',
+  /if\(page\.remote\?\.driveId\)return saveDrivePage\(page\);/.test(renderer));
+check('A Google document refuses the save rather than appearing to succeed',
+  /saveDrivePage[\s\S]{0,300}page\.remote\?\.readOnly[\s\S]{0,200}return false;/.test(renderer));
+// A sign-in still waiting on the browser holds a loopback socket open.
+check('Closing the Drive panel mid-sign-in cancels the loopback listener',
+  /closeDriveModal[\s\S]{0,400}drive\.cancelConnect\(\)/.test(renderer));
+check('The Drive panel is reachable from the menu',
+  html.includes('data-action="connect-drive"')
+  && renderer.includes("case 'connect-drive': return openDriveModal();"));
+// The scope is a product constraint, not a bug, so the panel says so.
+check('The Drive panel explains why a listing can be empty',
+  /Google only lets Leaf see the files it created/.test(html));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
