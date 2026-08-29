@@ -10,6 +10,7 @@
     "source:cleanup": "node scripts/apply-roadmap-source-cleanup.js",
     "qa": "node scripts/qa-v0516.js",
     "qa:github-client": "node scripts/qa-github-client.js",
+    "qa:google-drive": "node scripts/qa-google-drive.js",
     "qa:static": "node scripts/qa-static.js",
     "qa:startup-adversarial": "node scripts/qa-startup-adversarial.js",
     "qa:startup-readiness": "node scripts/qa-startup-readiness-guard.js",

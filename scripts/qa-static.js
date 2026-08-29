@@ -1466,6 +1466,111 @@ const labelledTinyButtons = [...html.matchAll(/class="tiny-btn[^"]*"[^>]*>([^<]+
 check('Some tiny buttons really do carry words, so the rule above matters',
   labelledTinyButtons.length > 0, labelledTinyButtons.join(', '));
 
+// --- Google Drive wiring ---------------------------------------------------
+//
+// The Drive client and the sign-in flow are exercised for real by
+// scripts/qa-google-drive.js. What is guarded here is the wiring around them,
+// which that suite cannot see: what crosses the process boundary, and what
+// never does.
+
+const googleAuth = read('src/google-auth.js');
+const driveClient = read('src/drive-client.js');
+
+// Widening this is a compliance decision, not a refactor: drive and
+// drive.readonly are "restricted" scopes and drag the project into a paid
+// third-party security assessment. A guard is the cheapest place to notice
+// someone reaching for one.
+const restrictedScope = /auth\/drive(?:\.readonly|\.metadata|\.appdata)?(?!\.file)['"\s]/;
+check('Leaf asks Google for the drive.file scope and nothing wider',
+  googleAuth.includes("'https://www.googleapis.com/auth/drive.file'")
+  && !restrictedScope.test(googleAuth.replace(/^\s*\/\/.*$/gm, '')),
+  (googleAuth.match(/auth\/drive[^'"\s]*/g) || []).join(', '));
+
+// PKCE is what makes a desktop client secret survivable: it ships inside the
+// binary and anyone can extract it, so the proof of possession has to be the
+// verifier instead.
+checkIncludesAll('The sign-in flow proves possession with PKCE S256', googleAuth, [
+  "code_challenge_method', 'S256'",
+  'code_verifier',
+  'createHash(\'sha256\')'
+]);
+
+// Loopback on an assigned port, per RFC 8252. A wildcard bind would put the
+// callback on every interface the machine has.
+check('The sign-in listener binds loopback only',
+  /server\.listen\(0,\s*'127\.0\.0\.1'/.test(googleAuth),
+  (googleAuth.match(/server\.listen\([^)]*\)/) || [''])[0]);
+check('A callback carrying the wrong state never yields a code',
+  googleAuth.includes('if (!sameState(returned, state)) return { kind: \'state\' };')
+  && googleAuth.includes('crypto.timingSafeEqual'));
+
+// The token goes to the origins this was configured for and nowhere else, and
+// the decision is remade every hop so a redirect off Google cannot carry it.
+check('The Drive client re-decides the token host on every redirect hop',
+  driveClient.includes('tokenOrigins.has(new URL(current).origin)')
+  && !/carryToken/.test(driveClient));
+check('The Drive token host list is derived from the configured origin',
+  driveClient.includes('tokenOriginsFor(apiOrigin)'));
+
+// The same rule for the credentials themselves.
+check('Google credentials only go to the configured token endpoint',
+  googleAuth.includes('credentialOrigins.has(new URL(endpoint).origin)'));
+
+// A Google Doc has no bytes and cannot be written back through this API.
+// Offering Save on one would be offering a lie.
+check('A Google-native document is marked read-only rather than silently failing to save',
+  driveClient.includes("readOnly: !!exported")
+  && driveClient.includes("throw new DriveError('read-only'"));
+
+// main.js is evaluated in a bare vm context by the legacy QA suites, whose
+// require shim cannot resolve these paths. A module-scope require would break
+// them the moment the file loads.
+for (const [label, name] of [['Google sign-in', 'google-auth'], ['Drive client', 'drive-client']]) {
+  const requireLine = new RegExp(`require\\('\\./${name}\\.js'\\)`);
+  const atModuleScope = new RegExp(`^(?:const|let|var)[^\n]*require\\('\\./${name}\\.js'\\)`, 'm');
+  check(`The ${label} module is required lazily, so the vm suites still load main.js`,
+    requireLine.test(main) && !atModuleScope.test(main));
+}
+
+// Every Drive handler answers with the envelope. An Error crossing
+// contextBridge keeps only its message, and the kind is what decides whether
+// the UI offers a re-sign-in, a wait, or the picker.
+const driveHandlers = [...main.matchAll(/ipcMain\.handle\('(drive:[^']+)',\s*(\w+)/g)];
+check('Every Drive IPC handler answers through the typed envelope',
+  driveHandlers.length >= 8 && driveHandlers.every(match => match[2] === 'driveReply'),
+  driveHandlers.map(match => `${match[1]}:${match[2]}`).join(' '));
+
+// Verbs only. There is deliberately no way to ask for the credential itself.
+const driveBridge = (/drive: Object\.freeze\(\{([\s\S]*?)\}\)/.exec(preload) || [])[1] || '';
+check('The Drive bridge exposes verbs and no way to read the credential',
+  driveBridge.includes('connect:') && driveBridge.includes('read:')
+  && !/token|secret|clientId/i.test(driveBridge),
+  driveBridge.replace(/\s+/g, ' ').trim().slice(0, 80));
+check('Nothing in the renderer can reach a Google credential',
+  !/clientSecret|refreshToken|accessToken/.test(renderer));
+
+// Only the refresh token reaches the disk, and only through safeStorage. The
+// access token is good for an hour and can always be minted again, so storing
+// it would add a second copy of a credential for no benefit.
+check('The Google refresh token is only ever written encrypted, at 0600',
+  main.includes('safeStorage.encryptString(String(token))')
+  && /driveTokenPath\(\), encrypted, \{ mode: 0o600 \}/.test(main));
+check('The stored Google credential is the refresh token, not the access token',
+  /writeStoredRefreshToken\(session\.refreshToken\)/.test(main)
+  && !/writeStoredRefreshToken\([^)]*accessToken/.test(main));
+
+// A rotated refresh token that is not written back signs the user out at the
+// next launch, which reads as "it keeps forgetting me" rather than as a bug.
+check('A rotated refresh token is written back',
+  main.includes('driveSession.refreshToken !== refreshToken'));
+
+// Disconnect withdraws the grant at Google rather than only hiding it locally.
+check('Disconnecting revokes the grant with Google, not just locally',
+  /driveDisconnect[\s\S]{0,600}googleAuthClient\(\)\.revoke/.test(main));
+
+check('The Drive QA suite is wired into the package scripts',
+  pkg.scripts?.['qa:google-drive'] === 'node scripts/qa-google-drive.js');
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

@@ -102,6 +102,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tree: (payload) => ipcRenderer.invoke('github:tree', payload),
     read: (payload) => ipcRenderer.invoke('github:read', payload)
   }),
+  // Verbs only, for the same reason. Signing in happens entirely in the main
+  // process and the system browser; nothing here can ask for the token, and
+  // there is no path by which one reaches this context.
+  drive: Object.freeze({
+    status: () => ipcRenderer.invoke('drive:status'),
+    connect: () => ipcRenderer.invoke('drive:connect'),
+    cancelConnect: () => ipcRenderer.invoke('drive:cancel'),
+    disconnect: () => ipcRenderer.invoke('drive:disconnect'),
+    list: (payload) => ipcRenderer.invoke('drive:list', payload),
+    read: (payload) => ipcRenderer.invoke('drive:read', payload),
+    write: (payload) => ipcRenderer.invoke('drive:write', payload),
+    create: (payload) => ipcRenderer.invoke('drive:create', payload)
+  }),
   openProject: () => ipcRenderer.invoke('project:open'),
   readProjectPath: (filePath) => ipcRenderer.invoke('project:readPath', filePath),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),

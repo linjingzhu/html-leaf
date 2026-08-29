@@ -66,6 +66,7 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:github-client
+          npm run qa:google-drive
           npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version
@@ -167,6 +168,7 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:github-client
+          npm run qa:google-drive
           npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version
