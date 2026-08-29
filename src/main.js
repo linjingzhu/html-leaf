@@ -1082,6 +1082,32 @@ app.whenReady().then(() => {
   ipcMain.handle('github:tree', githubReply((_e, payload) => githubTree(payload)));
   ipcMain.handle('github:read', githubReply((_e, payload) => githubRead(payload)));
 
+  // Same envelope, same reason: the kind decides whether the UI offers a
+  // re-sign-in, a wait, or the Drive picker, so it has to survive as data.
+  const driveReply = run => async (...args) => {
+    try {
+      return { ok: true, value: await run(...args) };
+    } catch (error) {
+      const kind = error?.kind || githubTransportKind(error);
+      return {
+        ok: false,
+        kind,
+        message: kind === 'network'
+          ? driveTransportMessage(error)
+          : String(error?.message || 'Google Drive could not be reached.')
+      };
+    }
+  };
+
+  ipcMain.handle('drive:status', driveReply(() => driveStatus()));
+  ipcMain.handle('drive:connect', driveReply(() => driveConnect()));
+  ipcMain.handle('drive:cancel', driveReply(() => driveCancelConnect()));
+  ipcMain.handle('drive:disconnect', driveReply(() => driveDisconnect()));
+  ipcMain.handle('drive:list', driveReply((_e, payload) => driveList(payload)));
+  ipcMain.handle('drive:read', driveReply((_e, payload) => driveRead(payload)));
+  ipcMain.handle('drive:write', driveReply((_e, payload) => driveWrite(payload)));
+  ipcMain.handle('drive:create', driveReply((_e, payload) => driveCreate(payload)));
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1278,6 +1304,309 @@ async function githubRead({ owner, repo, ref, path: filePath } = {}) {
       baseUrl: githubClient().rawUrlFor({ owner, repo, ref, path: directory ? `${directory}/` : '' })
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Google Drive
+//
+// Google issues nothing like a personal access token, so unlike the GitHub side
+// there is no credential for the user to paste: signing in means an OAuth round
+// trip through the system browser. What that leaves behind is a refresh token,
+// and it lives here and only here - the renderer names an action and the main
+// process attaches the credential, which is why this surface is verbs rather
+// than a getToken().
+
+// Required lazily, for the same reason the GitHub client is: main.js is
+// evaluated in a bare vm context by the legacy QA suites, whose require shim
+// cannot resolve these paths.
+let googleAuthModule = null;
+function googleAuthApi() {
+  if (!googleAuthModule) googleAuthModule = require('./google-auth.js');
+  return googleAuthModule;
+}
+
+let driveModule = null;
+function driveApi() {
+  if (!driveModule) driveModule = require('./drive-client.js');
+  return driveModule;
+}
+
+function driveTokenPath() {
+  return path.join(app.getPath('userData'), 'google-token.bin');
+}
+
+function driveConfigPath() {
+  return path.join(app.getPath('userData'), 'google-oauth.json');
+}
+
+// The OAuth client identifies this application to Google, so it is build
+// configuration rather than a user secret - but it is still not something to
+// commit, and a packaged build and a developer checkout get it from different
+// places. Environment first so a release build can be stamped at package time;
+// a file in userData otherwise, which is what a developer fills in by hand.
+//
+// Google's own documentation is explicit that a desktop client secret cannot be
+// kept secret, which is exactly why this flow uses PKCE: the secret is not what
+// protects the account.
+function driveOAuthConfig() {
+  const fromEnv = {
+    clientId: String(process.env.LEAF_GOOGLE_CLIENT_ID || '').trim(),
+    clientSecret: String(process.env.LEAF_GOOGLE_CLIENT_SECRET || '').trim()
+  };
+  if (fromEnv.clientId) return fromEnv;
+  try {
+    const parsed = JSON.parse(fsSync.readFileSync(driveConfigPath(), 'utf8'));
+    return {
+      clientId: String(parsed?.clientId || '').trim(),
+      clientSecret: String(parsed?.clientSecret || '').trim()
+    };
+  } catch {
+    return { clientId: '', clientSecret: '' };
+  }
+}
+
+function driveHttpRequest(url, { method = 'GET', headers, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ method, url, redirect: 'manual' });
+    for (const [name, value] of Object.entries(headers || {})) request.setHeader(name, value);
+    request.on('response', response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      // Kept as a Buffer: a Drive download is not necessarily text, and
+      // decoding here would corrupt anything that is not UTF-8.
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks)
+      }));
+      response.on('error', reject);
+    });
+    request.on('redirect', () => { try { request.abort(); } catch {} });
+    request.on('error', reject);
+    if (body !== undefined && body !== null) request.write(body);
+    request.end();
+  });
+}
+
+let driveClientInstance = null;
+function driveClient() {
+  if (!driveClientInstance) {
+    driveClientInstance = driveApi().createDriveClient({ request: driveHttpRequest });
+  }
+  return driveClientInstance;
+}
+
+function googleAuthClient() {
+  const config = driveOAuthConfig();
+  if (!config.clientId) {
+    const error = new Error(
+      'This copy of Leaf has no Google OAuth client, so it cannot sign in to Drive. '
+      + `Add one to ${driveConfigPath()} as {"clientId": "...", "clientSecret": "..."}.`
+    );
+    error.name = 'GoogleAuthError';
+    error.kind = 'no-client';
+    throw error;
+  }
+  // Rebuilt per sign-in rather than cached, so editing the config file takes
+  // effect without a restart.
+  return googleAuthApi().createGoogleAuth({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    request: driveHttpRequest,
+    openExternal: url => shell.openExternal(url)
+  });
+}
+
+function driveTransportMessage(error) {
+  const code = String(error?.message || '');
+  if (/CERT|UNABLE_TO_VERIFY/i.test(code)) {
+    return `Leaf could not verify Google's certificate. A proxy or security tool may be intercepting the connection. (${code})`;
+  }
+  if (/ENOTFOUND|EAI_AGAIN|NAME_NOT_RESOLVED/i.test(code)) {
+    return 'Google could not be found. Check the network connection.';
+  }
+  if (/TIMED?_?OUT/i.test(code)) {
+    return 'Google did not answer in time. Try again in a moment.';
+  }
+  return `Leaf could not reach Google Drive. (${code})`;
+}
+
+// Only the refresh token reaches the disk. The access token is good for an hour
+// and can always be minted again, so storing it would add a second copy of a
+// credential for no benefit.
+async function readStoredRefreshToken() {
+  try {
+    const encrypted = await fs.readFile(driveTokenPath());
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const token = safeStorage.decryptString(encrypted);
+    return token && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredRefreshToken(token) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('This system has no secure storage, so Leaf will not keep a Google sign-in here.');
+  }
+  const encrypted = safeStorage.encryptString(String(token));
+  await fs.writeFile(driveTokenPath(), encrypted, { mode: 0o600 });
+  // writeFile only applies the mode when it creates the file.
+  try { await fs.chmod(driveTokenPath(), 0o600); } catch {}
+}
+
+// The live session, never persisted.
+let driveSession = null;
+let driveAccount = null;
+let driveSignIn = null;
+
+// Renewed a minute early, because a token that expires mid-request produces a
+// 401 the user reads as "signed out".
+const DRIVE_TOKEN_MARGIN_MS = 60 * 1000;
+
+async function driveAccessToken() {
+  if (driveSession && driveSession.accessToken
+      && driveSession.expiresAt - DRIVE_TOKEN_MARGIN_MS > Date.now()) {
+    return driveSession.accessToken;
+  }
+  const refreshToken = driveSession?.refreshToken || await readStoredRefreshToken();
+  if (!refreshToken) {
+    const error = new Error('Connect a Google account first.');
+    error.name = 'DriveError';
+    error.kind = 'no-token';
+    throw error;
+  }
+  driveSession = await googleAuthClient().refresh(refreshToken);
+  // A refresh that comes back with a different refresh token has rotated it;
+  // keeping the old one on disk would sign the user out at the next launch.
+  if (driveSession.refreshToken && driveSession.refreshToken !== refreshToken) {
+    await writeStoredRefreshToken(driveSession.refreshToken);
+  }
+  return driveSession.accessToken;
+}
+
+// Every handler funnels through here so a DriveError keeps its kind on the way
+// to the renderer. An expired grant is turned into a signed-out state rather
+// than an error the user cannot act on.
+async function withDriveToken(run) {
+  let token;
+  try {
+    token = await driveAccessToken();
+  } catch (error) {
+    if (error?.kind === 'expired') {
+      await driveForget();
+      const relayed = new Error('The Google sign-in has expired. Connect the account again.');
+      relayed.name = 'DriveError';
+      relayed.kind = 'no-token';
+      throw relayed;
+    }
+    throw error;
+  }
+  try {
+    return await run(token);
+  } catch (error) {
+    if (error instanceof driveApi().DriveError) {
+      const relayed = new Error(error.message);
+      relayed.name = 'DriveError';
+      relayed.kind = error.kind;
+      throw relayed;
+    }
+    throw error;
+  }
+}
+
+async function driveForget() {
+  driveSession = null;
+  driveAccount = null;
+  try { await fs.unlink(driveTokenPath()); } catch {}
+}
+
+async function driveStatus() {
+  const refreshToken = driveSession?.refreshToken || await readStoredRefreshToken();
+  return {
+    connected: !!refreshToken,
+    // Reported rather than hidden: on Linux safeStorage falls back to a "basic
+    // text" backend that still claims to be available, and someone storing a
+    // credential deserves to know whether the OS is really protecting it.
+    storage: githubStorageBackend(),
+    configured: !!driveOAuthConfig().clientId,
+    configPath: driveConfigPath(),
+    account: refreshToken ? driveAccount : null,
+    signingIn: !!driveSignIn
+  };
+}
+
+async function driveConnect() {
+  // A second sign-in while the browser is still open would bind another
+  // loopback port and leave the first one waiting for a callback that the user
+  // will never produce.
+  if (driveSignIn) return { pending: true };
+  const controller = new AbortController();
+  const client = googleAuthClient();
+  driveSignIn = controller;
+  try {
+    const session = await client.authorize({ signal: controller.signal });
+    if (!session.refreshToken) {
+      const error = new Error(
+        'Google did not return a renewable sign-in. Remove Leaf from your Google account permissions and try again.'
+      );
+      error.name = 'GoogleAuthError';
+      error.kind = 'auth';
+      throw error;
+    }
+    // Verified before it is stored, so a sign-in that cannot actually reach
+    // Drive never becomes a saved credential.
+    driveSession = session;
+    const identity = await driveClient().identity(session.accessToken);
+    await writeStoredRefreshToken(session.refreshToken);
+    driveAccount = { email: identity.email, name: identity.name };
+    return { ...driveAccount, storage: githubStorageBackend() };
+  } catch (error) {
+    driveSession = null;
+    throw error;
+  } finally {
+    driveSignIn = null;
+  }
+}
+
+function driveCancelConnect() {
+  driveSignIn?.abort();
+  driveSignIn = null;
+  return { cancelled: true };
+}
+
+async function driveDisconnect() {
+  const refreshToken = driveSession?.refreshToken || await readStoredRefreshToken();
+  await driveForget();
+  // Told to Google as well as forgotten locally, so "disconnect" actually
+  // withdraws the grant rather than only hiding it. Best effort: a revoke that
+  // fails must not stop Leaf forgetting the account.
+  if (refreshToken) {
+    try { await googleAuthClient().revoke(refreshToken); } catch {}
+  }
+  return { connected: false };
+}
+
+function driveList(payload = {}) {
+  return withDriveToken(token => driveClient().listFiles(token, payload || {}));
+}
+
+function driveRead({ fileId } = {}) {
+  return withDriveToken(async token => {
+    const file = await driveClient().readFile(token, { fileId });
+    // The bytes are dropped on the way out: the renderer edits text, and a
+    // Buffer would cross the bridge as a plain object of numbers anyway.
+    const { bytes, ...rest } = file;
+    return rest;
+  });
+}
+
+function driveWrite({ fileId, text } = {}) {
+  return withDriveToken(token => driveClient().writeFile(token, { fileId, text }));
+}
+
+function driveCreate({ name, text, mimeType, parents } = {}) {
+  return withDriveToken(token => driveClient().createFile(token, { name, text, mimeType, parents }));
 }
 
 app.on('window-all-closed', () => {

@@ -1381,6 +1381,278 @@ check('A GitHub URL in the drop-zone field is recognised as a repository',
   && renderer.includes("case 'connect-github': return openGithubModal();")
   && html.includes('data-action="connect-github"'));
 
+// --- Release notes ---------------------------------------------------------
+// These builds are ad-hoc signed and not notarized, so macOS refuses them on
+// first launch with a dialog that says the app is damaged. A release that ships
+// a .dmg without saying how to get past that hands the user a file that looks
+// broken. build-release.yml shipped exactly that for two releases while
+// build-macos.yml carried the instruction all along.
+const releaseWorkflows = fs.readdirSync(path.join(root, '.github', 'workflows'))
+  .filter(name => name.endsWith('.yml'))
+  .map(name => ({ name, text: read(path.join('.github', 'workflows', name)) }));
+const macPublishers = releaseWorkflows.filter(workflow =>
+  /mac-\$\{?arch|macos-artifacts|dist:mac/.test(workflow.text) && workflow.text.includes('gh release'));
+check('A workflow that publishes a macOS build exists', macPublishers.length > 0,
+  macPublishers.map(workflow => workflow.name).join(', '));
+check('Every release that ships a macOS build says how to get past Gatekeeper',
+  macPublishers.every(workflow => workflow.text.includes('xattr -dr com.apple.quarantine')),
+  macPublishers.filter(workflow => !workflow.text.includes('xattr -dr com.apple.quarantine'))
+    .map(workflow => workflow.name).join(', ') || 'all covered');
+// Right-click-Open is the bypass for a Developer ID app that is merely
+// un-notarized. It does nothing for an ad-hoc signed one, and macOS 15 removed
+// it outright, so telling anyone to try it sends them in a circle.
+check('No release note offers right-click Open as the way in',
+  macPublishers.every(workflow => !/or right-click the app and choose/i.test(workflow.text)),
+  macPublishers.filter(workflow => /or right-click the app and choose/i.test(workflow.text))
+    .map(workflow => workflow.name).join(', ') || 'none do');
+
+// --- Left panel grid ------------------------------------------------------
+// A grid whose row list is longer than its child list silently puts a child in
+// the wrong track. That is how the Documents search field ended up in a 28px
+// row it needed 45px for: the panel kept a row from a pane title that no longer
+// existed, so the input was clipped and the tree sat in the auto row with the
+// 1fr row empty below it. Counting both sides catches the whole family.
+function trackCount(value) {
+  const tracks = [];
+  let depth = 0;
+  let current = '';
+  for (const character of value) {
+    if (character === '(') depth += 1;
+    if (character === ')') depth -= 1;
+    if (/\s/.test(character) && depth === 0) {
+      if (current) tracks.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  if (current) tracks.push(current);
+  return tracks.length;
+}
+
+for (const [, panel] of html.matchAll(/data-left-panel="([a-z]+)"/g)) {
+  const section = html.slice(html.indexOf(`data-left-panel="${panel}"`));
+  const body = section.slice(0, section.indexOf('</section>'));
+  const children = [...body.matchAll(/\n\s{10}<(?:div|section|button|input)\b/g)].length;
+  const rule = new RegExp(
+    `\\.left-tab-panel\\[data-left-panel="${panel}"\\]\\{grid-template-rows:([^}]+)\\}`
+  ).exec(css);
+  if (!rule) continue;
+  const rows = trackCount(rule[1]);
+  check(`The ${panel} panel declares one grid row per child`,
+    rows === children, `${rows} rows for ${children} children`);
+}
+
+// The Documents toolbar holds a search field and a growing set of buttons. A
+// fixed two-column template wrapped the second button onto its own row, which
+// doubled the toolbar's height; flowing the buttons into auto columns keeps any
+// number of them on the line with the input.
+const searchToolbar = (/\.project-search-toolbar\{([^}]+)\}/.exec(css) || [])[1] || '';
+const toolbarButtons = [...html.matchAll(/class="tiny-btn"[^>]*>/g)].length;
+check('The Documents toolbar keeps its buttons on the search row',
+  /grid-auto-flow:\s*column/.test(searchToolbar),
+  `${toolbarButtons} tiny-btn in the sidebar; ${searchToolbar}`);
+
+// A .tiny-btn is a 28px square for a single glyph, but several carry a word.
+// A fixed width has no way to say so: Preview in the Used panel overflowed its
+// box by 13px. min-width keeps the square for glyphs and lets a label grow.
+const tinyBtnRule = (/\.panel-toggle-top,\.tiny-btn\{([^}]+)\}/.exec(css) || [])[1] || '';
+check('A labelled tiny button can grow instead of spilling out of its box',
+  /min-width:\s*28px/.test(tinyBtnRule) && !/(^|;)\s*width:/.test(tinyBtnRule),
+  tinyBtnRule.replace(/\s+/g, ' ').trim());
+const labelledTinyButtons = [...html.matchAll(/class="tiny-btn[^"]*"[^>]*>([^<]+)</g)]
+  .map(match => match[1].trim())
+  .filter(label => /[A-Za-z]{2}/.test(label));
+check('Some tiny buttons really do carry words, so the rule above matters',
+  labelledTinyButtons.length > 0, labelledTinyButtons.join(', '));
+
+// --- Google Drive wiring ---------------------------------------------------
+//
+// The Drive client and the sign-in flow are exercised for real by
+// scripts/qa-google-drive.js. What is guarded here is the wiring around them,
+// which that suite cannot see: what crosses the process boundary, and what
+// never does.
+
+const googleAuth = read('src/google-auth.js');
+const driveClient = read('src/drive-client.js');
+
+// Widening this is a compliance decision, not a refactor: drive and
+// drive.readonly are "restricted" scopes and drag the project into a paid
+// third-party security assessment. A guard is the cheapest place to notice
+// someone reaching for one.
+const restrictedScope = /auth\/drive(?:\.readonly|\.metadata|\.appdata)?(?!\.file)['"\s]/;
+check('Leaf asks Google for the drive.file scope and nothing wider',
+  googleAuth.includes("'https://www.googleapis.com/auth/drive.file'")
+  && !restrictedScope.test(googleAuth.replace(/^\s*\/\/.*$/gm, '')),
+  (googleAuth.match(/auth\/drive[^'"\s]*/g) || []).join(', '));
+
+// PKCE is what makes a desktop client secret survivable: it ships inside the
+// binary and anyone can extract it, so the proof of possession has to be the
+// verifier instead.
+checkIncludesAll('The sign-in flow proves possession with PKCE S256', googleAuth, [
+  "code_challenge_method', 'S256'",
+  'code_verifier',
+  'createHash(\'sha256\')'
+]);
+
+// Loopback on an assigned port, per RFC 8252. A wildcard bind would put the
+// callback on every interface the machine has.
+check('The sign-in listener binds loopback only',
+  /server\.listen\(0,\s*'127\.0\.0\.1'/.test(googleAuth),
+  (googleAuth.match(/server\.listen\([^)]*\)/) || [''])[0]);
+check('A callback carrying the wrong state never yields a code',
+  googleAuth.includes('if (!sameState(returned, state)) return { kind: \'state\' };')
+  && googleAuth.includes('crypto.timingSafeEqual'));
+
+// The token goes to the origins this was configured for and nowhere else, and
+// the decision is remade every hop so a redirect off Google cannot carry it.
+check('The Drive client re-decides the token host on every redirect hop',
+  driveClient.includes('tokenOrigins.has(new URL(current).origin)')
+  && !/carryToken/.test(driveClient));
+check('The Drive token host list is derived from the configured origin',
+  driveClient.includes('tokenOriginsFor(apiOrigin)'));
+
+// The same rule for the credentials themselves.
+check('Google credentials only go to the configured token endpoint',
+  googleAuth.includes('credentialOrigins.has(new URL(endpoint).origin)'));
+
+// A Google Doc has no bytes and cannot be written back through this API.
+// Offering Save on one would be offering a lie.
+check('A Google-native document is marked read-only rather than silently failing to save',
+  driveClient.includes("readOnly: !!exported")
+  && driveClient.includes("throw new DriveError('read-only'"));
+
+// main.js is evaluated in a bare vm context by the legacy QA suites, whose
+// require shim cannot resolve these paths. A module-scope require would break
+// them the moment the file loads.
+for (const [label, name] of [['Google sign-in', 'google-auth'], ['Drive client', 'drive-client']]) {
+  const requireLine = new RegExp(`require\\('\\./${name}\\.js'\\)`);
+  const atModuleScope = new RegExp(`^(?:const|let|var)[^\n]*require\\('\\./${name}\\.js'\\)`, 'm');
+  check(`The ${label} module is required lazily, so the vm suites still load main.js`,
+    requireLine.test(main) && !atModuleScope.test(main));
+}
+
+// Every Drive handler answers with the envelope. An Error crossing
+// contextBridge keeps only its message, and the kind is what decides whether
+// the UI offers a re-sign-in, a wait, or the picker.
+const driveHandlers = [...main.matchAll(/ipcMain\.handle\('(drive:[^']+)',\s*(\w+)/g)];
+check('Every Drive IPC handler answers through the typed envelope',
+  driveHandlers.length >= 8 && driveHandlers.every(match => match[2] === 'driveReply'),
+  driveHandlers.map(match => `${match[1]}:${match[2]}`).join(' '));
+
+// Verbs only. There is deliberately no way to ask for the credential itself.
+const driveBridge = (/drive: Object\.freeze\(\{([\s\S]*?)\}\)/.exec(preload) || [])[1] || '';
+check('The Drive bridge exposes verbs and no way to read the credential',
+  driveBridge.includes('connect:') && driveBridge.includes('read:')
+  && !/token|secret|clientId/i.test(driveBridge),
+  driveBridge.replace(/\s+/g, ' ').trim().slice(0, 80));
+check('Nothing in the renderer can reach a Google credential',
+  !/clientSecret|refreshToken|accessToken/.test(renderer));
+
+// Only the refresh token reaches the disk, and only through safeStorage. The
+// access token is good for an hour and can always be minted again, so storing
+// it would add a second copy of a credential for no benefit.
+check('The Google refresh token is only ever written encrypted, at 0600',
+  main.includes('safeStorage.encryptString(String(token))')
+  && /driveTokenPath\(\), encrypted, \{ mode: 0o600 \}/.test(main));
+check('The stored Google credential is the refresh token, not the access token',
+  /writeStoredRefreshToken\(session\.refreshToken\)/.test(main)
+  && !/writeStoredRefreshToken\([^)]*accessToken/.test(main));
+
+// A rotated refresh token that is not written back signs the user out at the
+// next launch, which reads as "it keeps forgetting me" rather than as a bug.
+check('A rotated refresh token is written back',
+  main.includes('driveSession.refreshToken !== refreshToken'));
+
+// Disconnect withdraws the grant at Google rather than only hiding it locally.
+check('Disconnecting revokes the grant with Google, not just locally',
+  /driveDisconnect[\s\S]{0,600}googleAuthClient\(\)\.revoke/.test(main));
+
+check('The Drive QA suite is wired into the package scripts',
+  pkg.scripts?.['qa:google-drive'] === 'node scripts/qa-google-drive.js');
+
+// The Drive panel's own logic, run rather than matched. These three functions
+// are what turn Google's answers into things the rest of Leaf understands, and
+// a string search would not notice any of them getting it wrong.
+const driveUi = (() => {
+  const vm = require('node:vm');
+  const slice = (from, to) => renderer.slice(renderer.indexOf(from), renderer.indexOf(to));
+  let counter = 0;
+  const context = {
+    uid: prefix => `${prefix}${++counter}`,
+    state: { documents: [], selectedDocumentId: null },
+    // The DOM and the rest of the app are not the subject here.
+    $: () => null, showToast: () => {}, persist: () => {}, renderAll: () => {},
+    clearInspector: () => {}, focusDocument: () => {}, setDriveError: () => {},
+    closeDriveModal: () => {}, isBinaryPage: () => false
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    slice('  function githubDocumentType(', '  async function connectGithubRepository(')
+    + slice('  function driveNodesFromFiles(', '  async function uploadPageToDrive('),
+    context
+  );
+  return {
+    nodesFrom: vm.runInContext('driveNodesFromFiles', context),
+    openDocument: vm.runInContext('openDriveDocument', context),
+    state: context.state
+  };
+})();
+
+const DRIVE_FILES = [
+  { id: 'f1', name: 'notes.md', mimeType: 'text/markdown', isFolder: false, readOnly: false, exportAs: null },
+  { id: 'f2', name: 'Plan', mimeType: 'application/vnd.google-apps.document', isFolder: false, readOnly: true, exportAs: 'text/html' },
+  { id: 'f3', name: 'Archive', mimeType: 'application/vnd.google-apps.folder', isFolder: true, readOnly: false },
+  { id: 'f4', name: 'page.html', mimeType: 'text/html', isFolder: false, readOnly: false, exportAs: null }
+];
+
+const driveNodes = driveUi.nodesFrom(DRIVE_FILES);
+check('A Drive folder does not become a Page',
+  driveNodes.length === 3 && !driveNodes.some(node => node.fileName === 'Archive'),
+  driveNodes.map(node => node.fileName).join(','));
+check('A Drive file arrives as an unloaded stub, so nothing is downloaded until it is opened',
+  driveNodes.every(node => node.remote.loaded === false && node.source === ''));
+check('A Drive file keeps its id, which is the only handle Drive has',
+  driveNodes.map(node => node.remote.driveId).join(',') === 'f1,f2,f4');
+// A Google Doc has no extension, so its type has to come from what it exports
+// as - otherwise the HTML that comes back would open as a plain image.
+check('A Google document is typed by its export format, not its name',
+  driveNodes.find(node => node.remote.driveId === 'f2').documentType === 'html',
+  driveNodes.map(node => `${node.fileName}:${node.documentType}`).join(' '));
+check('An ordinary Drive file is typed by its name',
+  driveNodes.find(node => node.remote.driveId === 'f1').documentType === 'markdown');
+check('A Google document carries its read-only state into the Page',
+  driveNodes.find(node => node.remote.driveId === 'f2').remote.readOnly === true
+  && driveNodes.find(node => node.remote.driveId === 'f1').remote.readOnly === false);
+
+driveUi.openDocument(DRIVE_FILES);
+check('Opening Drive adds one document', driveUi.state.documents.length === 1);
+driveUi.openDocument(DRIVE_FILES);
+check('Re-opening Drive does not stack a second copy of the same files',
+  driveUi.state.documents.length === 1 && driveUi.state.documents[0].nodes.length === 3,
+  `${driveUi.state.documents.length} documents, ${driveUi.state.documents[0].nodes.length} nodes`);
+driveUi.openDocument([...DRIVE_FILES, { id: 'f5', name: 'new.md', mimeType: 'text/markdown', isFolder: false }]);
+check('Re-opening Drive adds only what is new',
+  driveUi.state.documents[0].nodes.length === 4,
+  String(driveUi.state.documents[0].nodes.length));
+
+// Save on a Drive-backed page has to reach Drive. Falling through to the export
+// dialog would leave the user with a local copy that quietly stopped matching
+// the file they opened.
+check('Saving a Drive-backed page writes back to Drive instead of opening a file dialog',
+  /if\(page\.remote\?\.driveId\)return saveDrivePage\(page\);/.test(renderer));
+check('A Google document refuses the save rather than appearing to succeed',
+  /saveDrivePage[\s\S]{0,300}page\.remote\?\.readOnly[\s\S]{0,200}return false;/.test(renderer));
+// A sign-in still waiting on the browser holds a loopback socket open.
+check('Closing the Drive panel mid-sign-in cancels the loopback listener',
+  /closeDriveModal[\s\S]{0,400}drive\.cancelConnect\(\)/.test(renderer));
+check('The Drive panel is reachable from the menu',
+  html.includes('data-action="connect-drive"')
+  && renderer.includes("case 'connect-drive': return openDriveModal();"));
+// The scope is a product constraint, not a bug, so the panel says so.
+check('The Drive panel explains why a listing can be empty',
+  /Google only lets Leaf see the files it created/.test(html));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

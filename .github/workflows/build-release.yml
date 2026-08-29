@@ -66,6 +66,7 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:github-client
+          npm run qa:google-drive
           npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version
@@ -105,10 +106,34 @@ jobs:
           version="${{ needs.prepare-version.outputs.version }}"
           tag="release-v${version}"
           cat > release-notes.md <<NOTES
-          Leaf ${version} release artifacts.
+          Leaf ${version} for Windows and macOS. Every artifact here shares one version string:
+          the workflow computes it once and passes it to each platform job.
 
-          This release workflow computes the version once and passes it to every platform job,
-          so Windows and macOS artifacts from this invocation share one version string.
+          | File | Target |
+          | --- | --- |
+          | \`Leaf-Setup-${version}-x64.exe\` | Windows installer |
+          | \`Leaf-${version}-x64.zip\` | Windows portable |
+          | \`Leaf-${version}-mac-arm64.dmg\` | macOS Apple Silicon |
+          | \`Leaf-${version}-mac-x64.dmg\` | macOS Intel |
+          | \`Leaf-${version}-mac-arm64.zip\` | macOS Apple Silicon app bundle |
+          | \`Leaf-${version}-mac-x64.zip\` | macOS Intel app bundle |
+
+          ## Opening the macOS build
+
+          These builds are signed ad-hoc and are not notarized, so macOS refuses them on first
+          launch. The dialog says the app **is damaged** - it is not; that is the wording macOS
+          uses when a quarantined app carries no Developer ID signature. Move Leaf to
+          /Applications, then run:
+
+          \`\`\`bash
+          xattr -dr com.apple.quarantine /Applications/Leaf.app
+          \`\`\`
+
+          Right-clicking and choosing **Open** does not get past this, and macOS 15 removed that
+          bypass entirely. Without the command, the other way through is
+          **System Settings > Privacy & Security > Open Anyway**, right after a blocked launch.
+
+          Checksums are in \`SHA256SUMS.txt\`.
           NOTES
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "Leaf ${version}" --notes-file release-notes.md --target "$GITHUB_SHA" --prerelease
@@ -143,6 +168,7 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:github-client
+          npm run qa:google-drive
           npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version

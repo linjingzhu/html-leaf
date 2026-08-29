@@ -43,6 +43,7 @@ jobs:
           npm run qa:startup-adversarial
           npm run qa:static
           npm run qa:github-client
+          npm run qa:google-drive
           npm run qa:fidelity
           npm run qa:scripted-html-edit
           npm run qa:release-version
@@ -103,14 +104,18 @@ jobs:
           | \`Leaf-${version}-mac-arm64.zip\` | Apple Silicon app bundle |
           | \`Leaf-${version}-mac-x64.zip\` | Intel app bundle |
 
-          The build is signed ad-hoc but not notarized, so macOS blocks it on first launch.
-          After moving Leaf to /Applications, run:
+          The build is signed ad-hoc and is not notarized, so macOS refuses it on first launch.
+          The dialog says the app **is damaged** - it is not; that is the wording macOS uses when
+          a quarantined app carries no Developer ID signature. After moving Leaf to
+          /Applications, run:
 
           \`\`\`bash
           xattr -dr com.apple.quarantine /Applications/Leaf.app
           \`\`\`
 
-          or right-click the app and choose **Open**.
+          Right-clicking and choosing **Open** does not get past this, and macOS 15 removed that
+          bypass entirely. Without the command, the other way through is
+          **System Settings > Privacy & Security > Open Anyway**, right after a blocked launch.
 
           Checksums are in \`SHA256SUMS.txt\`.
           NOTES

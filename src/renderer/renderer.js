@@ -40,6 +40,7 @@
     savePageAsModal: $('#savePageAsModal'), savePageAsFormat: $('#savePageAsFormat'), aboutModal: $('#aboutModal'),
     splashModal: $('#splashModal'),
     githubModal: $('#githubModal'),
+    driveModal: $('#driveModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -523,6 +524,7 @@
       case 'about': return openAboutDialog();
       case 'splash': return openSplash();
       case 'connect-github': return openGithubModal();
+      case 'connect-drive': return openDriveModal();
       default: throw new Error(`Unknown menu action: ${action}`);
     }
   }
@@ -839,6 +841,7 @@
     const page=pageById(currentActivePageId());
     if(!page){showToast('Select a page first');return false;}
     if(isBinaryPage(page)&&!forceAs){showToast(`${page.documentType==='pdf'?'PDF':'Image'} pages are read-only. Use Save As to copy the file.`);return false;}
+    if(page.remote?.driveId)return saveDrivePage(page);
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
@@ -3042,6 +3045,7 @@
     // unchanged; the render happens again once the text arrives.
     if(nextPage.remote&&!nextPage.remote.loaded){
       ensureGithubPageLoaded(nextPage).then(loaded=>{if(loaded)renderAll();});
+      ensureDrivePageLoaded(nextPage).then(loaded=>{if(loaded)renderAll();});
     }
     if(slot==='codePreview'||slot==='codePage'){
       state.views.codePreview=nextPageId;
@@ -7587,6 +7591,310 @@
     }
   }
 
+  // ----- Google Drive -----
+  //
+  // Deliberately shaped like the GitHub panel above, because to someone using
+  // Leaf these are the same act: point at a remote place, see what is in it,
+  // open a document. Two things underneath are not the same, and both surface
+  // here rather than being smoothed over.
+  //
+  // The first is what a listing can contain. Leaf holds Google's drive.file
+  // scope, which shows it only the files it created - the wider scopes are
+  // "restricted" and cost a paid security assessment. So a fresh account lists
+  // nothing, and that is the scope working, not a failure. The panel says so.
+  //
+  // The second is the sign-in itself: it happens in the user's browser, so this
+  // has a waiting state that GitHub's paste-a-token flow never needed.
+
+  const DRIVE_MIME = {
+    html: 'text/html',
+    markdown: 'text/markdown',
+    json: 'application/json',
+    xml: 'application/xml'
+  };
+
+  let driveModalState = null;
+
+  async function drive(call) {
+    const reply = await call;
+    if (reply && reply.ok) return reply.value;
+    const error = new Error(reply?.message || 'Google Drive could not be reached.');
+    error.kind = reply?.kind || 'unknown';
+    throw error;
+  }
+
+  function driveError(error) {
+    return {
+      kind: error?.kind || 'unknown',
+      message: String(error?.message || 'Google Drive could not be reached.')
+    };
+  }
+
+  function setDriveError(error) {
+    const box = $('#driveError');
+    if (!box) return;
+    if (!error) { box.hidden = true; box.textContent = ''; return; }
+    box.hidden = false;
+    box.textContent = driveError(error).message;
+  }
+
+  async function openDriveModal() {
+    driveModalState = { files: [], signingIn: false };
+    setDriveError(null);
+    const status = await drive(window.electronAPI.drive.status())
+      .catch(() => ({ connected: false, storage: 'unavailable', configured: false }));
+    driveModalState.status = status;
+    renderDriveModal();
+    refs.driveModal.classList.add('show');
+    if (status.connected) loadDriveFiles();
+  }
+
+  function closeDriveModal() {
+    // A sign-in still waiting on the browser has a loopback socket open behind
+    // it. Closing the window has to take that down, or the next attempt binds a
+    // second port and the first waits out its whole timeout.
+    if (driveModalState?.signingIn) window.electronAPI.drive.cancelConnect().catch(() => {});
+    refs.driveModal.classList.remove('show');
+    driveModalState = null;
+  }
+
+  function renderDriveModal() {
+    const modal = driveModalState;
+    if (!modal) return;
+    const connected = !!modal.status?.connected;
+    $('#driveSignIn').hidden = connected;
+    $('#drivePick').hidden = !connected;
+    $('#driveDisconnect').hidden = !connected;
+    $('#driveUpload').hidden = !connected;
+
+    const account = $('#driveAccount');
+    account.hidden = !modal.status?.account?.email;
+    account.textContent = modal.status?.account?.email || '';
+
+    const submit = $('#driveSubmit');
+    submit.textContent = connected ? 'Open' : (modal.signingIn ? 'Waiting for your browser…' : 'Connect');
+    submit.disabled = modal.signingIn || (connected && !modal.files.some(file => !file.isFolder));
+
+    const note = $('#driveStorageNote');
+    if (!modal.status?.configured) {
+      note.textContent = 'This copy of Leaf has no Google OAuth client yet, so it cannot sign in.';
+    } else if (modal.status?.storage === 'weak') {
+      note.textContent = 'This system has no keyring, so the sign-in is stored with weak encryption.';
+    } else if (modal.status?.storage === 'unavailable') {
+      note.textContent = 'This system has no secure storage, so Leaf will not keep the sign-in.';
+    } else {
+      note.textContent = 'The sign-in is stored encrypted by your operating system.';
+    }
+
+    renderDriveFileList();
+    renderDriveUploadChoices();
+  }
+
+  function renderDriveFileList() {
+    const list = $('#driveFileList');
+    const modal = driveModalState;
+    if (!list || !modal) return;
+    list.innerHTML = '';
+    const files = modal.files.filter(file => !file.isFolder);
+    if (!files.length) {
+      const empty = document.createElement('p');
+      empty.className = 'github-note';
+      empty.textContent = modal.loading ? 'Looking…' : 'No files yet.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const file of files) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      const name = document.createElement('span');
+      name.textContent = file.name;
+      const meta = document.createElement('span');
+      meta.className = 'github-repo-meta';
+      // A Google Doc can be read but never written back, so it says so here
+      // rather than at the moment a save silently does nothing.
+      meta.textContent = file.readOnly ? 'Google Doc · read-only' : (file.mimeType || '');
+      row.append(name, meta);
+      row.addEventListener('click', () => openDriveDocument([file]));
+      list.appendChild(row);
+    }
+  }
+
+  function renderDriveUploadChoices() {
+    const select = $('#driveUploadPage');
+    if (!select) return;
+    const pages = state.documents.flatMap(document => (document.nodes || []))
+      .filter(node => node.type === 'page' && !isBinaryPage(node) && !node.remote?.driveId);
+    select.innerHTML = '';
+    for (const page of pages) {
+      const option = document.createElement('option');
+      option.value = page.id;
+      option.textContent = page.fileName || page.name;
+      select.appendChild(option);
+    }
+    $('#driveUpload').disabled = !pages.length;
+  }
+
+  async function loadDriveFiles() {
+    const modal = driveModalState;
+    if (!modal) return;
+    modal.loading = true;
+    renderDriveFileList();
+    try {
+      const listing = await drive(window.electronAPI.drive.list({}));
+      if (!driveModalState) return;
+      driveModalState.files = listing.files || [];
+    } catch (error) {
+      if (driveModalState) setDriveError(error);
+    } finally {
+      if (driveModalState) { driveModalState.loading = false; renderDriveModal(); }
+    }
+  }
+
+  async function connectDrive() {
+    const modal = driveModalState;
+    if (!modal) return;
+    setDriveError(null);
+
+    if (!modal.status?.connected) {
+      modal.signingIn = true;
+      renderDriveModal();
+      try {
+        const account = await drive(window.electronAPI.drive.connect());
+        if (!driveModalState) return;
+        driveModalState.signingIn = false;
+        driveModalState.status = { ...driveModalState.status, connected: true, account };
+        renderDriveModal();
+        await loadDriveFiles();
+        showToast(`Connected as ${account.email}`);
+      } catch (error) {
+        if (!driveModalState) return;
+        driveModalState.signingIn = false;
+        setDriveError(error);
+        renderDriveModal();
+      }
+      return;
+    }
+
+    openDriveDocument(driveModalState.files.filter(file => !file.isFolder));
+  }
+
+  // A Drive file becomes the same kind of stub a GitHub file does: named and
+  // listed straight away, downloaded only when someone opens it.
+  function driveNodesFromFiles(files) {
+    return (files || [])
+      .filter(file => file && !file.isFolder)
+      .map(file => ({
+        id: uid('page'),
+        type: 'page',
+        name: file.name.replace(/\.[^.]+$/, '') || file.name,
+        fileName: file.name,
+        documentType: githubDocumentType(file.exportAs === 'text/html' ? `${file.name}.html` : file.name),
+        source: '',
+        loadedSource: '',
+        isEmpty: true,
+        remote: {
+          driveId: file.id,
+          readOnly: !!file.readOnly,
+          mimeType: file.mimeType,
+          loaded: false
+        }
+      }));
+  }
+
+  function openDriveDocument(files) {
+    const nodes = driveNodesFromFiles(files);
+    if (!nodes.length) { setDriveError({ message: 'Nothing Leaf can open here yet.' }); return; }
+    const existing = state.documents.find(document => document.driveRoot);
+    if (existing) {
+      // Re-opening adds what is new rather than stacking a second Drive
+      // document beside the first.
+      const known = new Set((existing.nodes || []).map(node => node.remote?.driveId).filter(Boolean));
+      const added = nodes.filter(node => !known.has(node.remote.driveId));
+      existing.nodes.push(...added);
+      state.selectedDocumentId = existing.id;
+      focusDocument(existing);
+      showToast(added.length ? `Added ${added.length} file${added.length === 1 ? '' : 's'}` : 'Already open');
+    } else {
+      const project = {
+        id: uid('document'),
+        name: 'Google Drive',
+        color: '#1a73e8',
+        filePath: null,
+        expanded: true,
+        driveRoot: true,
+        nodes
+      };
+      state.documents.push(project);
+      state.selectedDocumentId = project.id;
+      focusDocument(project);
+      showToast(`Opened ${nodes.length} file${nodes.length === 1 ? '' : 's'} from Drive`);
+    }
+    closeDriveModal();
+    clearInspector();
+    renderAll();
+    persist();
+  }
+
+  async function uploadPageToDrive() {
+    const modal = driveModalState;
+    if (!modal) return;
+    const page = pageById($('#driveUploadPage')?.value);
+    if (!page) { setDriveError({ message: 'Choose a page to send.' }); return; }
+    setDriveError(null);
+    try {
+      const file = await drive(window.electronAPI.drive.create({
+        name: page.fileName || `${page.name}.html`,
+        text: page.source || '',
+        mimeType: DRIVE_MIME[page.documentType] || 'text/plain'
+      }));
+      // The page is now backed by that file, so Save writes back to it rather
+      // than opening a file dialog.
+      page.remote = { driveId: file.id, readOnly: false, mimeType: file.mimeType, loaded: true };
+      persist();
+      renderAll();
+      showToast(`Sent ${file.name} to Drive`);
+      await loadDriveFiles();
+    } catch (error) { setDriveError(error); }
+  }
+
+  // Called when a stub Page is first bound to a view, exactly as the GitHub one
+  // is. Everything downstream then sees an ordinary Page.
+  async function ensureDrivePageLoaded(page) {
+    if (!page?.remote?.driveId || page.remote.loaded) return false;
+    try {
+      const file = await drive(window.electronAPI.drive.read({ fileId: page.remote.driveId }));
+      page.source = file.text;
+      page.loadedSource = file.text;
+      page.isEmpty = !file.text.trim();
+      page.remote = { ...page.remote, readOnly: !!file.readOnly, loaded: true };
+      persist();
+      return true;
+    } catch (error) {
+      showToast(driveError(error).message);
+      return false;
+    }
+  }
+
+  // Save on a Drive-backed page writes back to Drive. Without this it would
+  // fall through to the export dialog, and the user would end up with a local
+  // copy that quietly stopped matching the file they opened.
+  async function saveDrivePage(page) {
+    if (page.remote?.readOnly) {
+      showToast('This is a Google document. Google does not let Leaf write it back.');
+      return false;
+    }
+    try {
+      await drive(window.electronAPI.drive.write({ fileId: page.remote.driveId, text: page.source }));
+      page.loadedSource = page.source;
+      renderAll(); persist();
+      showToast('Saved to Drive');
+      return true;
+    } catch (error) {
+      showToast(driveError(error).message);
+      return false;
+    }
+  }
+
   // ----- Splash -----
   // Blender's splash is a launcher rather than a progress bar: the app behind it
   // is already usable, every row does something, and clicking away dismisses it.
@@ -7669,6 +7977,27 @@
     trapDialogFocus(refs.githubModal,event);
     if(event.key==='Escape'){event.preventDefault();closeGithubModal();}
     if(event.key==='Enter'&&event.target.tagName!=='BUTTON'){event.preventDefault();connectGithubRepository();}
+  });
+
+  $('#driveCancel')?.addEventListener('click',closeDriveModal);
+  $('#driveSubmit')?.addEventListener('click',()=>{connectDrive();});
+  $('#driveUpload')?.addEventListener('click',()=>{uploadPageToDrive();});
+  $('#driveDisconnect')?.addEventListener('click',async()=>{
+    await drive(window.electronAPI.drive.disconnect()).catch(()=>{});
+    if(driveModalState){
+      driveModalState.status={...driveModalState.status,connected:false,account:null};
+      driveModalState.files=[];
+      renderDriveModal();
+    }
+    showToast('Signed out of Google Drive');
+  });
+  refs.driveModal.addEventListener('click',event=>{
+    if(event.target===refs.driveModal)closeDriveModal();
+  });
+  refs.driveModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.driveModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeDriveModal();}
+    if(event.key==='Enter'&&event.target.tagName!=='BUTTON'){event.preventDefault();connectDrive();}
   });
 
   refs.splashModal.addEventListener('click',event=>{
