@@ -1406,6 +1406,53 @@ check('No release note offers right-click Open as the way in',
   macPublishers.filter(workflow => /or right-click the app and choose/i.test(workflow.text))
     .map(workflow => workflow.name).join(', ') || 'none do');
 
+// --- Left panel grid ------------------------------------------------------
+// A grid whose row list is longer than its child list silently puts a child in
+// the wrong track. That is how the Documents search field ended up in a 28px
+// row it needed 45px for: the panel kept a row from a pane title that no longer
+// existed, so the input was clipped and the tree sat in the auto row with the
+// 1fr row empty below it. Counting both sides catches the whole family.
+function trackCount(value) {
+  const tracks = [];
+  let depth = 0;
+  let current = '';
+  for (const character of value) {
+    if (character === '(') depth += 1;
+    if (character === ')') depth -= 1;
+    if (/\s/.test(character) && depth === 0) {
+      if (current) tracks.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  if (current) tracks.push(current);
+  return tracks.length;
+}
+
+for (const [, panel] of html.matchAll(/data-left-panel="([a-z]+)"/g)) {
+  const section = html.slice(html.indexOf(`data-left-panel="${panel}"`));
+  const body = section.slice(0, section.indexOf('</section>'));
+  const children = [...body.matchAll(/\n\s{10}<(?:div|section|button|input)\b/g)].length;
+  const rule = new RegExp(
+    `\\.left-tab-panel\\[data-left-panel="${panel}"\\]\\{grid-template-rows:([^}]+)\\}`
+  ).exec(css);
+  if (!rule) continue;
+  const rows = trackCount(rule[1]);
+  check(`The ${panel} panel declares one grid row per child`,
+    rows === children, `${rows} rows for ${children} children`);
+}
+
+// The Documents toolbar holds a search field and a growing set of buttons. A
+// fixed two-column template wrapped the second button onto its own row, which
+// doubled the toolbar's height; flowing the buttons into auto columns keeps any
+// number of them on the line with the input.
+const searchToolbar = (/\.project-search-toolbar\{([^}]+)\}/.exec(css) || [])[1] || '';
+const toolbarButtons = [...html.matchAll(/class="tiny-btn"[^>]*>/g)].length;
+check('The Documents toolbar keeps its buttons on the search row',
+  /grid-auto-flow:\s*column/.test(searchToolbar),
+  `${toolbarButtons} tiny-btn in the sidebar; ${searchToolbar}`);
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

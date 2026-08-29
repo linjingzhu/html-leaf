@@ -831,7 +831,11 @@ body.document-view-only .toast{bottom:14px}
 .left-tab{height:27px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-size:11px;cursor:pointer}
 .left-tab.active{color:var(--foreground);border-bottom-color:var(--accent)}
 .left-tab-panel{display:none;min-height:0;overflow:hidden}.left-tab-panel.active{display:grid}
-.left-tab-panel[data-left-panel="project"]{grid-template-rows:var(--section-h) auto minmax(0,1fr)}
+/* Two children, two rows. The leading var(--section-h) row is a leftover from
+   when a pane title sat above the search: with it, the toolbar was placed in a
+   28px row it needs 71px for and the panel clipped the bottom of the input,
+   while the tree fell into the auto row and left the 1fr row empty beneath it. */
+.left-tab-panel[data-left-panel="project"]{grid-template-rows:auto minmax(0,1fr)}
 .left-tab-panel[data-left-panel="objects"]{grid-template-rows:auto minmax(0,1fr)}
 .left-tab-panel[data-left-panel="used"]{grid-template-rows:var(--section-h) minmax(92px,1fr) var(--splitter-hit) minmax(120px,var(--used-preview-height,42%))}
 .left-tab-panel[data-left-panel="used"].preview-collapsed{grid-template-rows:var(--section-h) minmax(0,1fr) 0 0}
@@ -882,8 +886,10 @@ body.document-view-only .document-fullscreen-target .preview-canvas{position:abs
 body.document-view-only .document-fullscreen-target .html-drop-zone{inset:0}
 body.document-view-only .document-fullscreen-target .viewport-zoom-indicator{display:none}
 .objects-toolbar{padding:8px;border-bottom:1px solid var(--border);display:grid;gap:7px}
-/* Search sits on the row the pane title used to occupy, with New Document beside it. */
-.project-search-toolbar{grid-template-columns:minmax(0,1fr) auto;align-items:center}.objects-toolbar input{height:28px;background:var(--input);color:var(--foreground);border:1px solid var(--border);border-radius:4px;padding:0 8px}
+/* Search sits on the row the pane title used to occupy, with the buttons beside it.
+   The input takes the one sized column and every button after it flows into its own
+   auto column, so adding another does not push it onto a second row. */
+.project-search-toolbar{grid-template-columns:minmax(0,1fr);grid-auto-flow:column;grid-auto-columns:auto;align-items:center}.objects-toolbar input{height:28px;background:var(--input);color:var(--foreground);border:1px solid var(--border);border-radius:4px;padding:0 8px}
 .objects-filter{display:flex;gap:3px}.objects-filter button{height:24px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:4px}.objects-filter button.active{background:var(--selected);color:var(--foreground)}
 .objects-list{overflow:auto;padding:7px}.object-category{margin:8px 5px 5px;color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase}
 .object-item{display:grid;grid-template-columns:22px 1fr auto;gap:7px;align-items:center;min-height:34px;padding:4px 6px;border-radius:4px;cursor:grab}.object-item:hover{background:var(--hover)}
