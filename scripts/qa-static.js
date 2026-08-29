@@ -1381,6 +1381,31 @@ check('A GitHub URL in the drop-zone field is recognised as a repository',
   && renderer.includes("case 'connect-github': return openGithubModal();")
   && html.includes('data-action="connect-github"'));
 
+// --- Release notes ---------------------------------------------------------
+// These builds are ad-hoc signed and not notarized, so macOS refuses them on
+// first launch with a dialog that says the app is damaged. A release that ships
+// a .dmg without saying how to get past that hands the user a file that looks
+// broken. build-release.yml shipped exactly that for two releases while
+// build-macos.yml carried the instruction all along.
+const releaseWorkflows = fs.readdirSync(path.join(root, '.github', 'workflows'))
+  .filter(name => name.endsWith('.yml'))
+  .map(name => ({ name, text: read(path.join('.github', 'workflows', name)) }));
+const macPublishers = releaseWorkflows.filter(workflow =>
+  /mac-\$\{?arch|macos-artifacts|dist:mac/.test(workflow.text) && workflow.text.includes('gh release'));
+check('A workflow that publishes a macOS build exists', macPublishers.length > 0,
+  macPublishers.map(workflow => workflow.name).join(', '));
+check('Every release that ships a macOS build says how to get past Gatekeeper',
+  macPublishers.every(workflow => workflow.text.includes('xattr -dr com.apple.quarantine')),
+  macPublishers.filter(workflow => !workflow.text.includes('xattr -dr com.apple.quarantine'))
+    .map(workflow => workflow.name).join(', ') || 'all covered');
+// Right-click-Open is the bypass for a Developer ID app that is merely
+// un-notarized. It does nothing for an ad-hoc signed one, and macOS 15 removed
+// it outright, so telling anyone to try it sends them in a circle.
+check('No release note offers right-click Open as the way in',
+  macPublishers.every(workflow => !/or right-click the app and choose/i.test(workflow.text)),
+  macPublishers.filter(workflow => /or right-click the app and choose/i.test(workflow.text))
+    .map(workflow => workflow.name).join(', ') || 'none do');
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
