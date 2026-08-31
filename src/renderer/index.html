@@ -310,6 +310,7 @@
                 <option value="custom">Custom…</option>
             </select>
               <span class="preview-runtime-badge" data-runtime-badge="single" hidden></span>
+              <button class="viewport-refresh-btn" type="button" data-refresh-slot="single" title="Reload this document from where it was opened" aria-label="Reload document">⟳</button>
               <button class="viewport-clear-btn" type="button" data-clear-slot="single" title="Clear loaded HTML">Clear</button>
               <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="single" aria-pressed="false" title="View page without app UI">⛶</button>
           </div>
@@ -350,6 +351,7 @@
                 <option value="custom">Custom…</option>
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="left" hidden></span>
+              <button class="viewport-refresh-btn" type="button" data-refresh-slot="left" title="Reload this document from where it was opened" aria-label="Reload document">⟳</button>
               <button class="viewport-clear-btn" type="button" data-clear-slot="left" title="Clear loaded HTML">Clear</button>
               <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="left" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
@@ -400,6 +402,7 @@
                 <option value="custom">Custom…</option>
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="right" hidden></span>
+              <button class="viewport-refresh-btn" type="button" data-refresh-slot="right" title="Reload this document from where it was opened" aria-label="Reload document">⟳</button>
               <button class="viewport-clear-btn" type="button" data-clear-slot="right" title="Clear loaded HTML">Clear</button>
               <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="right" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
@@ -438,6 +441,7 @@
                 <option value="custom">Custom…</option>
               </select>
               <span class="preview-runtime-badge" data-runtime-badge="codePreview" hidden></span>
+              <button class="viewport-refresh-btn" type="button" data-refresh-slot="codePreview" title="Reload this document from where it was opened" aria-label="Reload document">⟳</button>
               <button class="viewport-clear-btn" type="button" data-clear-slot="codePreview" title="Clear loaded HTML">Clear</button>
               <button class="document-fullscreen-toggle" type="button" data-document-fullscreen="codePreview" aria-pressed="false" title="View page without app UI">⛶</button>
               <span class="active-pill">Active</span>
@@ -462,6 +466,7 @@
                 <span id="codeSearchStatus" aria-live="polite"></span>
               </div>
               <div class="spacer"></div>
+              <button class="viewport-refresh-btn" type="button" data-refresh-slot="codePage" title="Reload this document from where it was opened" aria-label="Reload document">⟳</button>
               <button class="viewport-clear-btn" type="button" data-clear-slot="codePage" title="Clear loaded HTML">Clear</button>
               <span id="dirtyMark" class="dirty" hidden>● Unsaved</span>
               <span class="active-pill">Active</span>
@@ -775,6 +780,18 @@
       <button class="btn" id="clearHtmlCancel">Cancel</button>
       <button class="btn danger" id="clearHtmlConfirm">Clear without saving</button>
       <button class="btn primary" id="clearHtmlSave">Save &amp; Clear</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="reloadPageModal" role="presentation">
+  <div class="modal clear-html-modal" role="alertdialog" aria-modal="true" aria-labelledby="reloadPageTitle">
+    <h3 id="reloadPageTitle">Reload this document?</h3>
+    <p id="reloadPageMessage">This page has unsaved changes. Reloading replaces them with what is stored.</p>
+    <div class="clear-html-target" id="reloadPageTarget"></div>
+    <div class="modal-actions">
+      <button class="btn" id="reloadPageCancel">Cancel</button>
+      <button class="btn danger" id="reloadPageConfirm">Discard changes and reload</button>
     </div>
   </div>
 </div>

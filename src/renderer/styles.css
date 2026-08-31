@@ -767,6 +767,14 @@ body.document-view-only .toast{bottom:14px}
 
 
 /* v0.3.7 — isolated interactive preview and Clear HTML */
+/* Same chip as Clear, minus the destructive colouring: reloading is a recovery
+   action, not a dangerous one. The glyph turns while a fetch is in flight so a
+   slow remote read does not look like a dead button. */
+.viewport-refresh-btn{height:24px;padding:0 7px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--text-secondary);font-size:13px;line-height:1;cursor:pointer;flex:none}
+.viewport-refresh-btn:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);border-color:color-mix(in srgb,var(--accent) 28%,var(--border))}
+.viewport-refresh-btn:disabled{opacity:.35;cursor:default}
+.viewport-refresh-btn.is-busy{animation:leaf-refresh-spin .8s linear infinite;pointer-events:none}
+@keyframes leaf-refresh-spin{to{transform:rotate(360deg)}}
 .viewport-clear-btn{height:24px;padding:0 7px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--text-secondary);font-size:11px;cursor:pointer;flex:none}
 .viewport-clear-btn:hover{color:var(--error);background:color-mix(in srgb,var(--error) 8%,transparent);border-color:color-mix(in srgb,var(--error) 28%,var(--border))}
 .viewport-clear-btn:disabled{opacity:.35;cursor:default}
