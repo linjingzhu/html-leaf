@@ -1653,6 +1653,75 @@ check('The Drive panel is reachable from the menu',
 check('The Drive panel explains why a listing can be empty',
   /Google only lets Leaf see the files it created/.test(html));
 
+// --- Reloading a document from its origin ----------------------------------
+//
+// Run rather than matched. Which origin a Page is judged to have decides which
+// service gets asked for it, and one of those judgements is genuinely subtle.
+const reloadOrigin = (() => {
+  const vm = require('node:vm');
+  const start = renderer.indexOf('  function pageReloadOrigin(page){');
+  const end = renderer.indexOf('  async function readPageFromOrigin(');
+  const context = { state: { documents: [] } };
+  vm.createContext(context);
+  vm.runInContext(renderer.slice(start, end), context);
+  return {
+    of: vm.runInContext('pageReloadOrigin', context),
+    state: context.state
+  };
+})();
+
+check('A page with no file and no remote offers nothing to reload',
+  reloadOrigin.of({ id: 'p0', source: 'typed here' }) === null);
+check('A page opened from disk reloads from its file',
+  reloadOrigin.of({ id: 'p1', sourcePath: '/tmp/a.md', fileName: 'a.md' })?.kind === 'file');
+check('A page opened from a URL reloads from that URL',
+  reloadOrigin.of({ id: 'p2', baseUrl: 'https://example.com/a.html' })?.kind === 'url');
+check('A Drive page reloads from Drive',
+  reloadOrigin.of({ id: 'p3', remote: { driveId: 'f1' } })?.kind === 'drive');
+
+// The subtle one. githubRead hands the Page a raw.githubusercontent baseUrl so
+// its relative images resolve, which means a GitHub Page satisfies the URL test
+// too. Reading that URL back would fetch whatever the branch points at now and
+// lose the ref and sha this Page is pinned to, so GitHub has to win.
+reloadOrigin.state.documents = [{
+  id: 'd1',
+  remote: { owner: 'octocat', repo: 'docs', ref: 'v1.0' },
+  nodes: [{ id: 'p4' }]
+}];
+const githubPage = {
+  id: 'p4',
+  baseUrl: 'https://raw.githubusercontent.com/octocat/docs/v1.0/',
+  remote: { path: 'guide.md', sha: 'abc' }
+};
+const githubOrigin = reloadOrigin.of(githubPage);
+check('A GitHub page reloads from GitHub, not from its raw URL',
+  githubOrigin?.kind === 'github', String(githubOrigin?.kind));
+check('That reload keeps the ref the page is pinned to',
+  githubOrigin?.project?.remote?.ref === 'v1.0');
+
+// A file-backed page also carries a file: baseUrl; only http(s) means "remote".
+check('A local baseUrl is not mistaken for a remote one',
+  reloadOrigin.of({ id: 'p5', baseUrl: 'file:///tmp/a/', sourcePath: '/tmp/a/x.html' })?.kind === 'file');
+
+// Reload replaces the document, so both of these matter more than the fetch.
+check('Reloading is undoable',
+  // Anchored at line start: a commented-out pushUndo would satisfy a looser
+  // pattern, which is exactly the change this is here to catch.
+  /async function performReload[\s\S]{0,700}\n\s*pushUndo\(current\);/.test(renderer));
+check('A page with unsaved changes is asked about before it is replaced',
+  /async function reloadPage\([\s\S]{0,900}pageHasUnsavedChanges\(page\)[\s\S]{0,400}reloadPageModal\.classList\.add\('show'\)/.test(renderer));
+// The View can move on while a remote read is in flight.
+check('A reload that lands after the page is gone is dropped',
+  /const current=pageById\(page\.id\);\s*\n\s*if\(!current\) return;/.test(renderer));
+
+const refreshButtons = (html.match(/data-refresh-slot="/g) || []).length;
+const clearButtons = (html.match(/data-clear-slot="/g) || []).length;
+check('Every view pane that can clear a document can also reload it',
+  refreshButtons === clearButtons && refreshButtons === 5,
+  `${refreshButtons} refresh, ${clearButtons} clear`);
+check('The reload button says why it is unavailable rather than just dimming',
+  /button\.title=origin/.test(renderer) && /nothing to reload/.test(renderer));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {

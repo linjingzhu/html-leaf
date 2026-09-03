@@ -41,6 +41,7 @@
     splashModal: $('#splashModal'),
     githubModal: $('#githubModal'),
     driveModal: $('#driveModal'),
+    reloadPageModal: $('#reloadPageModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -3839,6 +3840,113 @@
       const page=pageById(pageIdForSlot(button.dataset.clearSlot));
       button.disabled=!pageHasRenderableContent(page);
     });
+    // Reload is offered only where there is somewhere to reload from. A page
+    // typed into Leaf and never saved has no origin, and a button that looks
+    // available but always answers "nothing to reload" is worse than a dim one.
+    $$('[data-refresh-slot]').forEach(button=>{
+      const page=pageById(pageIdForSlot(button.dataset.refreshSlot));
+      const origin=pageReloadOrigin(page);
+      button.disabled=!origin;
+      button.title=origin
+        ? `Reload from ${origin.label}`
+        : 'This page was not opened from a file or a remote, so there is nothing to reload';
+    });
+  }
+
+  // ----- Reloading a document from where it came from -----------------------
+  //
+  // A Page remembers its origin in whichever field the thing that opened it
+  // filled in, so this reads them in the order that makes one answer right:
+  // a GitHub Page also carries an https baseUrl pointing at raw.githubusercontent,
+  // and re-fetching that URL instead of asking GitHub would lose the ref and the
+  // sha the Page is pinned to.
+  function pageReloadOrigin(page){
+    if(!page) return null;
+    if(page.remote?.driveId) return {kind:'drive',label:'Google Drive'};
+    const project=state.documents.find(document=>document.nodes?.some(node=>node.id===page.id));
+    if(project?.remote&&page.remote?.path){
+      const remote=project.remote;
+      return {kind:'github',label:`${remote.owner}/${remote.repo}`,project};
+    }
+    if(/^https?:/i.test(String(page.baseUrl||''))) return {kind:'url',label:page.baseUrl,url:page.baseUrl};
+    if(page.sourcePath) return {kind:'file',label:page.fileName||page.sourcePath,filePath:page.sourcePath};
+    return null;
+  }
+
+  // Returns the fields to write onto the Page, rather than writing them here:
+  // the Page may have been closed or replaced while the read was in flight, so
+  // the caller re-checks before anything is applied.
+  async function readPageFromOrigin(page,origin){
+    if(origin.kind==='drive'){
+      const file=await drive(window.electronAPI.drive.read({fileId:page.remote.driveId}));
+      return {source:file.text,loadedSource:file.text,
+        remote:{...page.remote,readOnly:!!file.readOnly,loaded:true}};
+    }
+    if(origin.kind==='github'){
+      const remote=origin.project.remote;
+      const file=await github(window.electronAPI.github.read({
+        owner:remote.owner,repo:remote.repo,ref:remote.ref,path:page.remote.path
+      }));
+      return {source:file.text,loadedSource:file.text,baseUrl:file.baseUrl,
+        remote:{...page.remote,sha:file.sha,size:file.size,loaded:true}};
+    }
+    if(origin.kind==='url'){
+      const result=await window.electronAPI.fetchPageAtUrl(origin.url);
+      return {source:result.source||'',loadedSource:result.loadedSource??result.source??'',
+        baseUrl:result.baseUrl||origin.url,fileName:result.fileName||page.fileName};
+    }
+    const result=await window.electronAPI.readPageAtPath(origin.filePath);
+    return {source:result.source||'',loadedSource:result.loadedSource??result.source??'',
+      baseUrl:result.baseUrl??page.baseUrl,fileName:result.fileName||page.fileName,
+      documentType:result.documentType||page.documentType,
+      previewUrl:result.previewUrl??page.previewUrl};
+  }
+
+  const reloadingSlots=new Set();
+  let pendingReload=null;
+
+  async function reloadPage(slot){
+    const page=pageById(pageIdForSlot(slot));
+    const origin=pageReloadOrigin(page);
+    if(!origin) return showToast('This page was not opened from a file or a remote');
+    if(reloadingSlots.has(slot)) return;
+    // Reloading throws away edits, so it asks first - and only when there is
+    // something to lose.
+    if(pageHasUnsavedChanges(page)){
+      pendingReload={pageId:page.id,slot};
+      $('#reloadPageTarget').textContent=page.name||page.fileName||'Current Page';
+      $('#reloadPageMessage').textContent=`This page has unsaved changes. Reloading replaces them with what is stored in ${origin.label}.`;
+      refs.reloadPageModal.classList.add('show');
+      setTimeout(()=>$('#reloadPageCancel')?.focus(),0);
+      return;
+    }
+    await performReload(page,origin,slot);
+  }
+
+  function closeReloadDialog(){ refs.reloadPageModal.classList.remove('show'); pendingReload=null; }
+
+  async function performReload(page,origin,slot){
+    reloadingSlots.add(slot);
+    $$(`[data-refresh-slot="${slot}"]`).forEach(button=>button.classList.add('is-busy'));
+    try{
+      const next=await readPageFromOrigin(page,origin);
+      // The View may have moved on while the read was in flight.
+      const current=pageById(page.id);
+      if(!current) return;
+      // Undoable: a reload that silently ate an hour of work with no way back
+      // would be the worst thing this button could do.
+      pushUndo(current);
+      Object.assign(current,next);
+      current.isEmpty=!String(current.source||'').trim();
+      if(state.views.codePage===current.id) loadCodePage();
+      renderAll();persist();
+      showToast(`Reloaded from ${origin.label}`);
+    }catch(error){
+      showToast(`Could not reload: ${error.message}`);
+    }finally{
+      reloadingSlots.delete(slot);
+      $$(`[data-refresh-slot="${slot}"]`).forEach(button=>button.classList.remove('is-busy'));
+    }
   }
   function openClearHtmlDialog(slot){
     const pageId=pageIdForSlot(slot);
@@ -3871,6 +3979,20 @@
     button.addEventListener('pointerdown',event=>event.stopPropagation());
     button.addEventListener('click',event=>{ event.preventDefault(); event.stopPropagation(); openClearHtmlDialog(button.dataset.clearSlot); });
   });
+  $$('[data-refresh-slot]').forEach(button=>{
+    button.addEventListener('pointerdown',event=>event.stopPropagation());
+    button.addEventListener('click',event=>{ event.preventDefault(); event.stopPropagation(); reloadPage(button.dataset.refreshSlot); });
+  });
+  $('#reloadPageCancel').onclick=closeReloadDialog;
+  $('#reloadPageConfirm').onclick=()=>{
+    const pending=pendingReload;
+    closeReloadDialog();
+    if(!pending) return;
+    const page=pageById(pending.pageId);
+    const origin=pageReloadOrigin(page);
+    if(page&&origin) performReload(page,origin,pending.slot);
+  };
+  refs.reloadPageModal.addEventListener('keydown',event=>{ trapDialogFocus(refs.reloadPageModal,event); if(event.key==='Escape') closeReloadDialog(); });
   $('#clearHtmlCancel').onclick=closeClearHtmlDialog;
   $('#clearHtmlConfirm').onclick=clearLoadedHtml;
   $('#clearHtmlSave').onclick=async()=>{
