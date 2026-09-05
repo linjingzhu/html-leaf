@@ -990,6 +990,84 @@ function installNavigationGuards(contents) {
   });
 }
 
+// When the renderer dies, everything that could say why dies with it: there is
+// no menu, no DevTools shortcut, and the startup overlay that stays up has no
+// text the user can copy. So the main process keeps its own record. A user whose
+// app will not start can send one file instead of being asked to run a terminal
+// command they should not have to know.
+const STARTUP_LOG_MAX_BYTES = 256 * 1024;
+let startupLogFailed = false;
+
+function startupLogPath() {
+  return path.join(app.getPath('userData'), 'leaf-startup.log');
+}
+
+// Truncated per launch: the question is always "why did it break just now", and
+// an unbounded log would be both useless and a place for a document's contents
+// to accumulate.
+function beginStartupLog() {
+  try {
+    fsSync.writeFileSync(startupLogPath(),
+      `Leaf ${app.getVersion()} - ${process.platform} ${process.arch} - Electron ${process.versions.electron}\n`
+      + `${new Date().toISOString()} started\n`,
+      { mode: 0o600 });
+    startupLogFailed = false;
+  } catch {
+    startupLogFailed = true;
+  }
+}
+
+function appendStartupLog(line) {
+  if (startupLogFailed) return;
+  try {
+    const file = startupLogPath();
+    // Cheap cap rather than rotation: a renderer stuck in an error loop can
+    // write thousands of lines a second, and filling the user's disk to
+    // diagnose a startup problem would be its own bug.
+    if (fsSync.existsSync(file) && fsSync.statSync(file).size > STARTUP_LOG_MAX_BYTES) return;
+    fsSync.appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    startupLogFailed = true;
+  }
+}
+
+// Everything the renderer says at warning level or worse, plus the process-level
+// failures the renderer cannot report because it is the thing that failed.
+function recordRendererDiagnostics(contents) {
+  contents.on('console-message', (event, level, message, line, sourceId) => {
+    if (Number(level) < 2) return;
+    const where = sourceId ? ` (${String(sourceId).split('/').pop()}:${line})` : '';
+    appendStartupLog(`${Number(level) >= 3 ? 'error' : 'warn'} ${message}${where}`);
+  });
+  contents.on('preload-error', (_event, preloadPath, error) => {
+    appendStartupLog(`preload-error ${preloadPath}: ${error?.message || error}`);
+  });
+  contents.on('did-fail-load', (_event, code, description, url) => {
+    appendStartupLog(`did-fail-load ${code} ${description} ${url}`);
+  });
+  contents.on('render-process-gone', (_event, details) => {
+    appendStartupLog(`render-process-gone ${details?.reason} exit=${details?.exitCode}`);
+  });
+  contents.on('unresponsive', () => appendStartupLog('renderer unresponsive'));
+  contents.on('responsive', () => appendStartupLog('renderer responsive again'));
+}
+
+// The only way in when the window will not respond. autoHideMenuBar means there
+// is no View menu to hold this, so it is bound on the key event itself; the
+// macOS combination is the one people already have in their fingers.
+function installDevToolsShortcut(contents) {
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const key = String(input.key || '').toLowerCase();
+    const isMacToggle = process.platform === 'darwin' && input.meta && input.alt && key === 'i';
+    const isOtherToggle = process.platform !== 'darwin' && input.control && input.shift && key === 'i';
+    if (key === 'f12' || isMacToggle || isOtherToggle) {
+      event.preventDefault();
+      contents.isDevToolsOpened() ? contents.closeDevTools() : contents.openDevTools({ mode: 'detach' });
+    }
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1660,
@@ -1014,6 +1092,8 @@ function createWindow() {
     syncAppTitle();
   });
   mainWindow.webContents.on('did-finish-load', syncAppTitle);
+  recordRendererDiagnostics(mainWindow.webContents);
+  installDevToolsShortcut(mainWindow.webContents);
   mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', true));
   mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window:documentFullscreenChanged', false));
   registerPdfAnnotationCapture(mainWindow.webContents.session);
@@ -1023,7 +1103,9 @@ function createWindow() {
 app.on('web-contents-created', (_event, contents) => installNavigationGuards(contents));
 
 app.whenReady().then(() => {
+  beginStartupLog();
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:startupLogPath', () => startupLogPath());
   ipcMain.handle('file:importHtml', openHtmlFile);
   ipcMain.handle('file:readHtmlPath', (_e, filePath) => readHtmlPath(filePath));
   ipcMain.handle('file:importPages', openDocumentFiles);

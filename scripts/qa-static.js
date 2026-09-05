@@ -1722,6 +1722,31 @@ check('Every view pane that can clear a document can also reload it',
 check('The reload button says why it is unavailable rather than just dimming',
   /button\.title=origin/.test(renderer) && /nothing to reload/.test(renderer));
 
+// --- Being able to say what went wrong ------------------------------------
+//
+// A renderer that dies takes with it every way of reporting that it died: there
+// is no menu, no DevTools shortcut, and the startup overlay carries text nobody
+// can copy out. These keep the main process able to answer the question on its
+// own.
+check('The main process keeps its own record of what the renderer said',
+  /contents\.on\('console-message'/.test(main)
+  && /appendStartupLog/.test(main));
+check('It also records the failures the renderer cannot report itself',
+  ['preload-error', 'did-fail-load', 'render-process-gone', 'unresponsive']
+    .every(event => new RegExp(`contents\\.on\\('${event}'`).test(main)));
+// Per launch, because the question is always "why did it break just now" - and
+// an unbounded log is somewhere a document's contents could accumulate.
+check('The startup log is truncated each launch and written at 0600',
+  /writeFileSync\(startupLogPath\(\)[\s\S]{0,300}mode: 0o600/.test(main)
+  && /beginStartupLog\(\);/.test(main));
+// A renderer stuck in an error loop can write thousands of lines a second.
+check('The startup log cannot fill the disk',
+  /STARTUP_LOG_MAX_BYTES/.test(main)
+  && /statSync\(file\)\.size > STARTUP_LOG_MAX_BYTES/.test(main));
+check('A window that will not respond can still be opened for inspection',
+  /before-input-event/.test(main) && /openDevTools/.test(main)
+  && /key === 'f12'/.test(main));
+
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
