@@ -21,14 +21,14 @@ async function rejection(promise) {
   try { await promise; return null; } catch (error) { return error; }
 }
 
-function nodeRequest(url, { headers } = {}) {
+function nodeRequest(url, { headers, method = 'GET', body } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const request = http.request({
       hostname: target.hostname,
       port: target.port,
       path: `${target.pathname}${target.search}`,
-      method: 'GET',
+      method,
       headers
     }, response => {
       let body = '';
@@ -37,6 +37,7 @@ function nodeRequest(url, { headers } = {}) {
       response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body }));
     });
     request.on('error', reject);
+    if (body !== undefined && body !== null) request.write(body);
     request.end();
   });
 }
@@ -357,6 +358,119 @@ function makeServer(handler) {
       forbidden && forbidden.kind === 'forbidden', forbidden && forbidden.kind);
 
     pagesServer.close();
+  }
+
+  // --- writing back --------------------------------------------------------
+
+  {
+    const writes = [];
+    // Enforces the same rules GitHub does, so the client is tested against the
+    // constraints it actually has to satisfy rather than a permissive stub.
+    const HEAD = 'basecommitsha';
+    const CURRENT = { 'docs/guide.md': 'blob-v1' };
+    const branches = new Set(['main']);
+
+    const writeServer = await makeServer((request, response) => {
+      const chunks = [];
+      request.on('data', c => chunks.push(c));
+      request.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        writes.push({ method: request.method, url: request.url, body });
+        const url = request.url;
+
+        if (url === '/repos/o/r/git/ref/heads/main') {
+          respond(response, 200, { object: { sha: HEAD } }); return;
+        }
+        if (url === '/repos/o/r/git/ref/heads/gone') { respond(response, 404, { message: 'Not Found' }); return; }
+        if (url === '/repos/o/r/git/refs' && request.method === 'POST') {
+          const name = String(JSON.parse(body).ref || '').replace('refs/heads/', '');
+          if (branches.has(name)) { respond(response, 422, { message: 'Reference already exists' }); return; }
+          branches.add(name);
+          respond(response, 201, { ref: `refs/heads/${name}` }); return;
+        }
+        if (url.startsWith('/repos/o/r/contents/') && request.method === 'PUT') {
+          const path = decodeURIComponent(url.replace('/repos/o/r/contents/', ''));
+          const sent = JSON.parse(body);
+          if (sent.sha !== CURRENT[path]) {
+            respond(response, 409, { message: 'is at ' + CURRENT[path] + ' but expected ' + sent.sha }); return;
+          }
+          CURRENT[path] = 'blob-v2';
+          respond(response, 200, {
+            content: { sha: 'blob-v2' },
+            commit: { sha: 'newcommit', html_url: 'https://github.com/o/r/commit/newcommit' }
+          });
+          return;
+        }
+        if (url === '/repos/o/r/pulls' && request.method === 'POST') {
+          respond(response, 201, { number: 7, html_url: 'https://github.com/o/r/pull/7', state: 'open' }); return;
+        }
+        if (url === '/repos/o/r/pulls/7/merge' && request.method === 'PUT') {
+          respond(response, 200, { merged: true, sha: 'mergedsha', message: 'Pull Request successfully merged' }); return;
+        }
+        respond(response, 404, { message: 'Not Found' });
+      });
+    });
+    const origin = `http://127.0.0.1:${writeServer.address().port}`;
+    const client = createGitHubClient({ apiOrigin: origin, request: nodeRequest });
+
+    const head = await client.refHead('t', { owner: 'o', repo: 'r', ref: 'main' });
+    check('the base commit of a branch is read before cutting from it', head === HEAD, head);
+
+    const missing = await rejection(client.refHead('t', { owner: 'o', repo: 'r', ref: 'gone' }));
+    check('a branch that does not exist fails as not-found',
+      missing && missing.kind === 'not-found', missing && missing.kind);
+
+    const made = await client.createBranch('t', { owner: 'o', repo: 'r', ref: 'main', branch: 'leaf/guide' });
+    check('a new branch is cut from the branch that was opened',
+      made.created === true && made.from === HEAD, JSON.stringify(made));
+
+    // Saving twice in one session must add to the branch it already made.
+    const again = await client.createBranch('t', { owner: 'o', repo: 'r', ref: 'main', branch: 'leaf/guide' });
+    check('saving again reuses the branch instead of failing',
+      again.created === false && again.branch === 'leaf/guide', JSON.stringify(again));
+
+    // The sha is the whole safety property.
+    const noSha = await rejection(client.commitFile('t', {
+      owner: 'o', repo: 'r', branch: 'leaf/guide', path: 'docs/guide.md', text: 'x', message: 'm', sha: ''
+    }));
+    check('a commit without the blob it replaces is refused outright',
+      noSha && noSha.kind === 'conflict', noSha && noSha.kind);
+    check('that refusal never reached the network',
+      !writes.some(w => w.method === 'PUT' && w.url.includes('contents')));
+
+    const stale = await rejection(client.commitFile('t', {
+      owner: 'o', repo: 'r', branch: 'leaf/guide', path: 'docs/guide.md',
+      text: 'x', message: 'm', sha: 'blob-someone-else-changed-it'
+    }));
+    check('a stale sha is refused rather than overwriting someone else',
+      stale && stale.kind === 'conflict', stale && stale.kind);
+    check('the conflict tells the user to reload, not to retry',
+      stale && /reload/i.test(stale.message), stale && stale.message);
+
+    const saved = await client.commitFile('t', {
+      owner: 'o', repo: 'r', branch: 'leaf/guide', path: 'docs/guide.md',
+      text: '# new', message: 'Update guide', sha: 'blob-v1'
+    });
+    check('a commit returns the new blob so the next save is safe',
+      saved.sha === 'blob-v2' && saved.commit === 'newcommit', JSON.stringify(saved));
+    const put = writes.filter(w => w.method === 'PUT' && w.url.includes('contents')).pop();
+    check('the commit carries the branch, never the opened one',
+      JSON.parse(put.body).branch === 'leaf/guide', JSON.parse(put.body).branch);
+    check('the body is sent base64, as the contents API requires',
+      Buffer.from(JSON.parse(put.body).content, 'base64').toString('utf8') === '# new');
+
+    const pr = await client.openPullRequest('t', {
+      owner: 'o', repo: 'r', head: 'leaf/guide', base: 'main', title: 'Update guide'
+    });
+    check('the change arrives as a pull request', pr.number === 7 && pr.url.endsWith('/pull/7'), pr.url);
+    const opened = JSON.parse(writes.filter(w => w.url === '/repos/o/r/pulls').pop().body);
+    check('the pull request targets the branch that was opened',
+      opened.base === 'main' && opened.head === 'leaf/guide', `${opened.head} -> ${opened.base}`);
+
+    const merged = await client.mergePullRequest('t', { owner: 'o', repo: 'r', number: 7 });
+    check('merging reports what GitHub did', merged.merged === true && merged.sha === 'mergedsha');
+
+    writeServer.close();
   }
 
   api.close();
