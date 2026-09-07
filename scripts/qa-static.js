@@ -1848,6 +1848,50 @@ const SITE = { enabled: true, url: 'https://octocat.github.io/docs/', status: 'b
   report();
 })();
 
+// --- Committing an edit back to GitHub -------------------------------------
+//
+// Saving a repository document is a different act from saving a local file,
+// and the difference is the point: the edit goes to a branch of its own and
+// arrives as a pull request, so a stray keystroke cannot rewrite what a
+// repository publishes.
+check('Saving a repository document asks before it commits',
+  /if\(page\.remote\?\.path&&githubProjectFor\(page\)\)return openGithubCommitDialog\(page\);/.test(renderer));
+// One main-process call, because the steps are not independently useful: a
+// branch with no commit is litter, a commit with no pull request is a change
+// nobody will find.
+check('Branch, commit and pull request happen as one call',
+  /async function githubCommit\([\s\S]{0,900}createBranch[\s\S]{0,400}commitFile[\s\S]{0,400}openPullRequest/.test(main));
+check('The pull request targets the branch that was opened, and the commit does not',
+  /openPullRequest\(token, \{\s*owner, repo, head: branch, base: ref/.test(main));
+// The sha the editor was shown is what makes a lost update impossible.
+check('The commit carries the blob the editor was shown',
+  /sha: page\.remote\.sha/.test(renderer));
+check('The new blob replaces it, so a second save is checked against what was committed',
+  /page\.remote = \{ \.\.\.page\.remote, sha: result\.sha \}/.test(renderer));
+// A second edit to a different document must not collide with the first.
+const branchName = (() => {
+  const vm = require('node:vm');
+  const start = main.indexOf('function githubBranchName(');
+  const end = main.indexOf('async function githubCommit(');
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(main.slice(start, end), context);
+  return vm.runInContext('githubBranchName', context);
+})();
+check('A branch name survives a path with spaces and punctuation',
+  /^leaf\/my-notes-v2-\d{4}-\d{2}-\d{2}$/.test(branchName('a/b/My Notes (v2).HTML')),
+  branchName('a/b/My Notes (v2).HTML'));
+check('Two documents do not collide on one branch name',
+  branchName('docs/guide.md') !== branchName('docs/intro.md'),
+  `${branchName('docs/guide.md')} vs ${branchName('docs/intro.md')}`);
+check('A nameless path still yields a usable branch',
+  /^leaf\/page-\d{4}-\d{2}-\d{2}$/.test(branchName('')), branchName(''));
+check('The commit surface reaches the renderer as verbs',
+  /ipcMain\.handle\('github:commit', githubReply/.test(main)
+  && /ipcMain\.handle\('github:merge', githubReply/.test(main)
+  && /commit: \(payload\) => ipcRenderer\.invoke\('github:commit'/.test(preload)
+  && html.includes('id="githubCommitModal"'));
+
 function report() {
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');

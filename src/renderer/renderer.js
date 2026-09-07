@@ -42,6 +42,7 @@
     githubModal: $('#githubModal'),
     driveModal: $('#driveModal'),
     reloadPageModal: $('#reloadPageModal'),
+    githubCommitModal: $('#githubCommitModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
   };
@@ -843,6 +844,7 @@
     if(!page){showToast('Select a page first');return false;}
     if(isBinaryPage(page)&&!forceAs){showToast(`${page.documentType==='pdf'?'PDF':'Image'} pages are read-only. Use Save As to copy the file.`);return false;}
     if(page.remote?.driveId)return saveDrivePage(page);
+    if(page.remote?.path&&githubProjectFor(page))return openGithubCommitDialog(page);
     return new Promise(resolve=>{
       withUnsavedInspectorGuard(async()=>{
         try{
@@ -7758,6 +7760,107 @@
     }
   }
 
+  // ----- Committing back to GitHub -----------------------------------------
+  //
+  // Saving a repository document is not the same act as saving a local file,
+  // and it is not pretended to be. The edit goes to a branch of its own and
+  // arrives as a pull request, so a stray keystroke cannot rewrite what a
+  // repository publishes, and the change has somewhere to be looked at.
+
+  let githubCommitState = null;
+
+  function githubProjectFor(page) {
+    const project = state.documents.find(document => document.nodes?.some(node => node.id === page?.id));
+    return project?.remote ? project : null;
+  }
+
+  function setGithubCommitError(error) {
+    const box = $('#githubCommitError');
+    if (!box) return;
+    if (!error) { box.hidden = true; box.textContent = ''; return; }
+    box.hidden = false;
+    box.textContent = githubError(error).message;
+  }
+
+  function openGithubCommitDialog(page) {
+    const project = githubProjectFor(page);
+    if (!project) return false;
+    githubCommitState = { pageId: page.id, project, pull: null };
+    setGithubCommitError(null);
+    $('#githubCommitResult').hidden = true;
+    $('#githubCommitSubmit').disabled = false;
+    $('#githubCommitSubmit').textContent = 'Commit & open PR';
+    const remote = project.remote;
+    $('#githubCommitWhere').textContent =
+      `${remote.owner}/${remote.repo} · ${page.remote.path} · from ${remote.ref}`;
+    $('#githubCommitMessage').value = `Update ${String(page.remote.path).split('/').pop()}`;
+    refs.githubCommitModal.classList.add('show');
+    setTimeout(() => $('#githubCommitMessage')?.select(), 0);
+    return true;
+  }
+
+  function closeGithubCommitDialog() {
+    refs.githubCommitModal.classList.remove('show');
+    githubCommitState = null;
+  }
+
+  async function submitGithubCommit() {
+    const commitState = githubCommitState;
+    const page = pageById(commitState?.pageId);
+    if (!commitState || !page) return;
+    const message = String($('#githubCommitMessage')?.value || '').trim();
+    if (!message) { setGithubCommitError({ message: 'Write a commit message.' }); return; }
+    setGithubCommitError(null);
+    const submit = $('#githubCommitSubmit');
+    submit.disabled = true;
+    submit.textContent = 'Committing…';
+    const remote = commitState.project.remote;
+    try {
+      const result = await github(window.electronAPI.github.commit({
+        owner: remote.owner, repo: remote.repo, ref: remote.ref,
+        path: page.remote.path, text: page.source, message, sha: page.remote.sha
+      }));
+      // The new blob replaces the old one, so a second save from this document
+      // is checked against what was just committed rather than against the
+      // version the editor was first shown.
+      page.remote = { ...page.remote, sha: result.sha };
+      page.loadedSource = page.source;
+      renderAll(); persist();
+      if (!githubCommitState) return;
+      githubCommitState.pull = result.pull;
+      $('#githubCommitPullUrl').textContent = result.pull.url;
+      $('#githubCommitResult').hidden = !result.pull.number;
+      submit.textContent = 'Committed';
+      showToast(`Committed to ${result.branch}`);
+    } catch (error) {
+      submit.disabled = false;
+      submit.textContent = 'Commit & open PR';
+      setGithubCommitError(error);
+    }
+  }
+
+  async function mergeGithubPull() {
+    const commitState = githubCommitState;
+    const pull = commitState?.pull;
+    if (!pull?.number) return;
+    const button = $('#githubCommitMerge');
+    button.disabled = true;
+    button.textContent = 'Merging…';
+    const remote = commitState.project.remote;
+    try {
+      const merged = await github(window.electronAPI.github.merge({
+        owner: remote.owner, repo: remote.repo, number: pull.number
+      }));
+      if (!merged.merged) throw new Error(merged.message || 'GitHub did not merge that pull request.');
+      button.textContent = 'Merged';
+      showToast(`Merged pull request #${pull.number}`);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Merge';
+      setGithubCommitError(error);
+    }
+  }
+
   // ----- Google Drive -----
   //
   // Deliberately shaped like the GitHub panel above, because to someone using
@@ -8147,6 +8250,17 @@
     if(event.key==='Enter'&&event.target.tagName!=='BUTTON'){event.preventDefault();connectGithubRepository();}
   });
 
+  $('#githubCommitCancel')?.addEventListener('click',closeGithubCommitDialog);
+  $('#githubCommitSubmit')?.addEventListener('click',()=>{submitGithubCommit();});
+  $('#githubCommitMerge')?.addEventListener('click',()=>{mergeGithubPull();});
+  refs.githubCommitModal.addEventListener('click',event=>{
+    if(event.target===refs.githubCommitModal)closeGithubCommitDialog();
+  });
+  refs.githubCommitModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.githubCommitModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeGithubCommitDialog();}
+    if(event.key==='Enter'&&event.target.tagName!=='BUTTON'){event.preventDefault();submitGithubCommit();}
+  });
   $('#driveCancel')?.addEventListener('click',closeDriveModal);
   $('#driveSubmit')?.addEventListener('click',()=>{connectDrive();});
   $('#driveUpload')?.addEventListener('click',()=>{uploadPageToDrive();});

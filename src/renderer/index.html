@@ -789,6 +789,29 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="githubCommitModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="githubCommitTitle">
+    <h3 id="githubCommitTitle">Commit to GitHub</h3>
+    <p id="githubCommitWhere" class="github-note"></p>
+    <label class="modal-field">
+      <span>Commit message</span>
+      <input type="text" id="githubCommitMessage" spellcheck="false">
+    </label>
+    <p class="github-note">Leaf commits to a branch of its own and opens a pull request. The branch you opened is not changed.</p>
+    <p class="github-error" id="githubCommitError" hidden></p>
+    <div class="github-pages-row" id="githubCommitResult" hidden>
+      <span class="github-pages-label">Pull request</span>
+      <span class="github-pages-url" id="githubCommitPullUrl"></span>
+      <button type="button" class="tiny-btn" id="githubCommitMerge">Merge</button>
+    </div>
+    <div class="modal-actions">
+      <div class="spacer"></div>
+      <button class="btn" type="button" id="githubCommitCancel">Close</button>
+      <button class="btn primary" type="button" id="githubCommitSubmit">Commit &amp; open PR</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="reloadPageModal" role="presentation">
   <div class="modal clear-html-modal" role="alertdialog" aria-modal="true" aria-labelledby="reloadPageTitle">
     <h3 id="reloadPageTitle">Reload this document?</h3>
