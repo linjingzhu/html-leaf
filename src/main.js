@@ -1164,6 +1164,8 @@ app.whenReady().then(() => {
   ipcMain.handle('github:tree', githubReply((_e, payload) => githubTree(payload)));
   ipcMain.handle('github:read', githubReply((_e, payload) => githubRead(payload)));
   ipcMain.handle('github:pages', githubReply((_e, payload) => githubPages(payload)));
+  ipcMain.handle('github:commit', githubReply((_e, payload) => githubCommit(payload)));
+  ipcMain.handle('github:merge', githubReply((_e, payload) => githubMerge(payload)));
 
   // Same envelope, same reason: the kind decides whether the UI offers a
   // re-sign-in, a wait, or the Drive picker, so it has to survive as data.
@@ -1371,6 +1373,42 @@ function githubBranches({ owner, repo } = {}) {
 
 function githubTree({ owner, repo, ref } = {}) {
   return withGitHubToken(token => githubClient().readTree(token, { owner, repo, ref }));
+}
+
+// One call rather than four, because the four are not independently useful:
+// a branch with no commit on it is litter, and a commit with no pull request
+// is a change nobody will find. Either the whole thing lands or the renderer
+// hears why.
+//
+// The branch name carries the file and the day so a second edit to a different
+// document does not collide, and a second edit to the same one lands on the
+// branch already open for it.
+function githubBranchName(filePath) {
+  const stem = String(filePath || 'page').split('/').pop().replace(/\.[^.]+$/, '');
+  const safe = stem.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+  const day = new Date().toISOString().slice(0, 10);
+  return `leaf/${safe}-${day}`;
+}
+
+async function githubCommit({ owner, repo, ref, path: filePath, text, message, sha, title } = {}) {
+  return withGitHubToken(async token => {
+    const client = githubClient();
+    const branch = githubBranchName(filePath);
+    await client.createBranch(token, { owner, repo, ref, branch });
+    const commit = await client.commitFile(token, {
+      owner, repo, branch, path: filePath, text, message, sha
+    });
+    const pull = await client.openPullRequest(token, {
+      owner, repo, head: branch, base: ref,
+      title: String(title || message || `Update ${filePath}`),
+      body: `Edited in Leaf.\n\n\`${filePath}\``
+    });
+    return { branch, sha: commit.sha, commit: commit.commit, pull };
+  });
+}
+
+function githubMerge({ owner, repo, number } = {}) {
+  return withGitHubToken(token => githubClient().mergePullRequest(token, { owner, repo, number }));
 }
 
 function githubPages({ owner, repo } = {}) {

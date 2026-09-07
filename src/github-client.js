@@ -107,7 +107,7 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
   if (typeof request !== 'function') throw new Error('A request implementation is required.');
   const tokenOrigins = tokenOriginsFor(apiOrigin, rawOrigin);
 
-  async function send(url, { token, accept = 'application/vnd.github+json' } = {}) {
+  async function send(url, { token, accept = 'application/vnd.github+json', method = 'GET', body } = {}) {
     let current = url;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -116,6 +116,7 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
         'User-Agent': 'Leaf',
         'X-GitHub-Api-Version': '2022-11-28'
       };
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
       // Decided fresh from the URL about to be requested, every hop. That makes
       // it the only rule: a redirect chain that wanders off GitHub simply finds
       // its origin is not allowed, with no carried-over flag to get wrong.
@@ -123,13 +124,18 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
         headers.Authorization = `Bearer ${token}`;
       }
 
-      const response = await request(current, { headers });
+      const response = await request(current, { headers, method, body });
       const status = Number(response.status);
 
       if (status >= 300 && status < 400) {
         const location = headerValue(response.headers, 'location');
         if (!location) throw classify(status, response.headers, response.body, current);
         current = new URL(location, current).href;
+        // A redirect is the server saying where the resource lives, not an
+        // invitation to repeat a write there: replaying a commit against a
+        // location GitHub named would be a second commit nobody asked for.
+        method = 'GET';
+        body = undefined;
         continue;
       }
       if (status >= 400) throw classify(status, response.headers, response.body, current);
@@ -138,12 +144,12 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
     throw new GitHubError('redirect', 'GitHub redirected too many times.');
   }
 
-  async function json(path, { token, query } = {}) {
+  async function json(path, { token, query, method = 'GET', body } = {}) {
     const url = new URL(path, apiOrigin);
     for (const [key, value] of Object.entries(query || {})) {
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
     }
-    const response = await send(url.href, { token });
+    const response = await send(url.href, { token, method, body });
     try {
       return JSON.parse(response.body || 'null');
     } catch {
@@ -249,6 +255,110 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
         size,
         path: String(meta?.path || filePath)
       };
+    },
+
+    // ----- Writing back -----------------------------------------------------
+    //
+    // Edits never land on the branch that was opened. Each save goes to a
+    // branch of its own and arrives as a pull request, so a stray keystroke in
+    // an editor cannot rewrite what a repository publishes, and the change has
+    // somewhere to be looked at before it counts.
+
+    // The commit that a branch currently points at - the base a new branch is
+    // cut from.
+    async refHead(token, { owner, repo, ref }) {
+      const found = await json(
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/ref/heads/${encodeURIComponent(ref)}`,
+        { token }
+      );
+      const sha = String(found?.object?.sha || '');
+      if (!sha) throw new GitHubError('not-found', `GitHub could not find the branch ${ref}.`);
+      return sha;
+    },
+
+    async createBranch(token, { owner, repo, ref, branch }) {
+      const sha = await this.refHead(token, { owner, repo, ref });
+      try {
+        await json(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs`, {
+          token,
+          method: 'POST',
+          body: JSON.stringify({ ref: `refs/heads/${branch}`, sha })
+        });
+        return { branch, from: sha, created: true };
+      } catch (error) {
+        // 422 means the name is taken. Saving twice from the same document in
+        // one session should add a commit to the branch it already made, not
+        // fail in the user's face.
+        if (error?.kind === 'http' && /exists/i.test(String(error.message))) {
+          return { branch, from: sha, created: false };
+        }
+        throw error;
+      }
+    },
+
+    // The sha is the whole safety property: it is the blob the editor was
+    // shown, so GitHub refuses the write if anyone changed that file in the
+    // meantime. Committing without it would silently discard their work.
+    async commitFile(token, { owner, repo, branch, path: filePath, text, message, sha }) {
+      if (!sha) {
+        throw new GitHubError('conflict',
+          'Leaf does not know which version of this file it is replacing, so it will not overwrite it.');
+      }
+      const encodedPath = String(filePath).split('/').map(encodeURIComponent).join('/');
+      try {
+        const saved = await json(
+          `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
+          {
+            token,
+            method: 'PUT',
+            body: JSON.stringify({
+              message: String(message || `Update ${filePath}`),
+              content: Buffer.from(String(text ?? ''), 'utf8').toString('base64'),
+              sha,
+              branch
+            })
+          }
+        );
+        return {
+          sha: String(saved?.content?.sha || ''),
+          commit: String(saved?.commit?.sha || ''),
+          url: String(saved?.commit?.html_url || '')
+        };
+      } catch (error) {
+        // 409 is GitHub saying the file moved on underneath. The shared
+        // classifier reads a 409 as an empty repository, which is what it means
+        // on the tree endpoint but not here - on a write it means the sha this
+        // commit was built against is no longer the one on the branch. Renamed
+        // at the call site rather than in classify(), because both readings are
+        // correct for the endpoint that produces them.
+        if (error?.kind === 'empty-repo'
+          || (error?.kind === 'http' && /409|conflict/i.test(String(error.message)))) {
+          throw new GitHubError('conflict',
+            `${filePath} changed on GitHub since Leaf opened it. Reload it before saving.`);
+        }
+        throw error;
+      }
+    },
+
+    async openPullRequest(token, { owner, repo, head, base, title, body }) {
+      const created = await json(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`, {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ title: String(title || head), head, base, body: String(body || '') })
+      });
+      return {
+        number: Number(created?.number) || 0,
+        url: String(created?.html_url || ''),
+        state: String(created?.state || '')
+      };
+    },
+
+    async mergePullRequest(token, { owner, repo, number, method = 'merge' }) {
+      const merged = await json(
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${encodeURIComponent(number)}/merge`,
+        { token, method: 'PUT', body: JSON.stringify({ merge_method: method }) }
+      );
+      return { merged: !!merged?.merged, sha: String(merged?.sha || ''), message: String(merged?.message || '') };
     },
 
     // Where the repository is actually published. Asked rather than assembled:
