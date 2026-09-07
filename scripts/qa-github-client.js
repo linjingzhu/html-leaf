@@ -17,6 +17,10 @@ function check(name, condition, detail = '') {
 // specifically whether the Authorization header travelled.
 const seen = [];
 
+async function rejection(promise) {
+  try { await promise; return null; } catch (error) { return error; }
+}
+
 function nodeRequest(url, { headers } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
@@ -300,6 +304,60 @@ function makeServer(handler) {
   const spaced = client.rawUrlFor({ owner: 'octocat', repo: 'docs', ref: 'main', path: 'a folder/b c.md' });
   check('a raw URL encodes path segments but keeps the separators',
     spaced.endsWith('/a%20folder/b%20c.md'), spaced);
+
+  // --- the published site ------------------------------------------------
+
+  {
+    const pagesServer = await makeServer((request, response) => {
+      if (request.url === '/repos/octocat/docs/pages') {
+        respond(response, 200, {
+          url: 'https://api.github.com/repos/octocat/docs/pages',
+          status: 'built',
+          cname: null,
+          html_url: 'https://octocat.github.io/docs/'
+        });
+        return;
+      }
+      if (request.url === '/repos/octocat/branded/pages') {
+        // The case that makes asking the API worth it: this repository does
+        // not publish at octocat.github.io/branded.
+        respond(response, 200, { status: 'built', cname: 'docs.example.com', html_url: 'https://docs.example.com/' });
+        return;
+      }
+      if (request.url === '/repos/octocat/private-site/pages') {
+        respond(response, 403, { message: 'Resource not accessible by personal access token' });
+        return;
+      }
+      respond(response, 404, { message: 'Not Found' });
+    });
+    const pagesOrigin = `http://127.0.0.1:${pagesServer.address().port}`;
+    const client = createGitHubClient({ apiOrigin: pagesOrigin, request: nodeRequest });
+
+    const site = await client.pages('t', { owner: 'octocat', repo: 'docs' });
+    check('a published repository reports its site',
+      site.enabled === true && site.url === 'https://octocat.github.io/docs/', JSON.stringify(site.url));
+    check('the site URL comes from GitHub, not from a guessed pattern',
+      site.url.startsWith('https://octocat.github.io/'), site.url);
+
+    const branded = await client.pages('t', { owner: 'octocat', repo: 'branded' });
+    check('a custom domain is reported as the real address',
+      branded.url === 'https://docs.example.com/' && branded.cname === 'docs.example.com',
+      `${branded.url} / ${branded.cname}`);
+    check('guessing owner.github.io/repo would have been wrong here',
+      !branded.url.includes('github.io'), branded.url);
+
+    const off = await client.pages('t', { owner: 'octocat', repo: 'nothing' });
+    check('a repository with Pages switched off answers, rather than failing',
+      off.enabled === false && off.url === '', JSON.stringify(off));
+
+    // A token that cannot read Pages settings still opens the repository, so
+    // this has to stay distinguishable from "no site".
+    const forbidden = await rejection(client.pages('t', { owner: 'octocat', repo: 'private-site' }));
+    check('a token without Pages permission is an error, not a missing site',
+      forbidden && forbidden.kind === 'forbidden', forbidden && forbidden.kind);
+
+    pagesServer.close();
+  }
 
   api.close();
   elsewhere.close();

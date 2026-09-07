@@ -1163,6 +1163,7 @@ app.whenReady().then(() => {
   ipcMain.handle('github:branches', githubReply((_e, payload) => githubBranches(payload)));
   ipcMain.handle('github:tree', githubReply((_e, payload) => githubTree(payload)));
   ipcMain.handle('github:read', githubReply((_e, payload) => githubRead(payload)));
+  ipcMain.handle('github:pages', githubReply((_e, payload) => githubPages(payload)));
 
   // Same envelope, same reason: the kind decides whether the UI offers a
   // re-sign-in, a wait, or the Drive picker, so it has to survive as data.
@@ -1370,6 +1371,10 @@ function githubBranches({ owner, repo } = {}) {
 
 function githubTree({ owner, repo, ref } = {}) {
   return withGitHubToken(token => githubClient().readTree(token, { owner, repo, ref }));
+}
+
+function githubPages({ owner, repo } = {}) {
+  return withGitHubToken(token => githubClient().pages(token, { owner, repo }));
 }
 
 async function githubRead({ owner, repo, ref, path: filePath } = {}) {

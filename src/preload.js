@@ -100,7 +100,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     repository: (payload) => ipcRenderer.invoke('github:repo', payload),
     branches: (payload) => ipcRenderer.invoke('github:branches', payload),
     tree: (payload) => ipcRenderer.invoke('github:tree', payload),
-    read: (payload) => ipcRenderer.invoke('github:read', payload)
+    read: (payload) => ipcRenderer.invoke('github:read', payload),
+    pages: (payload) => ipcRenderer.invoke('github:pages', payload)
   }),
   // Verbs only, for the same reason. Signing in happens entirely in the main
   // process and the system browser; nothing here can ask for the token, and

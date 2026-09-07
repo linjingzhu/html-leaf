@@ -251,6 +251,30 @@ function createGitHubClient({ apiOrigin = API_ORIGIN, rawOrigin = RAW_ORIGIN, re
       };
     },
 
+    // Where the repository is actually published. Asked rather than assembled:
+    // a project with a custom domain does not live at <owner>.github.io/<repo>,
+    // and guessing that URL would send the user to a 404 for exactly the
+    // repositories whose owners cared enough to configure one.
+    async pages(token, { owner, repo }) {
+      try {
+        const site = await json(
+          `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`,
+          { token }
+        );
+        return {
+          enabled: true,
+          url: String(site?.html_url || ''),
+          status: String(site?.status || ''),
+          cname: site?.cname || null
+        };
+      } catch (error) {
+        // A repository with Pages switched off answers 404, which is an answer
+        // rather than a failure: the UI offers nothing instead of an error.
+        if (error?.kind === 'not-found') return { enabled: false, url: '', status: '', cname: null };
+        throw error;
+      }
+    },
+
     rawUrlFor({ owner, repo, ref, path: filePath }) {
       const encodedPath = String(filePath || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
       return `${rawOrigin}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(ref)}/${encodedPath}`;

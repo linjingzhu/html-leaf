@@ -7451,6 +7451,9 @@
   async function openGithubModal(prefill = null) {
     githubModalState = { prefill, repos: [], selected: null, branches: [] };
     setGithubError(null);
+    // A previous visit may have left another repository's site on the row.
+    const pagesRow = $('#githubPagesRow');
+    if (pagesRow) pagesRow.hidden = true;
     const status = await github(window.electronAPI.github.status()).catch(() => ({ connected: false, storage: 'unavailable' }));
     githubModalState.status = status;
     renderGithubModal();
@@ -7548,7 +7551,49 @@
       if (!branches?.includes(wanted) && wanted) {
         select.insertAdjacentHTML('afterbegin', `<option value="${esc(wanted)}" selected>${esc(wanted)}</option>`);
       }
+      loadGithubPagesSite(owner, repo);
     } catch (error) { setGithubError(error); }
+  }
+
+  // A repository and the site it publishes are two different things: the tree
+  // holds the Markdown someone wrote, the Pages URL serves what the build made
+  // of it. Both are worth opening, so once a repository is picked Leaf offers
+  // the second one alongside the first.
+  //
+  // Fire-and-forget rather than awaited: the branch list is what the user is
+  // waiting for, and a repository with Pages switched off must not make picking
+  // one feel slower.
+  async function loadGithubPagesSite(owner, repo) {
+    const row = $('#githubPagesRow');
+    if (row) row.hidden = true;
+    let site = null;
+    try {
+      site = await github(window.electronAPI.github.pages({ owner, repo }));
+    } catch {
+      // Never surfaced. A token without the permission to read Pages settings
+      // still opens the repository fine, and an error here would be noise
+      // about a feature the user did not ask for.
+      return;
+    }
+    // The modal may have moved to another repository while this was in flight.
+    const modal = githubModalState;
+    if (!modal || !row) return;
+    if (modal.selected?.owner !== owner || modal.selected?.name !== repo) return;
+    if (!site?.enabled || !site.url) return;
+    modal.pagesUrl = site.url;
+    $('#githubPagesUrl').textContent = site.url;
+    $('#githubPagesUrl').title = site.cname ? `Custom domain: ${site.cname}` : site.url;
+    row.hidden = false;
+  }
+
+  function openGithubPagesSite() {
+    const url = githubModalState?.pagesUrl;
+    if (!url) return;
+    closeGithubModal();
+    // The same path a typed URL takes, so the published site arrives as an
+    // ordinary Page: reloadable, searchable, and with its relative assets
+    // resolved against the site rather than against the repository.
+    openPageFromUrl(url, 'single');
   }
 
   // A repository tree is a flat path list. Turning it into Leaf nodes is the
@@ -8087,6 +8132,7 @@
     window.electronAPI.openExternalLink('https://github.com/settings/tokens/new?scopes=repo&description=Leaf')
       .catch(error=>showToast(`Could not open GitHub: ${error.message}`));
   });
+  $('#githubPagesOpen')?.addEventListener('click',openGithubPagesSite);
   $('#githubDisconnect')?.addEventListener('click',async()=>{
     await github(window.electronAPI.github.disconnect()).catch(()=>{});
     if(githubModalState){githubModalState.status={connected:false,storage:githubModalState.status?.storage};renderGithubModal();}
