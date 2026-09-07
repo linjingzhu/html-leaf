@@ -1747,6 +1747,108 @@ check('A window that will not respond can still be opened for inspection',
   /before-input-event/.test(main) && /openDevTools/.test(main)
   && /key === 'f12'/.test(main));
 
+// --- The site a repository publishes ---------------------------------------
+//
+// A repository and the site built from it are two different things, and both
+// are worth opening. The URL is asked for rather than assembled: a project with
+// a custom domain does not live at <owner>.github.io/<repo>, so a guessed
+// pattern would 404 exactly for the owners who bothered to configure one.
+const githubClientSource = read('src/github-client.js');
+check('The published site URL is asked for, never assembled from a pattern',
+  /\/pages`/.test(githubClientSource)
+  && /html_url/.test(githubClientSource)
+  && !/github\.io/.test(githubClientSource.replace(/^\s*\/\/.*$/gm, '')),
+  (githubClientSource.match(/github\.io/g) || []).join(','));
+// Pages switched off is an answer, not a failure.
+check('A repository without Pages offers nothing instead of raising an error',
+  /kind === 'not-found'\) return \{ enabled: false/.test(githubClientSource));
+check('The published site travels the whole way to the renderer',
+  /ipcMain\.handle\('github:pages', githubReply/.test(main)
+  && /pages: \(payload\) => ipcRenderer\.invoke\('github:pages'/.test(preload)
+  && html.includes('id="githubPagesRow"'));
+// The lookup must not slow down picking a repository, and must not paint a
+// stale site onto the row after the user has moved to another repository.
+check('The lookup runs beside the branch list rather than in front of it',
+  /loadGithubPagesSite\(owner, repo\);/.test(renderer)
+  && !/await loadGithubPagesSite/.test(renderer));
+check('A lookup that lands late cannot show another repository site',
+  /modal\.selected\?\.owner !== owner \|\| modal\.selected\?\.name !== repo/.test(renderer));
+// Opening it goes through the ordinary URL path, so the site behaves like any
+// other Page - reloadable, with assets resolved against the site.
+check('The published site opens as an ordinary Page',
+  /function openGithubPagesSite\(\)[\s\S]{0,400}openPageFromUrl\(url, 'single'\)/.test(renderer));
+
+// The row's own behaviour, run rather than matched. contextBridge refuses to be
+// stubbed from the page (correctly), so the click chain cannot be driven in a
+// live window; this exercises the function that decides what the row shows.
+const pagesRow = (() => {
+  const vm = require('node:vm');
+  const start = renderer.indexOf('  async function loadGithubPagesSite(');
+  const end = renderer.indexOf('  function openGithubPagesSite(');
+  const el = () => ({ hidden: true, textContent: '', title: '' });
+  const nodes = { '#githubPagesRow': el(), '#githubPagesUrl': el() };
+  const context = {
+    githubModalState: null,
+    nodes,
+    $: id => nodes[id] || null,
+    github: call => call,
+    window: { electronAPI: { github: { pages: null } } }
+  };
+  vm.createContext(context);
+  vm.runInContext(renderer.slice(start, end), context);
+  return { load: vm.runInContext('loadGithubPagesSite', context), context, nodes };
+})();
+
+const answer = value => () => Promise.resolve(value);
+const SITE = { enabled: true, url: 'https://octocat.github.io/docs/', status: 'built', cname: null };
+
+(async () => {
+  const { load, context, nodes } = pagesRow;
+  const pick = (owner, name) => { context.githubModalState = { selected: { owner, name } }; };
+
+  pick('octocat', 'docs');
+  context.window.electronAPI.github.pages = answer(SITE);
+  await load('octocat', 'docs');
+  check('A published repository shows its site on the row',
+    nodes['#githubPagesRow'].hidden === false && nodes['#githubPagesUrl'].textContent === SITE.url,
+    nodes['#githubPagesUrl'].textContent);
+
+  // Selected first, so this tests the enabled check rather than the stale guard.
+  pick('octocat', 'nosite');
+  context.window.electronAPI.github.pages = answer({ enabled: false, url: '', status: '', cname: null });
+  await load('octocat', 'nosite');
+  check('A repository without Pages leaves the row hidden',
+    nodes['#githubPagesRow'].hidden === true);
+
+  // The custom-domain case is the reason the URL is asked for at all.
+  pick('octocat', 'branded');
+  context.window.electronAPI.github.pages = answer(
+    { enabled: true, url: 'https://docs.example.com/', status: 'built', cname: 'docs.example.com' });
+  await load('octocat', 'branded');
+  check('A custom domain is shown as the address, and named in the tooltip',
+    nodes['#githubPagesUrl'].textContent === 'https://docs.example.com/'
+    && /docs\.example\.com/.test(nodes['#githubPagesUrl'].title),
+    nodes['#githubPagesUrl'].title);
+
+  // A slow answer for a repository the user has already navigated away from.
+  pick('octocat', 'other');
+  context.window.electronAPI.github.pages = answer(SITE);
+  await load('octocat', 'docs');
+  check('A late answer for an abandoned repository is dropped',
+    nodes['#githubPagesRow'].hidden === true);
+
+  // A token that cannot read Pages settings still opens the repository.
+  pick('octocat', 'docs');
+  context.window.electronAPI.github.pages = () => Promise.reject(Object.assign(new Error('nope'), { kind: 'forbidden' }));
+  let threw = false;
+  try { await load('octocat', 'docs'); } catch { threw = true; }
+  check('A refused Pages lookup is silent rather than an error the user sees',
+    !threw && nodes['#githubPagesRow'].hidden === true);
+
+  report();
+})();
+
+function report() {
 console.log('\nLeaf v0.5.16 static QA');
 console.log('=======================');
 for (const item of checks) {
@@ -1755,3 +1857,4 @@ for (const item of checks) {
 const passed = checks.filter(item => item.pass).length;
 console.log(`\n${passed}/${checks.length} checks passed.`);
 if (process.exitCode) process.exit(process.exitCode);
+}

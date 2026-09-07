@@ -1158,6 +1158,12 @@ body.is-resizing-row iframe{pointer-events:none!important}
 .github-repo-list button:hover{background:var(--hover)}
 .github-repo-list button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
 .github-repo-meta{flex:none;color:var(--muted);font-size:10px}
+/* Only appears for a repository that actually publishes one, so it reads as an
+   offer rather than an empty field. The URL takes the slack and truncates: a
+   Pages address with a long path must not push the button off the row. */
+.github-pages-row{display:flex;align-items:center;gap:8px;min-width:0}
+.github-pages-label{flex:none;color:var(--muted);font-size:11px}
+.github-pages-url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
 .github-error{
   margin:10px 0 0;padding:7px 9px;border-radius:var(--radius-control);
   background:rgba(220,80,80,.12);color:#d05a5a;font-size:11px;line-height:1.45
