@@ -3592,6 +3592,7 @@
     if(empty){
       configureFrameRuntime(frame,null,slot);
       updateInspectorEditControls();
+      delete frame.dataset.pdfLoadedKey;
       frame.srcdoc='<!doctype html><html style="background:transparent;color-scheme:dark"><body></body></html>';
       return;
     }
@@ -3600,10 +3601,23 @@
     if(page.documentType==='pdf'){
       frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
       frame.removeAttribute('srcdoc');
-      frame.src=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      const targetUrl=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      const forceReload=frame.dataset.pdfForceReload==='1';
+      if(forceReload)delete frame.dataset.pdfForceReload;
+      // renderAll() runs from roughly forty unrelated actions - rename, paste,
+      // tree move, save, a GitHub commit - and every one of them used to force
+      // a full re-read of a possibly huge PDF from disk even though it was
+      // already open and unchanged. Skip the reassignment when nothing this
+      // frame is showing has actually changed; markPageFramesForForceReload
+      // is the one legitimate way to insist anyway.
+      const loadKey=`${page.id}\u0000${targetUrl}`;
+      if(!forceReload&&frame.dataset.pdfLoadedKey===loadKey)return;
+      frame.dataset.pdfLoadedKey=loadKey;
+      frame.src=targetUrl;
       return;
     }
     frame.removeAttribute('src');
+    delete frame.dataset.pdfLoadedKey;
     if(isDirectSourceEdit(page,slot)){
       const directToken=uid('direct-source');
       frame.dataset.directSourceToken=directToken;
@@ -3940,6 +3954,7 @@
       pushUndo(current);
       Object.assign(current,next);
       current.isEmpty=!String(current.source||'').trim();
+      markPageFramesForForceReload(current.id);
       if(state.views.codePage===current.id) loadCodePage();
       renderAll();persist();
       showToast(`Reloaded from ${origin.label}`);
@@ -6764,6 +6779,19 @@
     if(frame===refs.rightFrame) return state.views.right;
     if(frame===refs.codePreviewFrame) return state.views.codePreview;
     return null;
+  }
+
+  // Chromium's native PDF viewer fully re-parses the document on every
+  // navigation, even one to a byte-identical file:// URL - so renderFrameContent
+  // skips reassigning a pdf frame's src when it is already showing that exact
+  // page. That skip is wrong for one caller: reloading a local file whose bytes
+  // changed on disk but whose path (and therefore URL) did not. This marks
+  // every frame currently bound to a page so the next render is forced through,
+  // regardless of the dedup key.
+  function markPageFramesForForceReload(pageId){
+    [refs.singleFrame,refs.leftFrame,refs.rightFrame,refs.codePreviewFrame].forEach(frame=>{
+      if(frame&&frameToPageId(frame)===pageId)frame.dataset.pdfForceReload='1';
+    });
   }
 
   function syncFrameToPage(frame,page,{mutationKind='dom-serialize'}={}){
