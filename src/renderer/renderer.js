@@ -3593,6 +3593,7 @@
       configureFrameRuntime(frame,null,slot);
       updateInspectorEditControls();
       delete frame.dataset.pdfLoadedKey;
+      delete frame.dataset.imageLoadedKey;
       frame.srcdoc='<!doctype html><html style="background:transparent;color-scheme:dark"><body></body></html>';
       return;
     }
@@ -3601,9 +3602,10 @@
     if(page.documentType==='pdf'){
       frame.dataset.snapshotToken='';frame.dataset.snapshotPageId=page.id;
       frame.removeAttribute('srcdoc');
+      delete frame.dataset.imageLoadedKey;
       const targetUrl=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
-      const forceReload=frame.dataset.pdfForceReload==='1';
-      if(forceReload)delete frame.dataset.pdfForceReload;
+      const forceReload=frame.dataset.binaryForceReload==='1';
+      if(forceReload)delete frame.dataset.binaryForceReload;
       // renderAll() runs from roughly forty unrelated actions - rename, paste,
       // tree move, save, a GitHub commit - and every one of them used to force
       // a full re-read of a possibly huge PDF from disk even though it was
@@ -3616,8 +3618,35 @@
       frame.src=targetUrl;
       return;
     }
+    if(page.documentType==='image'){
+      // The wrapper doc below embeds a render token that is different on every
+      // call, so reassigning srcdoc unconditionally - same as every other
+      // non-pdf type here - forces Chromium to fully reload it, and the
+      // <img src="file:..."> inside re-fetches and re-decodes from disk even
+      // when this frame is already showing that exact image unchanged. Same
+      // fix as the pdf branch above: skip the reassignment when nothing
+      // changed, and let markPageFramesForForceReload insist anyway.
+      delete frame.dataset.pdfLoadedKey;
+      const targetUrl=page.previewUrl||`file:///${String(page.sourcePath||'').replace(/\\/g,'/')}`;
+      const forceReload=frame.dataset.binaryForceReload==='1';
+      if(forceReload)delete frame.dataset.binaryForceReload;
+      const loadKey=`${page.id}\u0000${targetUrl}`;
+      if(!forceReload&&frame.dataset.imageLoadedKey===loadKey)return;
+      frame.dataset.imageLoadedKey=loadKey;
+      frame.removeAttribute('src');
+      frame.dataset.directSourceToken='';
+      frame.dataset.directSourcePageId='';
+      frame.dataset.snapshotToken='';
+      frame.dataset.snapshotPageId=page.id;
+      renderedSnapshotCache.delete(frame);
+      const nextSource=buildPreviewSource(page,{allowScripts:false});
+      const renderToken=`render-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+      frame.srcdoc=nextSource.replace('</head>',`<meta data-editor-overlay="1" name="hbe-render-token" content="${renderToken}"><style data-editor-overlay="1" data-leaf-scrollbar-runtime="1">${runtimePreviewScrollbarCss(previewZoomForSlot(slot))}</style></head>`);
+      return;
+    }
     frame.removeAttribute('src');
     delete frame.dataset.pdfLoadedKey;
+    delete frame.dataset.imageLoadedKey;
     if(isDirectSourceEdit(page,slot)){
       const directToken=uid('direct-source');
       frame.dataset.directSourceToken=directToken;
@@ -6782,15 +6811,17 @@
   }
 
   // Chromium's native PDF viewer fully re-parses the document on every
-  // navigation, even one to a byte-identical file:// URL - so renderFrameContent
-  // skips reassigning a pdf frame's src when it is already showing that exact
-  // page. That skip is wrong for one caller: reloading a local file whose bytes
-  // changed on disk but whose path (and therefore URL) did not. This marks
-  // every frame currently bound to a page so the next render is forced through,
-  // regardless of the dedup key.
+  // navigation, even one to a byte-identical file:// URL, and reassigning an
+  // <iframe>'s srcdoc to a new string (which the image preview wrapper does
+  // unconditionally) forces the same full reload - so renderFrameContent
+  // skips re-rendering a pdf or image frame when it is already showing that
+  // exact page. That skip is wrong for one caller: reloading a local file
+  // whose bytes changed on disk but whose path (and therefore URL) did not.
+  // This marks every frame currently bound to a page so the next render is
+  // forced through, regardless of either dedup key.
   function markPageFramesForForceReload(pageId){
     [refs.singleFrame,refs.leftFrame,refs.rightFrame,refs.codePreviewFrame].forEach(frame=>{
-      if(frame&&frameToPageId(frame)===pageId)frame.dataset.pdfForceReload='1';
+      if(frame&&frameToPageId(frame)===pageId)frame.dataset.binaryForceReload='1';
     });
   }
 
