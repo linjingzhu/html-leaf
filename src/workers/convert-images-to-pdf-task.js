@@ -1,5 +1,5 @@
-// Images -> PDF, ported from pdf-convertor's app/convert/page.tsx
-// (ImagesToPdf). Runs inside the forked utility process (see
+// Images -> PDF, ported from an earlier web implementation's ImagesToPdf.
+// Runs inside the forked utility process (see
 // runBackgroundTask in src/main.js) for the same reason compress/ocr do --
 // decoding and re-embedding several full-size images can take real time.
 const fs = require('node:fs/promises');
@@ -44,7 +44,7 @@ module.exports = async function convertImagesToPdfTask(payload) {
     // A native decode to read dimensions before embedding -- much cheaper
     // than pdf-lib's own JS-based PNG decode/re-encode, and lets an
     // oversized image be rejected before that expensive path ever runs.
-    // pdf-convertor does this with the browser's createImageBitmap; this
+    // The original did this with the browser's createImageBitmap; this
     // background process has no browser, so @napi-rs/canvas's loadImage
     // (already a dependency, used by compress/ocr) stands in for it.
     let bitmap;

@@ -986,12 +986,12 @@
   }
 
   // --- PDF tools: Convert (PDF <-> images) ------------------------------------
-  // Ported from pdf-convertor's app/convert/page.tsx. Both directions run in
-  // the same utility-process task harness compress/OCR use (not the renderer,
-  // despite that being pdf-convertor's own client-side approach -- Leaf's
-  // renderer has contextIsolation+nodeIntegration both off, so it cannot
-  // require() pdfjs-dist/pdf-lib directly; the utility process already has
-  // the native-dependency-free run loop this needs).
+  // Ported from an earlier web implementation's PDF<->image conversion. Both
+  // directions run in the same utility-process task harness compress/OCR use
+  // (not the renderer, despite that being how the original did it client-side
+  // in a browser -- Leaf's renderer has contextIsolation+nodeIntegration both
+  // off, so it cannot require() pdfjs-dist/pdf-lib directly; the utility
+  // process already has the native-dependency-free run loop this needs).
   //
   // PDF -> images has no confirmation step (nothing on disk is replaced, so
   // there is nothing to confirm) and lands as a new sibling Group next to the

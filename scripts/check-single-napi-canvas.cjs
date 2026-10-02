@@ -4,7 +4,7 @@
 // separate copies (e.g. the top-level pin and pdfjs-dist's own
 // optionalDependency range drift apart), pdf.js hands image data from one
 // copy's native module to a canvas context created by the other -- confirmed
-// in the sibling pdf-convertor repository to segfault or hang the process on
+// (in an earlier project) to segfault or hang the process on
 // any JPEG-containing PDF page. The package.json "overrides" entry is
 // supposed to make this impossible by forcing every resolution of
 // @napi-rs/canvas to the top-level version; this check catches the case
@@ -28,8 +28,8 @@ if (fs.existsSync(nestedPkg)) {
   console.error(
     "ERROR: node_modules/pdfjs-dist/node_modules/@napi-rs/canvas exists -- " +
       "pdfjs-dist and src/workers/ocr-task.js would load two separate " +
-      "@napi-rs/canvas installs, reproducing a real crash/hang found in the " +
-      "sibling pdf-convertor repository. Check package.json's \"overrides\" " +
+      "@napi-rs/canvas installs, reproducing a real crash/hang found earlier. " +
+      "Check package.json's \"overrides\" " +
       "entry for \"@napi-rs/canvas\" and re-run npm install.",
   );
   process.exit(1);

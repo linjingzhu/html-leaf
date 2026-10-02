@@ -1070,9 +1070,9 @@ function installDevToolsShortcut(contents) {
 
 // Heavy, CPU-bound PDF work (OCR recognition, image re-encoding) runs in a
 // forked utility process rather than inline here. This process's main thread
-// also owns the renderer's IPC and the whole app's UI, unlike pdf-convertor's
-// serverless-per-request model where blocking one request never affected
-// anyone else -- blocking this process for the several seconds a real OCR or
+// also owns the renderer's IPC and the whole app's UI, unlike a serverless
+// per-request model where blocking one request never affects anyone else --
+// blocking this process for the several seconds a real OCR or
 // compress pass can take would freeze the whole app. One task runs at a time;
 // a second request while one is in flight is rejected (kind: 'busy') rather
 // than queued, since there is exactly one window to report progress to.
@@ -1369,7 +1369,7 @@ app.whenReady().then(() => {
   // extractText:run reads the PDF's own text layer (fast, exact -- not OCR)
   // and returns it as Markdown for the UI to preview. Nothing is written
   // until extractText:save, which asks where via a save dialog (the desktop
-  // equivalent of pdf-convertor's browser download) and, on success, also
+  // equivalent of a browser download) and, on success, also
   // reports the new file's path so the renderer can offer it as a new
   // sibling Page the same way OCR's retyped PDF is offered.
   ipcMain.handle('extractText:run', pdfToolReply((_e, payload) => runBackgroundTask('extract-text', { ...payload, pdfjsRoot })));

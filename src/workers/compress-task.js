@@ -1,5 +1,5 @@
-// PDF compression, ported from pdf-convertor's app/api/compress/route.ts.
-// Runs inside the forked utility process (see runBackgroundTask in
+// PDF compression, ported from an earlier web implementation's compression
+// route. Runs inside the forked utility process (see runBackgroundTask in
 // src/main.js) -- a full re-save plus several sharp re-encodes can take
 // multiple seconds on a large scan, and this process's main thread also
 // owns the renderer's UI, so this stays off it.

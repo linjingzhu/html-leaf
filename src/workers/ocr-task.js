@@ -1,5 +1,5 @@
-// OCR + "retyped PDF" output, ported from pdf-convertor's app/api/ocr/route.ts.
-// Runs inside the forked utility process (see runBackgroundTask in
+// OCR + "retyped PDF" output, ported from an earlier web implementation's
+// OCR route. Runs inside the forked utility process (see runBackgroundTask in
 // src/main.js) -- rasterizing pages, running Tesseract, and embedding a font
 // can take seconds to tens of seconds, and this process's main thread also
 // owns the renderer's UI, so this stays off it.
@@ -35,7 +35,7 @@ const {
 
 const OCR_LANGUAGES = ["eng", "kor", "eng+kor"];
 const DEFAULT_OCR_LANGUAGE = "eng";
-// pdf-convertor capped this at 5 pages for a serverless function's timeout;
+// The original capped this at 5 pages for a serverless function's timeout;
 // that constraint doesn't apply to a desktop app's own background process,
 // but a bound is still worth keeping for v1 rather than letting one request
 // run unboundedly long -- revisit if a real document needs more.
@@ -66,9 +66,9 @@ class NodeCanvasFactory {
 }
 
 // --- Image/table preservation ----------------------------------------------
-// Tesseract's own `blocktype` classification was checked empirically (in
-// pdf-convertor) and found unreliable for separating text from non-text
-// regions. Instead, any part of the rendered page NOT covered by a
+// Tesseract's own `blocktype` classification was checked empirically and
+// found unreliable for separating text from non-text regions. Instead, any
+// part of the rendered page NOT covered by a
 // recognized text line, but not blank either, is treated as an image/table
 // to preserve verbatim.
 const INK_CELL_SIZE = 12;
@@ -198,8 +198,8 @@ async function buildRetypedPdf(fontBytes, pagesOfBlocks, pageRenderScales) {
   await assertFontDataUsable(fontBytes);
   const outPdf = await PDFDocument.create();
   outPdf.registerFontkit(fontkit);
-  // Always unsubsetted -- subsetting was found (in pdf-convertor) to corrupt
-  // glyph output across repeated drawText calls against one embedded font.
+  // Always unsubsetted -- subsetting was found (empirically, earlier) to
+  // corrupt glyph output across repeated drawText calls against one embedded font.
   const font = await outPdf.embedFont(fontBytes, { subset: false, features: NON_SUBSTITUTING_FONT_FEATURES });
   const { pageCount, instructions } = layoutRetypedPages(pagesOfBlocks, pageRenderScales, font);
   if (pageCount === 0) return null;

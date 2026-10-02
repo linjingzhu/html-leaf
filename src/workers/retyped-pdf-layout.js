@@ -1,5 +1,5 @@
-// Ported verbatim (logic unchanged, TS types stripped) from pdf-convertor's
-// app/lib/retyped-pdf.ts. Pure layout/pagination logic for the OCR "retyped
+// Ported verbatim (logic unchanged, TS types stripped) from an earlier web
+// implementation's retyped-pdf module. Pure layout/pagination logic for the OCR "retyped
 // PDF" output: takes already-recognized, structured OCR data (tesseract.js's
 // data.blocks[].paragraphs[].lines[], each line already measured against the
 // source page's real geometry) and produces a flat list of draw instructions
@@ -30,8 +30,8 @@ const RETYPED_MIN_FONT_SIZE = 9;
 const RETYPED_MAX_FONT_SIZE = 32;
 const RETYPED_BASE_FONT_SIZE = 11;
 
-// Measured directly in pdf-convertor (a pdf-lib-drawn line's Tesseract-
-// recognized bbox height, converted from rendered-canvas pixels to PDF
+// Measured directly in the original implementation (a pdf-lib-drawn line's
+// Tesseract-recognized bbox height, converted from rendered-canvas pixels to PDF
 // points via the page's own render scale, is consistently ~1.06x the font's
 // point size across 10-40pt with the bundled Noto Sans KR font). Not exact
 // for every font/script, so the result is clamped, not trusted blindly.

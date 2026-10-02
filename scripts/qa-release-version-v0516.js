@@ -32,7 +32,7 @@ includesAll('Build version script honors one explicit shared version', bump, [
 
 // CI itself (build-desktop.yml) deliberately does NOT call bump-build-version
 // or compute-release-version -- it tags straight from the committed
-// package.json version, exactly like pdf-convertor's approved pattern this
+// package.json version, exactly like an already-approved pattern this
 // mirrors (see .ai/reports/OWNER_ACTIONS.md). That is what prevents the
 // drift that caused package.json to read 0.5.16 while CI had already auto-
 // bumped its way to windows-v0.5.239: there is no auto-bump left to drift.

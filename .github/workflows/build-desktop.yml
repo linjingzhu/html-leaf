@@ -16,8 +16,8 @@ name: Build Desktop App
 # (no push/tag trigger, so there is no automatic path left for the kind of
 # accidental duplicate release the old push-trigger bug caused), and no
 # version-bumping step -- the release tag is read straight from the
-# committed package.json version plus this run's own number, mirroring the
-# approved pattern in the sibling pdf-convertor repository.
+# committed package.json version plus this run's own number, mirroring an
+# already-approved pattern from an earlier project.
 on:
   workflow_dispatch: {}
 

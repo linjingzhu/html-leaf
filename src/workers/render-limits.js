@@ -1,4 +1,4 @@
-// Ported verbatim (logic unchanged) from pdf-convertor's app/lib/render-limits.ts.
+// Ported verbatim (logic unchanged) from an earlier web implementation's render-limits module.
 // The output bitmap alone uses four bytes per pixel; PNG encoding and OCR
 // need additional copies. Check rounded dimensions before any allocation.
 const MAX_RENDER_PIXELS = 16_000_000;

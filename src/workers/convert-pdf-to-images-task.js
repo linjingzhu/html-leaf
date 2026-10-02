@@ -1,5 +1,5 @@
-// PDF -> images, ported from pdf-convertor's app/convert/page.tsx
-// (renderPdfToImages/PdfToImages). Runs inside the forked utility process
+// PDF -> images, ported from an earlier web implementation's
+// renderPdfToImages/PdfToImages. Runs inside the forked utility process
 // (see runBackgroundTask in src/main.js) -- rasterizing every page can take
 // seconds on a large document, and this process's main thread also owns the
 // renderer's UI, so this stays off it.
