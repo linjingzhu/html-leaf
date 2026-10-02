@@ -638,6 +638,46 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="ocrOptionsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ocrOptionsTitle">
+    <h3 id="ocrOptionsTitle">Recognize text (OCR)</h3>
+    <p>Recognizes text in this PDF and, if possible, produces a retyped copy with a real embedded font. Images and tables are preserved as-is.</p>
+    <label class="modal-field">Language
+      <select id="ocrLanguage">
+        <option value="eng" selected>English</option>
+        <option value="kor">Korean</option>
+        <option value="eng+kor">English + Korean</option>
+      </select>
+    </label>
+    <label class="modal-field">Retyped PDF font (optional)
+      <div class="pdf-tools-group" style="margin-top:4px">
+        <select id="ocrFontFamily" style="flex:1">
+          <option value="">Default (Noto Sans KR)</option>
+        </select>
+        <button class="btn" type="button" id="ocrLoadFonts" hidden>Load fonts on this PC…</button>
+      </div>
+      <span class="field-hint">A font with no Korean glyphs shows blank boxes for Korean text.</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="ocrOptionsCancel">Cancel</button>
+      <button class="btn primary" id="ocrOptionsConfirm">Run OCR</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="ocrResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ocrResultTitle">
+    <h3 id="ocrResultTitle">OCR result</h3>
+    <p id="ocrResultSummary"></p>
+    <textarea id="ocrResultText" class="modal-textarea" readonly rows="8"></textarea>
+    <p id="ocrResultRetypedNote" hidden></p>
+    <div class="modal-actions">
+      <button class="btn" id="ocrResultClose">Close</button>
+      <button class="btn primary" id="ocrResultAddPage" hidden>Add retyped PDF as a new page</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="githubModal" role="presentation">
   <div class="modal github-modal" role="dialog" aria-modal="true" aria-labelledby="githubTitle">
     <div class="github-head">

@@ -1270,6 +1270,38 @@ app.whenReady().then(() => {
     return {};
   }));
 
+  // Vendored tessdata/font assets live in resources/ocr, unpacked from the
+  // asar (see package.json's build.asarUnpack) since the OCR task runs in a
+  // plain utility process with no Electron API access of its own to work
+  // out whether it's running packaged or not -- main.js computes the real
+  // path once, here, and passes it down in the task payload.
+  const ocrResourcesDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'ocr')
+    : path.join(__dirname, '..', 'resources', 'ocr');
+
+  ipcMain.handle('ocr:run', pdfToolReply((_e, payload) => runBackgroundTask('ocr', { ...payload, resourcesDir: ocrResourcesDir })));
+  // OCR's retyped output is a different document from the source PDF, so
+  // (unlike compress) it is only ever added as a new sibling file -- the
+  // source page is never touched. discardRetyped just cleans up the temp
+  // file if the user doesn't want it.
+  ipcMain.handle('ocr:addRetypedPage', pdfToolReply(async (_e, { sourcePagePath, tempPath }) => {
+    if (!sourcePagePath || !tempPath) throw Object.assign(new Error('Missing OCR result to add.'), { kind: 'invalid' });
+    const directory = path.dirname(sourcePagePath);
+    const base = path.basename(sourcePagePath, path.extname(sourcePagePath));
+    let candidate = `${base}-retyped.pdf`;
+    let suffix = 2;
+    while (fsSync.existsSync(path.join(directory, candidate))) candidate = `${base}-retyped-${suffix++}.pdf`;
+    const filePath = path.join(directory, candidate);
+    const data = await fs.readFile(tempPath);
+    await atomicWriteFile(filePath, data);
+    await fs.unlink(tempPath).catch(() => {});
+    return { filePath };
+  }));
+  ipcMain.handle('ocr:discardRetyped', pdfToolReply(async (_e, { tempPath }) => {
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    return {};
+  }));
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

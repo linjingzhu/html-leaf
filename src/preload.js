@@ -129,5 +129,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     run: (payload) => ipcRenderer.invoke('compress:run', payload),
     commit: (payload) => ipcRenderer.invoke('compress:commit', payload),
     discard: (payload) => ipcRenderer.invoke('compress:discard', payload)
+  }),
+  ocr: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('ocr:run', payload),
+    addRetypedPage: (payload) => ipcRenderer.invoke('ocr:addRetypedPage', payload),
+    discardRetyped: (payload) => ipcRenderer.invoke('ocr:discardRetyped', payload)
   })
 });

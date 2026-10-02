@@ -46,7 +46,9 @@
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
     atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput'),
     compressOptionsModal: $('#compressOptionsModal'), compressLevel: $('#compressLevel'), compressTargetMb: $('#compressTargetMb'),
-    compressResultModal: $('#compressResultModal'), compressResultSizes: $('#compressResultSizes'), compressResultTargetNote: $('#compressResultTargetNote')
+    compressResultModal: $('#compressResultModal'), compressResultSizes: $('#compressResultSizes'), compressResultTargetNote: $('#compressResultTargetNote'),
+    ocrOptionsModal: $('#ocrOptionsModal'), ocrLanguage: $('#ocrLanguage'), ocrFontFamily: $('#ocrFontFamily'), ocrLoadFonts: $('#ocrLoadFonts'),
+    ocrResultModal: $('#ocrResultModal'), ocrResultSummary: $('#ocrResultSummary'), ocrResultText: $('#ocrResultText'), ocrResultRetypedNote: $('#ocrResultRetypedNote')
   };
 
   // The project is a per-run workspace: every launch opens a clean one, so the
@@ -855,6 +857,131 @@
     refs.compressResultModal.classList.remove('show');
     compressPendingResult=null;
     if(pending?.tempPath)await window.electronAPI.compress.discard({tempPath:pending.tempPath}).catch(()=>{});
+  }
+
+  // --- PDF tools: OCR + retyped PDF ------------------------------------------
+  // Recognizes text and, if a font embeds successfully, also produces a
+  // retyped copy (real embedded font, not a scanned-image-plus-invisible-text
+  // overlay). Unlike Compress (which replaces the same file), OCR's retyped
+  // output is a genuinely different document, so it is only ever offered as
+  // a new sibling Page -- the original PDF page is never touched.
+  let ocrPendingPage=null;
+  let ocrLocalFonts=null;
+  let ocrPendingRetypedTempPath=null;
+
+  function openOcrOptionsDialog(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    ocrPendingPage=target;
+    refs.ocrLanguage.value='eng';
+    refs.ocrFontFamily.innerHTML='<option value="">Default (Noto Sans KR)</option>';
+    ocrLocalFonts=null;
+    refs.ocrLoadFonts.hidden=!('queryLocalFonts' in window);
+    refs.ocrOptionsModal.classList.add('show');
+    setTimeout(()=>refs.ocrLanguage.focus(),0);
+  }
+
+  function closeOcrOptionsDialog(){refs.ocrOptionsModal.classList.remove('show');}
+
+  async function loadOcrLocalFonts(){
+    if(!window.queryLocalFonts)return;
+    try{
+      const fonts=await window.queryLocalFonts();
+      ocrLocalFonts=fonts;
+      const families=[...new Set(fonts.map(font=>font.family))].sort((a,b)=>a.localeCompare(b));
+      refs.ocrFontFamily.innerHTML='<option value="">Default (Noto Sans KR)</option>'
+        +families.map(family=>`<option value="${family.replace(/"/g,'&quot;')}">${family}</option>`).join('');
+    }catch(error){
+      // Permission denied or unsupported -- the default font stays selected, not an error state.
+      console.error('queryLocalFonts failed',error);
+    }
+  }
+
+  function pickRegularVariant(fonts,family){
+    const matches=fonts.filter(font=>font.family===family);
+    if(!matches.length)return null;
+    return matches.find(font=>/^(regular|normal)$/i.test(font.style))||matches[0];
+  }
+
+  async function runOcrTool(){
+    const page=ocrPendingPage;
+    if(!page){closeOcrOptionsDialog();return;}
+    const lang=refs.ocrLanguage.value;
+    const family=refs.ocrFontFamily.value;
+    const confirmButton=$('#ocrOptionsConfirm');
+    confirmButton.disabled=true;
+    try{
+      let fontBytes;
+      if(family&&ocrLocalFonts){
+        const variant=pickRegularVariant(ocrLocalFonts,family);
+        if(variant){
+          try{
+            const blob=await variant.blob();
+            fontBytes=new Uint8Array(await blob.arrayBuffer());
+          }catch(error){
+            console.error('Could not read the chosen font, using the default',error);
+          }
+        }
+      }
+      const envelope=await window.electronAPI.ocr.run({pagePath:page.sourcePath,lang,fontBytes});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`OCR failed: ${envelope.message}`);
+        return;
+      }
+      closeOcrOptionsDialog();
+      const{text,totalPages,pagesProcessed,truncated,retypedPdfTempPath}=envelope.value;
+      const words=text.trim()?text.trim().split(/\s+/).length:0;
+      refs.ocrResultSummary.textContent=truncated
+        ?`Processed ${pagesProcessed} of ${totalPages} page(s) — ${words} words, ${text.length} characters. The rest of the document was not processed.`
+        :`Processed ${pagesProcessed} of ${totalPages} page(s) — ${words} words, ${text.length} characters.`;
+      refs.ocrResultText.value=text.trim()?text:'No text was recognized.';
+      ocrPendingRetypedTempPath=retypedPdfTempPath;
+      const addButton=$('#ocrResultAddPage');
+      if(retypedPdfTempPath){
+        refs.ocrResultRetypedNote.hidden=true;
+        addButton.hidden=false;
+      }else{
+        refs.ocrResultRetypedNote.hidden=false;
+        refs.ocrResultRetypedNote.textContent='A retyped PDF could not be produced for this document.';
+        addButton.hidden=true;
+      }
+      refs.ocrResultModal.classList.add('show');
+      setTimeout(()=>$('#ocrResultClose')?.focus(),0);
+    }catch(error){
+      showToast(`OCR failed: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
+
+  async function closeOcrResultDialog(){
+    refs.ocrResultModal.classList.remove('show');
+    if(ocrPendingRetypedTempPath)await window.electronAPI.ocr.discardRetyped({tempPath:ocrPendingRetypedTempPath}).catch(()=>{});
+    ocrPendingRetypedTempPath=null;
+    ocrPendingPage=null;
+  }
+
+  async function addRetypedPageFromOcrResult(){
+    const page=ocrPendingPage;
+    const tempPath=ocrPendingRetypedTempPath;
+    if(!page||!tempPath){refs.ocrResultModal.classList.remove('show');return;}
+    const addButton=$('#ocrResultAddPage');
+    addButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.ocr.addRetypedPage({sourcePagePath:page.sourcePath,tempPath});
+      if(!envelope.ok){showToast(`Could not add the retyped page: ${envelope.message}`);return;}
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      const context=nodeById(page.id);
+      await addPageResultToDocument(result,null,context?.project||null,page.parentId);
+      refs.ocrResultModal.classList.remove('show');
+      ocrPendingRetypedTempPath=null;
+      ocrPendingPage=null;
+      showToast('Retyped PDF added as a new page');
+    }catch(error){
+      showToast(`Could not add the retyped page: ${error.message}`);
+    }finally{
+      addButton.disabled=false;
+    }
   }
 
   async function commitCompressResult(){
@@ -5034,9 +5161,12 @@
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>Interactive Preview</strong>This page uses JavaScript to render its content. It runs in an isolated sandbox, so direct DOM HTML Edit is disabled for this page.</div>';
       }else if(affectedPage?.documentType==='pdf'){
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.'
-          +'<div class="pdf-tools-group"><button class="btn" type="button" data-action="open-compress">Compress…</button></div></div>';
+          +'<div class="pdf-tools-group"><button class="btn" type="button" data-action="open-compress">Compress…</button>'
+          +'<button class="btn" type="button" data-action="open-ocr">Recognize text (OCR)…</button></div></div>';
         const compressButton=refs.inspectorBody.querySelector('[data-action="open-compress"]');
         if(compressButton)compressButton.onclick=()=>openCompressOptionsDialog(affectedPage);
+        const ocrButton=refs.inspectorBody.querySelector('[data-action="open-ocr"]');
+        if(ocrButton)ocrButton.onclick=()=>openOcrOptionsDialog(affectedPage);
       }
     }
     if(affectedPage?.documentType==='pdf'&&affectedFrame)configureFrameRuntime(affectedFrame,affectedPage,affectedSlot);
@@ -7560,6 +7690,20 @@
   refs.compressResultModal.addEventListener('keydown',event=>{
     trapDialogFocus(refs.compressResultModal,event);
     if(event.key==='Escape'){event.preventDefault();discardCompressResult();}
+  });
+
+  $('#ocrOptionsCancel').onclick=closeOcrOptionsDialog;
+  $('#ocrOptionsConfirm').onclick=runOcrTool;
+  refs.ocrLoadFonts.onclick=loadOcrLocalFonts;
+  refs.ocrOptionsModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.ocrOptionsModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeOcrOptionsDialog();}
+  });
+  $('#ocrResultClose').onclick=closeOcrResultDialog;
+  $('#ocrResultAddPage').onclick=addRetypedPageFromOcrResult;
+  refs.ocrResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.ocrResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeOcrResultDialog();}
   });
 
   function openAboutDialog(){refs.aboutModal.classList.add('show');setTimeout(()=>$('#aboutClose').focus(),0);}

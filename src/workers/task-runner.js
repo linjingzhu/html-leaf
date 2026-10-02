@@ -5,7 +5,7 @@
 // it's ported (compress, ocr, ...).
 const handlers = {
   compress: require('./compress-task'),
-  // 'ocr': require('./ocr-task'),
+  ocr: require('./ocr-task'),
 };
 
 process.parentPort.once('message', async (event) => {
