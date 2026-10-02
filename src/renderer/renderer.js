@@ -44,7 +44,9 @@
     reloadPageModal: $('#reloadPageModal'),
     githubCommitModal: $('#githubCommitModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
-    atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
+    atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput'),
+    compressOptionsModal: $('#compressOptionsModal'), compressLevel: $('#compressLevel'), compressTargetMb: $('#compressTargetMb'),
+    compressResultModal: $('#compressResultModal'), compressResultSizes: $('#compressResultSizes'), compressResultTargetNote: $('#compressResultTargetNote')
   };
 
   // The project is a per-run workspace: every launch opens a clean one, so the
@@ -775,6 +777,106 @@
   }
 
   function closeSavePageAsDialog(){refs.savePageAsModal.classList.remove('show');}
+
+  // --- PDF tools: Compress ---------------------------------------------------
+  // Compression's whole point is reclaiming disk space on the *same*
+  // document, so unlike Save Page As (which always writes a separate file)
+  // this overwrites the original page's file in place -- but only after the
+  // user has seen the before/after size and confirmed. compress:run never
+  // touches the original; it writes the candidate bytes to a temp file that
+  // compress:commit/compress:discard then resolve one way or the other.
+  function formatFileSize(bytes){
+    if(!Number.isFinite(bytes))return'—';
+    if(bytes>=1024*1024)return`${(bytes/(1024*1024)).toFixed(2)} MB`;
+    if(bytes>=1024)return`${(bytes/1024).toFixed(1)} KB`;
+    return`${bytes} B`;
+  }
+
+  let compressPendingPage=null;
+  let compressPendingSlot=null;
+  let compressPendingResult=null;
+
+  function openCompressOptionsDialog(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    compressPendingPage=target;
+    compressPendingSlot=editOwnerSlot||activePageSlot();
+    refs.compressLevel.value='balanced';
+    refs.compressTargetMb.value='';
+    refs.compressOptionsModal.classList.add('show');
+    setTimeout(()=>refs.compressLevel.focus(),0);
+  }
+
+  function closeCompressOptionsDialog(){refs.compressOptionsModal.classList.remove('show');}
+
+  async function runCompress(){
+    const page=compressPendingPage;
+    if(!page){closeCompressOptionsDialog();return;}
+    const level=refs.compressLevel.value;
+    const targetRaw=refs.compressTargetMb.value.trim();
+    if(targetRaw!==''&&(!Number.isFinite(Number(targetRaw))||Number(targetRaw)<=0)){
+      showToast('Target size must be a positive number of MB');
+      return;
+    }
+    const confirmButton=$('#compressOptionsConfirm');
+    confirmButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.compress.run({
+        pagePath:page.sourcePath,
+        level,
+        targetMb:targetRaw===''?undefined:Number(targetRaw)
+      });
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Compression failed: ${envelope.message}`);
+        return;
+      }
+      compressPendingResult={page,...envelope.value};
+      closeCompressOptionsDialog();
+      const{originalSize,compressedSize,targetMet}=envelope.value;
+      const reduction=originalSize>0?Math.max(0,Math.round((1-compressedSize/originalSize)*100)):0;
+      refs.compressResultSizes.textContent=`${formatFileSize(originalSize)} → ${formatFileSize(compressedSize)} (${reduction}% smaller)`;
+      if(targetMet===undefined){
+        refs.compressResultTargetNote.hidden=true;
+      }else{
+        refs.compressResultTargetNote.hidden=false;
+        refs.compressResultTargetNote.textContent=targetMet?'Target size reached.':'Target size not fully reached — this is the smallest this pass could produce.';
+      }
+      refs.compressResultModal.classList.add('show');
+      setTimeout(()=>$('#compressResultConfirm')?.focus(),0);
+    }catch(error){
+      showToast(`Compression failed: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
+
+  async function discardCompressResult(){
+    const pending=compressPendingResult;
+    refs.compressResultModal.classList.remove('show');
+    compressPendingResult=null;
+    if(pending?.tempPath)await window.electronAPI.compress.discard({tempPath:pending.tempPath}).catch(()=>{});
+  }
+
+  async function commitCompressResult(){
+    const pending=compressPendingResult;
+    if(!pending){refs.compressResultModal.classList.remove('show');return;}
+    const confirmButton=$('#compressResultConfirm');
+    confirmButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.compress.commit({pagePath:pending.page.sourcePath,tempPath:pending.tempPath});
+      if(!envelope.ok){showToast(`Could not replace the original: ${envelope.message}`);return;}
+      refs.compressResultModal.classList.remove('show');
+      compressPendingResult=null;
+      const origin=pageReloadOrigin(pending.page);
+      if(origin&&compressPendingSlot)await performReload(pending.page,origin,compressPendingSlot);
+      compressPendingSlot=null;
+      showToast(`Compressed and saved — ${formatFileSize(pending.compressedSize)}`);
+    }catch(error){
+      showToast(`Could not replace the original: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
 
   function cleanRuntimeHtmlForExport(html){
     const doc=new DOMParser().parseFromString(String(html||''),'text/html');
@@ -4931,7 +5033,10 @@
       if(activeFrame?.dataset.previewRuntime==='interactive-isolated'){
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>Interactive Preview</strong>This page uses JavaScript to render its content. It runs in an isolated sandbox, so direct DOM HTML Edit is disabled for this page.</div>';
       }else if(affectedPage?.documentType==='pdf'){
-        refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.</div>';
+        refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.'
+          +'<div class="pdf-tools-group"><button class="btn" type="button" data-action="open-compress">Compress…</button></div></div>';
+        const compressButton=refs.inspectorBody.querySelector('[data-action="open-compress"]');
+        if(compressButton)compressButton.onclick=()=>openCompressOptionsDialog(affectedPage);
       }
     }
     if(affectedPage?.documentType==='pdf'&&affectedFrame)configureFrameRuntime(affectedFrame,affectedPage,affectedSlot);
@@ -7442,6 +7547,19 @@
     trapDialogFocus(refs.savePageAsModal,event);
     if(event.key==='Escape'){event.preventDefault();closeSavePageAsDialog();}
     if(event.key==='Enter'){event.preventDefault();$('#savePageAsConfirm').click();}
+  });
+
+  $('#compressOptionsCancel').onclick=closeCompressOptionsDialog;
+  $('#compressOptionsConfirm').onclick=runCompress;
+  refs.compressOptionsModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.compressOptionsModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeCompressOptionsDialog();}
+  });
+  $('#compressResultCancel').onclick=discardCompressResult;
+  $('#compressResultConfirm').onclick=commitCompressResult;
+  refs.compressResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.compressResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();discardCompressResult();}
   });
 
   function openAboutDialog(){refs.aboutModal.classList.add('show');setTimeout(()=>$('#aboutClose').focus(),0);}

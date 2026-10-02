@@ -26,6 +26,10 @@
     "dist:mac:arm64": "npm run version:build && electron-builder --mac dmg zip --arm64 --publish never",
     "dist:mac:x64": "npm run version:build && electron-builder --mac dmg zip --x64 --publish never"
   },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.35.5"
+  },
   "devDependencies": {
     "electron": "43.4.0",
     "electron-builder": "26.0.12"
@@ -34,12 +38,17 @@
     "appId": "com.leaf.editor",
     "productName": "Leaf",
     "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
     "directories": {
       "output": "release-v0.6.0",
       "buildResources": "build"
     },
     "files": [
       "src/**/*",
+      "node_modules/**/*",
       "build/icon.ico",
       "build/icon.png",
       "build/icon.icns",

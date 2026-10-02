@@ -1243,6 +1243,33 @@ app.whenReady().then(() => {
   ipcMain.handle('drive:write', driveReply((_e, payload) => driveWrite(payload)));
   ipcMain.handle('drive:create', driveReply((_e, payload) => driveCreate(payload)));
 
+  const pdfToolReply = run => ipcReply(run, {
+    resolveMessage: (error, kind) => String(error?.message || (kind === 'busy'
+      ? 'Another PDF task is already running.'
+      : 'The PDF task failed.')),
+  });
+
+  // compress:run never touches pagePath -- it writes the compressed bytes to
+  // a temp file and reports the size comparison, so the UI can show it and
+  // ask before anything on disk changes. compress:commit (called only if the
+  // user confirms) is what actually overwrites the original, via the same
+  // atomicWriteFile every other page save uses. Unlike OCR's retyped output
+  // (a different document, saved as a sibling Page), compression's whole
+  // point is reclaiming space on the *same* file -- a sibling copy would
+  // double disk usage instead of saving it.
+  ipcMain.handle('compress:run', pdfToolReply((_e, payload) => runBackgroundTask('compress', payload)));
+  ipcMain.handle('compress:commit', pdfToolReply(async (_e, { pagePath, tempPath }) => {
+    if (!pagePath || !tempPath) throw Object.assign(new Error('Missing compression result to commit.'), { kind: 'invalid' });
+    const data = await fs.readFile(tempPath);
+    await atomicWriteFile(pagePath, data);
+    await fs.unlink(tempPath).catch(() => {});
+    return { pagePath };
+  }));
+  ipcMain.handle('compress:discard', pdfToolReply(async (_e, { tempPath }) => {
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    return {};
+  }));
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

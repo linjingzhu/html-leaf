@@ -4,7 +4,7 @@
 // task type actually does -- each feature registers its own handler here as
 // it's ported (compress, ocr, ...).
 const handlers = {
-  // 'compress': require('./compress-task'),
+  compress: require('./compress-task'),
   // 'ocr': require('./ocr-task'),
 };
 

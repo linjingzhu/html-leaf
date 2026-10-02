@@ -605,6 +605,39 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="compressOptionsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="compressOptionsTitle">
+    <h3 id="compressOptionsTitle">Compress PDF</h3>
+    <p>Reduce the file size of this PDF. Embedded images are re-encoded at the chosen level; the original is only replaced if you confirm after seeing the result.</p>
+    <label class="modal-field">Level
+      <select id="compressLevel">
+        <option value="low">Low (best quality)</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="high">High (smallest file)</option>
+      </select>
+    </label>
+    <label class="modal-field">Target size in MB (optional)
+      <input type="number" id="compressTargetMb" min="0.01" step="any" placeholder="e.g. 5">
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="compressOptionsCancel">Cancel</button>
+      <button class="btn primary" id="compressOptionsConfirm">Compress</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="compressResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="compressResultTitle">
+    <h3 id="compressResultTitle">Compression result</h3>
+    <p id="compressResultSizes"></p>
+    <p id="compressResultTargetNote" hidden></p>
+    <div class="modal-actions">
+      <button class="btn" id="compressResultCancel">Keep original</button>
+      <button class="btn primary" id="compressResultConfirm">Replace original</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="githubModal" role="presentation">
   <div class="modal github-modal" role="dialog" aria-modal="true" aria-labelledby="githubTitle">
     <div class="github-head">

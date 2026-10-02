@@ -121,5 +121,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openProject: () => ipcRenderer.invoke('project:open'),
   readProjectPath: (filePath) => ipcRenderer.invoke('project:readPath', filePath),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
-  saveProjectAs: (payload) => ipcRenderer.invoke('project:saveAs', payload)
+  saveProjectAs: (payload) => ipcRenderer.invoke('project:saveAs', payload),
+  // PDF tools. run() never touches the original file -- it reports a
+  // comparison (and, for compress, a temp-file path) for the UI to show
+  // before anything changes; commit()/discard() decide what happens to it.
+  compress: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('compress:run', payload),
+    commit: (payload) => ipcRenderer.invoke('compress:commit', payload),
+    discard: (payload) => ipcRenderer.invoke('compress:discard', payload)
+  })
 });

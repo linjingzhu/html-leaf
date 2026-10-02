@@ -620,6 +620,7 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
   color:var(--muted);font-size:11px;line-height:1.6;text-align:center
 }
 .edit-mode-message strong{display:block;margin-bottom:3px;color:var(--text-secondary);font-size:12px;font-weight:600}
+.pdf-tools-group{margin-top:10px;display:flex;justify-content:center;gap:6px}
 .selection-card{
   padding:8px 0 7px;margin-bottom:3px;border:0;border-bottom:1px solid var(--border);
   background:transparent;border-radius:0
