@@ -561,6 +561,8 @@
   <div class="separator"></div>
   <button data-context="add-page">New Page</button>
   <button data-context="add-group">New Section</button>
+  <div class="separator"></div>
+  <button data-context="combine-to-pdf" hidden>Combine to PDF…</button>
 </div>
 
 <div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
@@ -601,6 +603,91 @@
     <div class="modal-actions">
       <button class="btn" id="savePageAsCancel">Cancel</button>
       <button class="btn primary" id="savePageAsConfirm">Save As…</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="compressOptionsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="compressOptionsTitle">
+    <h3 id="compressOptionsTitle">Compress PDF</h3>
+    <p>Reduce the file size of this PDF. Embedded images are re-encoded at the chosen level; the original is only replaced if you confirm after seeing the result.</p>
+    <label class="modal-field">Level
+      <select id="compressLevel">
+        <option value="low">Low (best quality)</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="high">High (smallest file)</option>
+      </select>
+    </label>
+    <label class="modal-field">Target size in MB (optional)
+      <input type="number" id="compressTargetMb" min="0.01" step="any" placeholder="e.g. 5">
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="compressOptionsCancel">Cancel</button>
+      <button class="btn primary" id="compressOptionsConfirm">Compress</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="compressResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="compressResultTitle">
+    <h3 id="compressResultTitle">Compression result</h3>
+    <p id="compressResultSizes"></p>
+    <p id="compressResultTargetNote" hidden></p>
+    <div class="modal-actions">
+      <button class="btn" id="compressResultCancel">Keep original</button>
+      <button class="btn primary" id="compressResultConfirm">Replace original</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="ocrOptionsModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ocrOptionsTitle">
+    <h3 id="ocrOptionsTitle">Recognize text (OCR)</h3>
+    <p>Recognizes text in this PDF and, if possible, produces a retyped copy with a real embedded font. Images and tables are preserved as-is.</p>
+    <label class="modal-field">Language
+      <select id="ocrLanguage">
+        <option value="eng" selected>English</option>
+        <option value="kor">Korean</option>
+        <option value="eng+kor">English + Korean</option>
+      </select>
+    </label>
+    <label class="modal-field">Retyped PDF font (optional)
+      <div class="pdf-tools-group" style="margin-top:4px">
+        <select id="ocrFontFamily" style="flex:1">
+          <option value="">Default (Noto Sans KR)</option>
+        </select>
+        <button class="btn" type="button" id="ocrLoadFonts" hidden>Load fonts on this PC…</button>
+      </div>
+      <span class="field-hint">A font with no Korean glyphs shows blank boxes for Korean text.</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn" id="ocrOptionsCancel">Cancel</button>
+      <button class="btn primary" id="ocrOptionsConfirm">Run OCR</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="ocrResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ocrResultTitle">
+    <h3 id="ocrResultTitle">OCR result</h3>
+    <p id="ocrResultSummary"></p>
+    <textarea id="ocrResultText" class="modal-textarea" readonly rows="8"></textarea>
+    <p id="ocrResultRetypedNote" hidden></p>
+    <div class="modal-actions">
+      <button class="btn" id="ocrResultClose">Close</button>
+      <button class="btn primary" id="ocrResultAddPage" hidden>Add retyped PDF as a new page</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="extractTextResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="extractTextResultTitle">
+    <h3 id="extractTextResultTitle">Extracted text</h3>
+    <p id="extractTextResultSummary"></p>
+    <textarea id="extractTextResultText" class="modal-textarea" readonly rows="8"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="extractTextResultClose">Close</button>
+      <button class="btn primary" id="extractTextResultSave">Save as Markdown…</button>
     </div>
   </div>
 </div>

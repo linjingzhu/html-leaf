@@ -620,6 +620,7 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
   color:var(--muted);font-size:11px;line-height:1.6;text-align:center
 }
 .edit-mode-message strong{display:block;margin-bottom:3px;color:var(--text-secondary);font-size:12px;font-weight:600}
+.pdf-tools-group{margin-top:10px;display:flex;justify-content:center;gap:6px}
 .selection-card{
   padding:8px 0 7px;margin-bottom:3px;border:0;border-bottom:1px solid var(--border);
   background:transparent;border-radius:0
@@ -736,6 +737,8 @@ body.group-tiles-open .viewport-floating-controls,body.group-tiles-open .toc-pan
 }
 .modal-field{display:grid;gap:6px;color:var(--muted);font-size:11px}
 .modal-field select{width:100%;height:31px;padding:0 8px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--input);color:var(--foreground)}
+.modal-field .field-hint{color:var(--muted);font-size:10px;line-height:1.5}
+.modal-textarea{width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--input);color:var(--foreground);font-size:11px;line-height:1.5;resize:vertical}
 .about-brand{display:flex;align-items:center;gap:12px;margin-bottom:12px}.about-brand img{width:46px;height:46px;object-fit:contain}.about-brand h3{margin:0 0 3px;font-size:19px}.about-brand span{color:var(--muted);font-size:11px}.about-details{margin:12px 0 0;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--panel-secondary)}.about-details>div{display:flex;justify-content:space-between;gap:16px;padding:3px 0;font-size:11px}.about-details dt{color:var(--muted)}.about-details dd{margin:0;color:var(--foreground)}
 .modal-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:11px}
 .three-actions{display:grid!important;grid-template-columns:1fr 1fr 1fr;gap:6px}

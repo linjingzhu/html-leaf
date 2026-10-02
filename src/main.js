@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session, safeStorage, utilityProcess } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -1068,6 +1068,47 @@ function installDevToolsShortcut(contents) {
   });
 }
 
+// Heavy, CPU-bound PDF work (OCR recognition, image re-encoding) runs in a
+// forked utility process rather than inline here. This process's main thread
+// also owns the renderer's IPC and the whole app's UI, unlike a serverless
+// per-request model where blocking one request never affects anyone else --
+// blocking this process for the several seconds a real OCR or
+// compress pass can take would freeze the whole app. One task runs at a time;
+// a second request while one is in flight is rejected (kind: 'busy') rather
+// than queued, since there is exactly one window to report progress to.
+let activeTaskProcess = null;
+
+function runBackgroundTask(type, payload) {
+  if (activeTaskProcess) {
+    return Promise.reject(Object.assign(new Error('Another PDF task is already running.'), { kind: 'busy' }));
+  }
+  return new Promise((resolve, reject) => {
+    const child = utilityProcess.fork(path.join(__dirname, 'workers', 'task-runner.js'), [], {
+      serviceName: `leaf-task-${type}`,
+      stdio: 'pipe'
+    });
+    activeTaskProcess = child;
+    const finish = () => {
+      activeTaskProcess = null;
+      child.removeAllListeners();
+    };
+    child.once('message', message => {
+      finish();
+      child.kill();
+      if (message && message.ok) resolve(message.value);
+      else reject(Object.assign(new Error(message?.message || 'PDF task failed.'), { kind: message?.kind }));
+    });
+    child.once('exit', code => {
+      if (activeTaskProcess !== child) return; // already settled via the message above
+      finish();
+      reject(Object.assign(new Error(`PDF task process exited unexpectedly (code ${code}).`), { kind: 'crashed' }));
+    });
+    child.stdout?.on('data', chunk => process.stdout.write(`[task:${type}] ${chunk}`));
+    child.stderr?.on('data', chunk => process.stderr.write(`[task:${type}] ${chunk}`));
+    child.postMessage({ type, payload });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1660,
@@ -1104,6 +1145,14 @@ app.on('web-contents-created', (_event, contents) => installNavigationGuards(con
 
 app.whenReady().then(() => {
   beginStartupLog();
+  // Deny every permission request by default -- this app opens arbitrary
+  // user-supplied HTML as Preview content, so a blanket grant would be a real
+  // widening of what that content can do. The one exception (added for the
+  // OCR feature's "load a font installed on this PC" picker) is granted
+  // narrowly, by permission name only, not by origin or requesting frame.
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'local-fonts');
+  });
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('app:startupLogPath', () => startupLogPath());
   ipcMain.handle('file:importHtml', openHtmlFile);
@@ -1138,22 +1187,29 @@ app.whenReady().then(() => {
 
   // Envelopes rather than throws: an Error crossing contextBridge keeps only its
   // message, and it arrives wrapped in "Error invoking remote method ...". The
-  // kind is what decides whether the UI offers a re-sign-in, a wait, or a
-  // narrower folder, so it has to survive as data.
-  const githubReply = run => async (...args) => {
+  // kind is what decides whether the UI offers a re-sign-in, a wait, a narrower
+  // folder, or (for PDF tools) a retry/fallback, so it has to survive as data.
+  // One shared factory: each integration supplies how to classify an error
+  // into a `kind` and how to turn that into a message; a handler that just
+  // throws `Object.assign(new Error('...'), {kind: '...'})` needs neither.
+  const ipcReply = (run, { resolveKind, resolveMessage, fallbackMessage } = {}) => async (...args) => {
     try {
       return { ok: true, value: await run(...args) };
     } catch (error) {
-      const kind = error?.kind || githubTransportKind(error);
-      return {
-        ok: false,
-        kind,
-        message: kind === 'network'
-          ? githubTransportMessage(error)
-          : String(error?.message || 'GitHub could not be reached.')
-      };
+      const kind = error?.kind || (resolveKind ? resolveKind(error) : undefined);
+      const message = resolveMessage
+        ? resolveMessage(error, kind)
+        : String(error?.message || fallbackMessage || 'The operation failed.');
+      return { ok: false, kind, message };
     }
   };
+
+  const githubReply = run => ipcReply(run, {
+    resolveKind: error => githubTransportKind(error),
+    resolveMessage: (error, kind) => kind === 'network'
+      ? githubTransportMessage(error)
+      : String(error?.message || 'GitHub could not be reached.'),
+  });
 
   ipcMain.handle('github:status', githubReply(() => githubStatus()));
   ipcMain.handle('github:connect', githubReply((_e, payload) => githubConnect(payload)));
@@ -1167,22 +1223,16 @@ app.whenReady().then(() => {
   ipcMain.handle('github:commit', githubReply((_e, payload) => githubCommit(payload)));
   ipcMain.handle('github:merge', githubReply((_e, payload) => githubMerge(payload)));
 
-  // Same envelope, same reason: the kind decides whether the UI offers a
-  // re-sign-in, a wait, or the Drive picker, so it has to survive as data.
-  const driveReply = run => async (...args) => {
-    try {
-      return { ok: true, value: await run(...args) };
-    } catch (error) {
-      const kind = error?.kind || githubTransportKind(error);
-      return {
-        ok: false,
-        kind,
-        message: kind === 'network'
-          ? driveTransportMessage(error)
-          : String(error?.message || 'Google Drive could not be reached.')
-      };
-    }
-  };
+  // Same shared factory, same reason: the kind decides whether the UI offers
+  // a re-sign-in, a wait, or the Drive picker, so it has to survive as data.
+  // (Reuses githubTransportKind, same as before this was split out -- Drive's
+  // transport errors are classified the same way GitHub's are.)
+  const driveReply = run => ipcReply(run, {
+    resolveKind: error => githubTransportKind(error),
+    resolveMessage: (error, kind) => kind === 'network'
+      ? driveTransportMessage(error)
+      : String(error?.message || 'Google Drive could not be reached.'),
+  });
 
   ipcMain.handle('drive:status', driveReply(() => driveStatus()));
   ipcMain.handle('drive:connect', driveReply(() => driveConnect()));
@@ -1192,6 +1242,150 @@ app.whenReady().then(() => {
   ipcMain.handle('drive:read', driveReply((_e, payload) => driveRead(payload)));
   ipcMain.handle('drive:write', driveReply((_e, payload) => driveWrite(payload)));
   ipcMain.handle('drive:create', driveReply((_e, payload) => driveCreate(payload)));
+
+  const pdfToolReply = run => ipcReply(run, {
+    resolveMessage: (error, kind) => String(error?.message || (kind === 'busy'
+      ? 'Another PDF task is already running.'
+      : 'The PDF task failed.')),
+  });
+
+  // compress:run never touches pagePath -- it writes the compressed bytes to
+  // a temp file and reports the size comparison, so the UI can show it and
+  // ask before anything on disk changes. compress:commit (called only if the
+  // user confirms) is what actually overwrites the original, via the same
+  // atomicWriteFile every other page save uses. Unlike OCR's retyped output
+  // (a different document, saved as a sibling Page), compression's whole
+  // point is reclaiming space on the *same* file -- a sibling copy would
+  // double disk usage instead of saving it.
+  ipcMain.handle('compress:run', pdfToolReply((_e, payload) => runBackgroundTask('compress', payload)));
+  ipcMain.handle('compress:commit', pdfToolReply(async (_e, { pagePath, tempPath }) => {
+    if (!pagePath || !tempPath) throw Object.assign(new Error('Missing compression result to commit.'), { kind: 'invalid' });
+    const data = await fs.readFile(tempPath);
+    await atomicWriteFile(pagePath, data);
+    await fs.unlink(tempPath).catch(() => {});
+    return { pagePath };
+  }));
+  ipcMain.handle('compress:discard', pdfToolReply(async (_e, { tempPath }) => {
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    return {};
+  }));
+
+  // Vendored tessdata/font assets live in resources/ocr, unpacked from the
+  // asar (see package.json's build.asarUnpack) since the OCR task runs in a
+  // plain utility process with no Electron API access of its own to work
+  // out whether it's running packaged or not -- main.js computes the real
+  // path once, here, and passes it down in the task payload.
+  const ocrResourcesDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'ocr')
+    : path.join(__dirname, '..', 'resources', 'ocr');
+
+  // Same reasoning as ocrResourcesDir above, for pdfjs-dist's own bundled
+  // cmaps/standard_fonts directories (see package.json's build.asarUnpack):
+  // require.resolve('pdfjs-dist/package.json') from inside the task would
+  // return an asar-internal path even for these asarUnpack'd folders, which
+  // a plain fs.readFile cannot follow. Resolved once here, where
+  // app.isPackaged is reliably known.
+  const pdfjsRoot = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'pdfjs-dist')
+    : path.join(__dirname, '..', 'node_modules', 'pdfjs-dist');
+
+  ipcMain.handle('ocr:run', pdfToolReply((_e, payload) => runBackgroundTask('ocr', { ...payload, resourcesDir: ocrResourcesDir })));
+  // OCR's retyped output is a different document from the source PDF, so
+  // (unlike compress) it is only ever added as a new sibling file -- the
+  // source page is never touched. discardRetyped just cleans up the temp
+  // file if the user doesn't want it.
+  ipcMain.handle('ocr:addRetypedPage', pdfToolReply(async (_e, { sourcePagePath, tempPath }) => {
+    if (!sourcePagePath || !tempPath) throw Object.assign(new Error('Missing OCR result to add.'), { kind: 'invalid' });
+    const directory = path.dirname(sourcePagePath);
+    const base = path.basename(sourcePagePath, path.extname(sourcePagePath));
+    let candidate = `${base}-retyped.pdf`;
+    let suffix = 2;
+    while (fsSync.existsSync(path.join(directory, candidate))) candidate = `${base}-retyped-${suffix++}.pdf`;
+    const filePath = path.join(directory, candidate);
+    const data = await fs.readFile(tempPath);
+    await atomicWriteFile(filePath, data);
+    await fs.unlink(tempPath).catch(() => {});
+    return { filePath };
+  }));
+  ipcMain.handle('ocr:discardRetyped', pdfToolReply(async (_e, { tempPath }) => {
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    return {};
+  }));
+
+  // convert:pdfToImages renders every page to its own PNG (no confirmation
+  // step, unlike compress/OCR -- nothing on disk is replaced, so there is
+  // nothing to confirm) and places them in a collision-safe sibling folder
+  // next to the source PDF, mirroring the "-retyped.pdf" sibling-naming
+  // pattern ocr:addRetypedPage uses above.
+  ipcMain.handle('convert:pdfToImages', pdfToolReply(async (_e, payload) => {
+    const result = await runBackgroundTask('convert-pdf-to-images', { ...payload, pdfjsRoot });
+    const { pagePath } = payload || {};
+    const directory = path.dirname(pagePath);
+    const base = path.basename(pagePath, path.extname(pagePath));
+    let candidate = `${base}-images`;
+    let suffix = 2;
+    while (fsSync.existsSync(path.join(directory, candidate))) candidate = `${base}-images-${suffix++}`;
+    const finalDir = path.join(directory, candidate);
+    await fs.mkdir(finalDir, { recursive: true });
+    const files = [];
+    try {
+      for (const fileName of result.files) {
+        const data = await fs.readFile(path.join(result.tempDir, fileName));
+        const filePath = path.join(finalDir, fileName);
+        await atomicWriteFile(filePath, data);
+        files.push({ fileName, filePath });
+      }
+    } finally {
+      await fs.rm(result.tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    return { dirName: candidate, dirPath: finalDir, files };
+  }));
+
+  // convert:imagesToPdf combines an existing set of on-disk images (a
+  // Group's child image Pages, in tree order) into one new PDF. A Group has
+  // no file path of its own -- unlike the PDF/image pages everything else
+  // here works from -- so there is no natural "sibling" location to write
+  // to automatically; a save dialog is the same choice exportHtml already
+  // makes for this situation.
+  ipcMain.handle('convert:imagesToPdf', pdfToolReply(async (_e, payload) => {
+    const result = await runBackgroundTask('convert-images-to-pdf', payload);
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Combine Images to PDF',
+      defaultPath: `${payload?.suggestedName || 'images'}.pdf`,
+      filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+    });
+    if (saveResult.canceled || !saveResult.filePath) {
+      await fs.unlink(result.tempPath).catch(() => {});
+      return null;
+    }
+    let filePath = saveResult.filePath;
+    if (!/\.pdf$/i.test(filePath)) filePath += '.pdf';
+    const data = await fs.readFile(result.tempPath);
+    await atomicWriteFile(filePath, data);
+    await fs.unlink(result.tempPath).catch(() => {});
+    return { filePath };
+  }));
+
+  // extractText:run reads the PDF's own text layer (fast, exact -- not OCR)
+  // and returns it as Markdown for the UI to preview. Nothing is written
+  // until extractText:save, which asks where via a save dialog (the desktop
+  // equivalent of a browser download) and, on success, also
+  // reports the new file's path so the renderer can offer it as a new
+  // sibling Page the same way OCR's retyped PDF is offered.
+  ipcMain.handle('extractText:run', pdfToolReply((_e, payload) => runBackgroundTask('extract-text', { ...payload, pdfjsRoot })));
+  ipcMain.handle('extractText:save', pdfToolReply(async (_e, { suggestedName, markdown }) => {
+    if (typeof markdown !== 'string') throw Object.assign(new Error('Missing extracted text to save.'), { kind: 'invalid' });
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Text as Markdown',
+      defaultPath: `${suggestedName || 'page'}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (saveResult.canceled || !saveResult.filePath) return null;
+    let filePath = saveResult.filePath;
+    if (!/\.md$/i.test(filePath)) filePath += '.md';
+    await atomicWriteFile(filePath, markdown, 'utf8');
+    return { filePath };
+  }));
 
   createWindow();
   app.on('activate', () => {

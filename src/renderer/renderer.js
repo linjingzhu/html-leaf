@@ -44,7 +44,12 @@
     reloadPageModal: $('#reloadPageModal'),
     githubCommitModal: $('#githubCommitModal'),
     atlassianPreviewToolbar: $('#atlassianPreviewToolbar'), atlassianPreviewActions: $('#atlassianPreviewActions'),
-    atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput')
+    atlassianPreviewSource: $('#atlassianPreviewSource'), atlassianFileInput: $('#atlassianFileInput'),
+    compressOptionsModal: $('#compressOptionsModal'), compressLevel: $('#compressLevel'), compressTargetMb: $('#compressTargetMb'),
+    compressResultModal: $('#compressResultModal'), compressResultSizes: $('#compressResultSizes'), compressResultTargetNote: $('#compressResultTargetNote'),
+    ocrOptionsModal: $('#ocrOptionsModal'), ocrLanguage: $('#ocrLanguage'), ocrFontFamily: $('#ocrFontFamily'), ocrLoadFonts: $('#ocrLoadFonts'),
+    ocrResultModal: $('#ocrResultModal'), ocrResultSummary: $('#ocrResultSummary'), ocrResultText: $('#ocrResultText'), ocrResultRetypedNote: $('#ocrResultRetypedNote'),
+    extractTextResultModal: $('#extractTextResultModal'), extractTextResultSummary: $('#extractTextResultSummary'), extractTextResultText: $('#extractTextResultText')
   };
 
   // The project is a per-run workspace: every launch opens a clean one, so the
@@ -776,6 +781,382 @@
 
   function closeSavePageAsDialog(){refs.savePageAsModal.classList.remove('show');}
 
+  // --- PDF tools: Compress ---------------------------------------------------
+  // Compression's whole point is reclaiming disk space on the *same*
+  // document, so unlike Save Page As (which always writes a separate file)
+  // this overwrites the original page's file in place -- but only after the
+  // user has seen the before/after size and confirmed. compress:run never
+  // touches the original; it writes the candidate bytes to a temp file that
+  // compress:commit/compress:discard then resolve one way or the other.
+  function formatFileSize(bytes){
+    if(!Number.isFinite(bytes))return'—';
+    if(bytes>=1024*1024)return`${(bytes/(1024*1024)).toFixed(2)} MB`;
+    if(bytes>=1024)return`${(bytes/1024).toFixed(1)} KB`;
+    return`${bytes} B`;
+  }
+
+  let compressPendingPage=null;
+  let compressPendingSlot=null;
+  let compressPendingResult=null;
+
+  function openCompressOptionsDialog(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    compressPendingPage=target;
+    compressPendingSlot=editOwnerSlot||activePageSlot();
+    refs.compressLevel.value='balanced';
+    refs.compressTargetMb.value='';
+    refs.compressOptionsModal.classList.add('show');
+    setTimeout(()=>refs.compressLevel.focus(),0);
+  }
+
+  function closeCompressOptionsDialog(){refs.compressOptionsModal.classList.remove('show');}
+
+  async function runCompress(){
+    const page=compressPendingPage;
+    if(!page){closeCompressOptionsDialog();return;}
+    const level=refs.compressLevel.value;
+    const targetRaw=refs.compressTargetMb.value.trim();
+    if(targetRaw!==''&&(!Number.isFinite(Number(targetRaw))||Number(targetRaw)<=0)){
+      showToast('Target size must be a positive number of MB');
+      return;
+    }
+    const confirmButton=$('#compressOptionsConfirm');
+    confirmButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.compress.run({
+        pagePath:page.sourcePath,
+        level,
+        targetMb:targetRaw===''?undefined:Number(targetRaw)
+      });
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Compression failed: ${envelope.message}`);
+        return;
+      }
+      compressPendingResult={page,...envelope.value};
+      closeCompressOptionsDialog();
+      const{originalSize,compressedSize,targetMet}=envelope.value;
+      const reduction=originalSize>0?Math.max(0,Math.round((1-compressedSize/originalSize)*100)):0;
+      refs.compressResultSizes.textContent=`${formatFileSize(originalSize)} → ${formatFileSize(compressedSize)} (${reduction}% smaller)`;
+      if(targetMet===undefined){
+        refs.compressResultTargetNote.hidden=true;
+      }else{
+        refs.compressResultTargetNote.hidden=false;
+        refs.compressResultTargetNote.textContent=targetMet?'Target size reached.':'Target size not fully reached — this is the smallest this pass could produce.';
+      }
+      refs.compressResultModal.classList.add('show');
+      setTimeout(()=>$('#compressResultConfirm')?.focus(),0);
+    }catch(error){
+      showToast(`Compression failed: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
+
+  async function discardCompressResult(){
+    const pending=compressPendingResult;
+    refs.compressResultModal.classList.remove('show');
+    compressPendingResult=null;
+    if(pending?.tempPath)await window.electronAPI.compress.discard({tempPath:pending.tempPath}).catch(()=>{});
+  }
+
+  // --- PDF tools: OCR + retyped PDF ------------------------------------------
+  // Recognizes text and, if a font embeds successfully, also produces a
+  // retyped copy (real embedded font, not a scanned-image-plus-invisible-text
+  // overlay). Unlike Compress (which replaces the same file), OCR's retyped
+  // output is a genuinely different document, so it is only ever offered as
+  // a new sibling Page -- the original PDF page is never touched.
+  let ocrPendingPage=null;
+  let ocrLocalFonts=null;
+  let ocrPendingRetypedTempPath=null;
+
+  function openOcrOptionsDialog(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    ocrPendingPage=target;
+    refs.ocrLanguage.value='eng';
+    refs.ocrFontFamily.innerHTML='<option value="">Default (Noto Sans KR)</option>';
+    ocrLocalFonts=null;
+    refs.ocrLoadFonts.hidden=!('queryLocalFonts' in window);
+    refs.ocrOptionsModal.classList.add('show');
+    setTimeout(()=>refs.ocrLanguage.focus(),0);
+  }
+
+  function closeOcrOptionsDialog(){refs.ocrOptionsModal.classList.remove('show');}
+
+  async function loadOcrLocalFonts(){
+    if(!window.queryLocalFonts)return;
+    try{
+      const fonts=await window.queryLocalFonts();
+      ocrLocalFonts=fonts;
+      const families=[...new Set(fonts.map(font=>font.family))].sort((a,b)=>a.localeCompare(b));
+      refs.ocrFontFamily.innerHTML='<option value="">Default (Noto Sans KR)</option>'
+        +families.map(family=>`<option value="${family.replace(/"/g,'&quot;')}">${family}</option>`).join('');
+    }catch(error){
+      // Permission denied or unsupported -- the default font stays selected, not an error state.
+      console.error('queryLocalFonts failed',error);
+    }
+  }
+
+  function pickRegularVariant(fonts,family){
+    const matches=fonts.filter(font=>font.family===family);
+    if(!matches.length)return null;
+    return matches.find(font=>/^(regular|normal)$/i.test(font.style))||matches[0];
+  }
+
+  async function runOcrTool(){
+    const page=ocrPendingPage;
+    if(!page){closeOcrOptionsDialog();return;}
+    const lang=refs.ocrLanguage.value;
+    const family=refs.ocrFontFamily.value;
+    const confirmButton=$('#ocrOptionsConfirm');
+    confirmButton.disabled=true;
+    try{
+      let fontBytes;
+      if(family&&ocrLocalFonts){
+        const variant=pickRegularVariant(ocrLocalFonts,family);
+        if(variant){
+          try{
+            const blob=await variant.blob();
+            fontBytes=new Uint8Array(await blob.arrayBuffer());
+          }catch(error){
+            console.error('Could not read the chosen font, using the default',error);
+          }
+        }
+      }
+      const envelope=await window.electronAPI.ocr.run({pagePath:page.sourcePath,lang,fontBytes});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`OCR failed: ${envelope.message}`);
+        return;
+      }
+      closeOcrOptionsDialog();
+      const{text,totalPages,pagesProcessed,truncated,retypedPdfTempPath}=envelope.value;
+      const words=text.trim()?text.trim().split(/\s+/).length:0;
+      refs.ocrResultSummary.textContent=truncated
+        ?`Processed ${pagesProcessed} of ${totalPages} page(s) — ${words} words, ${text.length} characters. The rest of the document was not processed.`
+        :`Processed ${pagesProcessed} of ${totalPages} page(s) — ${words} words, ${text.length} characters.`;
+      refs.ocrResultText.value=text.trim()?text:'No text was recognized.';
+      ocrPendingRetypedTempPath=retypedPdfTempPath;
+      const addButton=$('#ocrResultAddPage');
+      if(retypedPdfTempPath){
+        refs.ocrResultRetypedNote.hidden=true;
+        addButton.hidden=false;
+      }else{
+        refs.ocrResultRetypedNote.hidden=false;
+        refs.ocrResultRetypedNote.textContent='A retyped PDF could not be produced for this document.';
+        addButton.hidden=true;
+      }
+      refs.ocrResultModal.classList.add('show');
+      setTimeout(()=>$('#ocrResultClose')?.focus(),0);
+    }catch(error){
+      showToast(`OCR failed: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
+
+  async function closeOcrResultDialog(){
+    refs.ocrResultModal.classList.remove('show');
+    if(ocrPendingRetypedTempPath)await window.electronAPI.ocr.discardRetyped({tempPath:ocrPendingRetypedTempPath}).catch(()=>{});
+    ocrPendingRetypedTempPath=null;
+    ocrPendingPage=null;
+  }
+
+  async function addRetypedPageFromOcrResult(){
+    const page=ocrPendingPage;
+    const tempPath=ocrPendingRetypedTempPath;
+    if(!page||!tempPath){refs.ocrResultModal.classList.remove('show');return;}
+    const addButton=$('#ocrResultAddPage');
+    addButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.ocr.addRetypedPage({sourcePagePath:page.sourcePath,tempPath});
+      if(!envelope.ok){showToast(`Could not add the retyped page: ${envelope.message}`);return;}
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      const context=nodeById(page.id);
+      await addPageResultToDocument(result,null,context?.project||null,page.parentId);
+      refs.ocrResultModal.classList.remove('show');
+      ocrPendingRetypedTempPath=null;
+      ocrPendingPage=null;
+      showToast('Retyped PDF added as a new page');
+    }catch(error){
+      showToast(`Could not add the retyped page: ${error.message}`);
+    }finally{
+      addButton.disabled=false;
+    }
+  }
+
+  // --- PDF tools: Convert (PDF <-> images) ------------------------------------
+  // Ported from an earlier web implementation's PDF<->image conversion. Both
+  // directions run in the same utility-process task harness compress/OCR use
+  // (not the renderer, despite that being how the original did it client-side
+  // in a browser -- Leaf's renderer has contextIsolation+nodeIntegration both
+  // off, so it cannot require() pdfjs-dist/pdf-lib directly; the utility
+  // process already has the native-dependency-free run loop this needs).
+  //
+  // PDF -> images has no confirmation step (nothing on disk is replaced, so
+  // there is nothing to confirm) and lands as a new sibling Group next to the
+  // source PDF Page, reusing Leaf's existing Group concept instead of
+  // inventing a multi-file result UI. Images -> PDF instead asks where to
+  // save, since a Group is not itself file-backed and so has no natural
+  // "sibling" location the way a Page does; on success the combined PDF is
+  // also added into the tree as a new sibling Page of the Group.
+  function addImageGroupToDocument(groupName,files,project,parentId){
+    const name=uniqueTreeName(groupName,children(project,parentId).map(node=>node.name));
+    const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true,container:true};
+    project.nodes.push(group);
+    files.forEach((file,index)=>{
+      const page={
+        id:uid('page'),type:'page',name:file.fileName.replace(/\.png$/i,''),fileName:file.fileName,
+        documentType:'image',parentId:group.id,order:index,source:'',loadedSource:'',baseUrl:null,
+        sourcePath:file.filePath,previewUrl:`file:///${String(file.filePath).replace(/\\/g,'/')}`,
+        initialSnapshotPath:null,isEmpty:false
+      };
+      project.nodes.push(page);
+    });
+    return group;
+  }
+
+  let convertRunning=false;
+
+  async function runConvertPdfToImages(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    if(convertRunning)return;
+    convertRunning=true;
+    showToast('Converting to images…');
+    try{
+      const envelope=await window.electronAPI.convert.pdfToImages({pagePath:target.sourcePath});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Convert failed: ${envelope.message}`);
+        return;
+      }
+      const context=nodeById(target.id);
+      if(!context?.project){showToast('Convert failed: the source page is no longer open.');return;}
+      addImageGroupToDocument(envelope.value.dirName,envelope.value.files,context.project,target.parentId);
+      renderAll();persist();
+      const count=envelope.value.files.length;
+      showToast(`Created ${count} image page${count===1?'':'s'}`);
+    }catch(error){
+      showToast(`Convert failed: ${error.message}`);
+    }finally{
+      convertRunning=false;
+    }
+  }
+
+  async function combineGroupToPdf(project,node){
+    if(!project||!node)return;
+    const imagePages=node.type==='group'
+      ?children(project,node.id).filter(child=>child.type==='page'&&child.documentType==='image').sort((a,b)=>a.order-b.order)
+      :(node.type==='page'&&node.documentType==='image'?[node]:[]);
+    if(!imagePages.length){showToast('No image pages to combine');return;}
+    const missing=imagePages.find(item=>!item.sourcePath);
+    if(missing){showToast(`Save "${missing.name}" to disk first`);return;}
+    if(convertRunning)return;
+    convertRunning=true;
+    showToast('Combining images…');
+    try{
+      const envelope=await window.electronAPI.convert.imagesToPdf({
+        imagePaths:imagePages.map(item=>item.sourcePath),
+        suggestedName:node.name
+      });
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Combine failed: ${envelope.message}`);
+        return;
+      }
+      if(!envelope.value)return; // user canceled the save dialog
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      await addPageResultToDocument(result,null,project,node.parentId);
+      showToast('Combined PDF added');
+    }catch(error){
+      showToast(`Combine failed: ${error.message}`);
+    }finally{
+      convertRunning=false;
+    }
+  }
+
+  // --- PDF tools: Export text as Markdown -------------------------------------
+  // Reads the PDF's own embedded text layer (pdfjs-dist getTextContent, not
+  // OCR -- fast and exact for any PDF that already has one). A scanned PDF
+  // with no text layer comes back with "No extractable text" per page;
+  // Recognize text (OCR) above is the tool for that case.
+  let extractTextPendingPage=null;
+  let extractTextPendingMarkdown=null;
+
+  async function runExtractText(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    showToast('Extracting text…');
+    try{
+      const envelope=await window.electronAPI.extractText.run({pagePath:target.sourcePath});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Extract failed: ${envelope.message}`);
+        return;
+      }
+      extractTextPendingPage=target;
+      extractTextPendingMarkdown=envelope.value.markdown;
+      const{totalPages,pagesProcessed,truncated}=envelope.value;
+      refs.extractTextResultSummary.textContent=truncated
+        ?`Processed ${pagesProcessed} of ${totalPages} page(s). The rest of the document was not processed.`
+        :`Processed ${pagesProcessed} of ${totalPages} page(s).`;
+      refs.extractTextResultText.value=extractTextPendingMarkdown;
+      refs.extractTextResultModal.classList.add('show');
+      setTimeout(()=>$('#extractTextResultClose')?.focus(),0);
+    }catch(error){
+      showToast(`Extract failed: ${error.message}`);
+    }
+  }
+
+  function closeExtractTextResultDialog(){
+    refs.extractTextResultModal.classList.remove('show');
+    extractTextPendingPage=null;
+    extractTextPendingMarkdown=null;
+  }
+
+  async function saveExtractedMarkdown(){
+    const page=extractTextPendingPage;
+    const markdown=extractTextPendingMarkdown;
+    if(!page||markdown==null){refs.extractTextResultModal.classList.remove('show');return;}
+    const saveButton=$('#extractTextResultSave');
+    saveButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.extractText.save({suggestedName:page.name,markdown});
+      if(!envelope.ok){showToast(`Could not save: ${envelope.message}`);return;}
+      if(!envelope.value){return;} // user canceled the save dialog
+      refs.extractTextResultModal.classList.remove('show');
+      extractTextPendingPage=null;
+      extractTextPendingMarkdown=null;
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      const context=nodeById(page.id);
+      await addPageResultToDocument(result,null,context?.project||null,page.parentId);
+      showToast('Markdown saved and added as a new page');
+    }catch(error){
+      showToast(`Could not save: ${error.message}`);
+    }finally{
+      saveButton.disabled=false;
+    }
+  }
+
+  async function commitCompressResult(){
+    const pending=compressPendingResult;
+    if(!pending){refs.compressResultModal.classList.remove('show');return;}
+    const confirmButton=$('#compressResultConfirm');
+    confirmButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.compress.commit({pagePath:pending.page.sourcePath,tempPath:pending.tempPath});
+      if(!envelope.ok){showToast(`Could not replace the original: ${envelope.message}`);return;}
+      refs.compressResultModal.classList.remove('show');
+      compressPendingResult=null;
+      const origin=pageReloadOrigin(pending.page);
+      if(origin&&compressPendingSlot)await performReload(pending.page,origin,compressPendingSlot);
+      compressPendingSlot=null;
+      showToast(`Compressed and saved — ${formatFileSize(pending.compressedSize)}`);
+    }catch(error){
+      showToast(`Could not replace the original: ${error.message}`);
+    }finally{
+      confirmButton.disabled=false;
+    }
+  }
+
   function cleanRuntimeHtmlForExport(html){
     const doc=new DOMParser().parseFromString(String(html||''),'text/html');
     window.SourceFidelity?.stripEditorArtifactsFromDocument?.(doc);
@@ -1310,6 +1691,12 @@
 
   // ----- Context menu -----
   function openContextMenu(x,y){
+    const ctx=selectedContext();
+    const combineButton=refs.ctx.querySelector('[data-context="combine-to-pdf"]');
+    if(combineButton){
+      const eligible=ctx.node&&(ctx.node.type==='group'||(ctx.node.type==='page'&&ctx.node.documentType==='image'));
+      combineButton.hidden=!eligible;
+    }
     refs.ctx.hidden=false;
     refs.ctx.style.left=`${x}px`;
     refs.ctx.style.top=`${y}px`;
@@ -1348,6 +1735,7 @@
     if(action==='delete') return deleteSelectedTree();
     if(action==='add-page') return addEmptyPage(project,ctx.node);
     if(action==='add-group') return addGroup(project,ctx.node);
+    if(action==='combine-to-pdf') return combineGroupToPdf(project,ctx.node);
   }
 
   function renameSelected(){
@@ -4931,7 +5319,19 @@
       if(activeFrame?.dataset.previewRuntime==='interactive-isolated'){
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>Interactive Preview</strong>This page uses JavaScript to render its content. It runs in an isolated sandbox, so direct DOM HTML Edit is disabled for this page.</div>';
       }else if(affectedPage?.documentType==='pdf'){
-        refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.</div>';
+        refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.'
+          +'<div class="pdf-tools-group"><button class="btn" type="button" data-action="open-compress">Compress…</button>'
+          +'<button class="btn" type="button" data-action="open-ocr">Recognize text (OCR)…</button>'
+          +'<button class="btn" type="button" data-action="export-images">Export as images…</button>'
+          +'<button class="btn" type="button" data-action="export-text">Export as text (Markdown)…</button></div></div>';
+        const compressButton=refs.inspectorBody.querySelector('[data-action="open-compress"]');
+        if(compressButton)compressButton.onclick=()=>openCompressOptionsDialog(affectedPage);
+        const ocrButton=refs.inspectorBody.querySelector('[data-action="open-ocr"]');
+        if(ocrButton)ocrButton.onclick=()=>openOcrOptionsDialog(affectedPage);
+        const exportImagesButton=refs.inspectorBody.querySelector('[data-action="export-images"]');
+        if(exportImagesButton)exportImagesButton.onclick=()=>runConvertPdfToImages(affectedPage);
+        const exportTextButton=refs.inspectorBody.querySelector('[data-action="export-text"]');
+        if(exportTextButton)exportTextButton.onclick=()=>runExtractText(affectedPage);
       }
     }
     if(affectedPage?.documentType==='pdf'&&affectedFrame)configureFrameRuntime(affectedFrame,affectedPage,affectedSlot);
@@ -7442,6 +7842,40 @@
     trapDialogFocus(refs.savePageAsModal,event);
     if(event.key==='Escape'){event.preventDefault();closeSavePageAsDialog();}
     if(event.key==='Enter'){event.preventDefault();$('#savePageAsConfirm').click();}
+  });
+
+  $('#compressOptionsCancel').onclick=closeCompressOptionsDialog;
+  $('#compressOptionsConfirm').onclick=runCompress;
+  refs.compressOptionsModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.compressOptionsModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeCompressOptionsDialog();}
+  });
+  $('#compressResultCancel').onclick=discardCompressResult;
+  $('#compressResultConfirm').onclick=commitCompressResult;
+  refs.compressResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.compressResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();discardCompressResult();}
+  });
+
+  $('#ocrOptionsCancel').onclick=closeOcrOptionsDialog;
+  $('#ocrOptionsConfirm').onclick=runOcrTool;
+  refs.ocrLoadFonts.onclick=loadOcrLocalFonts;
+  refs.ocrOptionsModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.ocrOptionsModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeOcrOptionsDialog();}
+  });
+  $('#ocrResultClose').onclick=closeOcrResultDialog;
+  $('#ocrResultAddPage').onclick=addRetypedPageFromOcrResult;
+  refs.ocrResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.ocrResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeOcrResultDialog();}
+  });
+
+  $('#extractTextResultClose').onclick=closeExtractTextResultDialog;
+  $('#extractTextResultSave').onclick=saveExtractedMarkdown;
+  refs.extractTextResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.extractTextResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeExtractTextResultDialog();}
   });
 
   function openAboutDialog(){refs.aboutModal.classList.add('show');setTimeout(()=>$('#aboutClose').focus(),0);}

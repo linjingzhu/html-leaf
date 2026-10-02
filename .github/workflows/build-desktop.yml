@@ -1,0 +1,94 @@
+name: Build Desktop App
+
+# Manual only -- no push/pull_request/schedule trigger. Every run is a
+# deliberate action, approved in .ai/reports/OWNER_ACTIONS.md. Builds the
+# Windows installer + portable zip on a standard GitHub-hosted runner, keeps
+# them as a workflow artifact, and publishes them as a GitHub Release so the
+# owner gets login-free, non-expiring, direct download links:
+#   https://github.com/linjingzhu/html-leaf/releases/latest/download/Leaf-Setup-x64.exe
+#   https://github.com/linjingzhu/html-leaf/releases/latest/download/Leaf-x64-portable.zip
+#
+# This replaces the prior build-windows.yml/build-macos.yml/build-release.yml
+# trio (removed 2026-09-25 at the owner's request). Deliberately narrower
+# than what was removed: Windows only (macOS never shipped successfully in
+# this repo's 27 prior releases -- see package.json's still-present but
+# unwired mac-targeted build scripts if that ever changes), workflow_dispatch only
+# (no push/tag trigger, so there is no automatic path left for the kind of
+# accidental duplicate release the old push-trigger bug caused), and no
+# version-bumping step -- the release tag is read straight from the
+# committed package.json version plus this run's own number, mirroring an
+# already-approved pattern from an earlier project.
+on:
+  workflow_dispatch: {}
+
+# contents: write is what `gh release create` needs to push the tag and
+# upload the assets. Nothing else in this workflow writes to the repo.
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Run QA
+        run: |
+          npm run qa
+          npm run qa:github-client
+          npm run qa:google-drive
+          npm run qa:static
+          npm run qa:startup-adversarial
+          npm run qa:startup-readiness
+          npm run qa:fidelity
+          npm run qa:scripted-html-edit
+          npm run qa:release-version
+          npm run qa:zoom-scrollbar
+          npm run qa:theme-light
+
+      # electron-builder's own CI auto-publish stays disabled (--publish=never,
+      # already set in dist:win): the release is created explicitly below,
+      # with fixed asset names.
+      - run: npm run dist:win
+
+      - name: Collect installer and portable zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-out
+          find release-v* -maxdepth 1 \( -name '*.zip' -o -name '*.exe' \) -exec cp {} dist-out/ \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: leaf-windows
+          path: dist-out/*
+          retention-days: 14
+
+      # One release per build, tagged v<version>-build.<run number> so
+      # repeated builds of the same package.json version never collide.
+      # Asset names are constant so /releases/latest/download/<name> always
+      # resolves to the newest build.
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+          installer=$(ls dist-out/*.exe | head -n 1)
+          zip=$(ls dist-out/*.zip | head -n 1)
+          cp "$installer" Leaf-Setup-x64.exe
+          cp "$zip" Leaf-x64-portable.zip
+          gh release create "$tag" \
+            "Leaf-Setup-x64.exe#Leaf ${version} — Windows x64 installer" \
+            "Leaf-x64-portable.zip#Leaf ${version} — Windows x64 portable (no install)" \
+            --target "$GITHUB_SHA" \
+            --title "Leaf ${version} (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Windows build of commit ${GITHUB_SHA}. The installer needs no extra steps; the portable zip just needs unzipping and running. Unsigned build -- Windows SmartScreen may warn on first run (More info -> Run anyway). Direct links to the newest build: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/Leaf-Setup-x64.exe and https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/Leaf-x64-portable.zip"

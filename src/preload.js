@@ -121,5 +121,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openProject: () => ipcRenderer.invoke('project:open'),
   readProjectPath: (filePath) => ipcRenderer.invoke('project:readPath', filePath),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
-  saveProjectAs: (payload) => ipcRenderer.invoke('project:saveAs', payload)
+  saveProjectAs: (payload) => ipcRenderer.invoke('project:saveAs', payload),
+  // PDF tools. run() never touches the original file -- it reports a
+  // comparison (and, for compress, a temp-file path) for the UI to show
+  // before anything changes; commit()/discard() decide what happens to it.
+  compress: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('compress:run', payload),
+    commit: (payload) => ipcRenderer.invoke('compress:commit', payload),
+    discard: (payload) => ipcRenderer.invoke('compress:discard', payload)
+  }),
+  ocr: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('ocr:run', payload),
+    addRetypedPage: (payload) => ipcRenderer.invoke('ocr:addRetypedPage', payload),
+    discardRetyped: (payload) => ipcRenderer.invoke('ocr:discardRetyped', payload)
+  }),
+  convert: Object.freeze({
+    pdfToImages: (payload) => ipcRenderer.invoke('convert:pdfToImages', payload),
+    imagesToPdf: (payload) => ipcRenderer.invoke('convert:imagesToPdf', payload)
+  }),
+  extractText: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('extractText:run', payload),
+    save: (payload) => ipcRenderer.invoke('extractText:save', payload)
+  })
 });

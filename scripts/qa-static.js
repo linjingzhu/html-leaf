@@ -74,8 +74,9 @@ check('Desktop build toolchain is pinned',
   JSON.stringify(pkg.devDependencies || {}));
 check('Package exposes current QA entry points',
   pkg.scripts?.qa === 'node scripts/qa-v0516.js' && pkg.scripts?.['qa:static'] === 'node scripts/qa-static.js');
-check('Release metadata targets v0.5.16 output',
-  pkg.version === '0.5.16' && pkg.build?.directories?.output === 'release-v0.5.16');
+check('Release metadata targets this version\'s own output directory',
+  pkg.build?.directories?.output === `release-v${pkg.version}`,
+  `version=${pkg.version} output=${pkg.build?.directories?.output}`);
 
 checkIncludesAll('Electron security boundaries preserved', main,
   ['contextIsolation: true', 'nodeIntegration: false', 'sandbox: true', 'webSecurity: true']);
@@ -218,8 +219,13 @@ const workflowQaSuites = workflowFiles.flatMap(name => {
     }));
 });
 const distinctSuiteSets = [...new Set(workflowQaSuites.map(entry => entry.suites))];
+// Leaf is back to a single workflow (build-desktop.yml, workflow_dispatch
+// only -- see .ai/reports/OWNER_ACTIONS.md) after the prior build-windows/
+// build-macos/build-release trio was removed; one QA step covering every
+// qa:* script is what "every workflow QA step runs the identical suite set"
+// means now, not >=4 steps across multiple files.
 check('Every workflow QA step runs the identical suite set',
-  workflowQaSuites.length >= 4 && distinctSuiteSets.length === 1,
+  workflowQaSuites.length >= 1 && distinctSuiteSets.length === 1,
   distinctSuiteSets.length === 1
     ? `${workflowQaSuites.length} QA steps across ${workflowFiles.length} workflows`
     : `Diverged: ${workflowQaSuites.map(entry => `${entry.workflow}[${entry.suites}]`).join(' | ')}`);
@@ -533,7 +539,7 @@ check('Every installer asset referenced by package.json exists',
   nsisAssets.filter(rel => !fs.existsSync(path.join(root, rel))).join(', ') || `${nsisAssets.length} assets`);
 // Collecting only *.zip would upload a green build that silently omits the
 // installer, which is exactly how it would go missing without anyone noticing.
-for (const wf of ['build-windows.yml', 'build-release.yml']) {
+for (const wf of ['build-desktop.yml']) {
   const text = read(path.join('.github', 'workflows', wf)).replace(/\r/g, '');
   check(`${wf} collects the installer alongside the zip`,
     /-name '\*\.zip' -o -name '\*\.exe'/.test(text),
@@ -567,22 +573,23 @@ check('The discarded project is cleared from storage at startup, after it is rea
   && renderer.includes('.filter(key=>key===stateKey||'));
 
 // --- CI triggers -----------------------------------------------------------
-// Every PR branch here is claude/** targeting stable. Listing claude/** under
-// push as well ran the whole Windows build twice per commit, and the publish
-// step fired on any push event, so each of those runs minted its own
-// windows-v<version> prerelease - 116 release tags before this was caught.
-const windowsWorkflow = read('.github/workflows/build-windows.yml');
-const windowsTriggers = windowsWorkflow.slice(0, windowsWorkflow.indexOf('\njobs:')).replace(/\r/g, '');
-const pushBranches = /\n {2}push:\n {4}branches:\n((?: {6}- .*\n)+)/.exec(windowsTriggers)?.[1] || '';
-check('Windows CI does not build PR branches twice per commit',
-  pushBranches.includes('"stable"') && !pushBranches.includes('claude/'),
-  `push branches: ${pushBranches.trim().replace(/\s+/g, ' ') || '(none found)'}`);
-check('Windows CI publishes a release only from stable, a tag, or a dispatch',
-  /if: startsWith\(github\.ref, 'refs\/tags\/v'\) \|\| github\.ref == 'refs\/heads\/stable' \|\| inputs\.publish_release/.test(windowsWorkflow)
-  && !windowsWorkflow.includes("github.event_name == 'push' || inputs.publish_release"));
-check('Superseded PR builds are cancelled, release builds are not',
-  /\nconcurrency:\n/.test(windowsTriggers)
-  && windowsTriggers.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+// The prior build-windows.yml/build-macos.yml/build-release.yml trio had a
+// push-trigger bug: listing claude/** under push as well as pull_request ran
+// the whole Windows build twice per commit, and the publish step fired on
+// any push event, so each of those runs minted its own windows-v<version>
+// prerelease - 116 release tags before this was caught. That whole trigger
+// surface (push, tags, a publish_release input, concurrency cancellation to
+// de-dupe PR builds) was removed along with the old workflows; the lesson is
+// preserved structurally instead of re-implemented: build-desktop.yml has
+// exactly one trigger, workflow_dispatch, so a release is only ever created
+// by someone deliberately running it - there is no automatic/push path left
+// for a duplicate run to sneak in on.
+const desktopWorkflow = read('.github/workflows/build-desktop.yml');
+const desktopTriggers = desktopWorkflow.slice(0, desktopWorkflow.indexOf('\njobs:')).replace(/\r/g, '');
+check('Desktop build has no push, pull_request, or schedule trigger - only a manual dispatch',
+  /\non:\n {2}workflow_dispatch:/.test(desktopTriggers)
+  && !/\n {2}(push|pull_request|schedule):/.test(desktopTriggers),
+  desktopTriggers.trim().replace(/\s+/g, ' '));
 
 // --- Group Tile View -------------------------------------------------------
 checkIncludesAll('Group Tile View is wired into the tree and the viewport', renderer,
@@ -1382,29 +1389,22 @@ check('A GitHub URL in the drop-zone field is recognised as a repository',
   && html.includes('data-action="connect-github"'));
 
 // --- Release notes ---------------------------------------------------------
-// These builds are ad-hoc signed and not notarized, so macOS refuses them on
-// first launch with a dialog that says the app is damaged. A release that ships
-// a .dmg without saying how to get past that hands the user a file that looks
-// broken. build-release.yml shipped exactly that for two releases while
-// build-macos.yml carried the instruction all along.
+// macOS packaging config (package.json's build.mac/dmg, dist:mac* scripts)
+// stays in the tree but is deliberately not wired into CI: across this
+// repo's entire release history (27 prior GitHub releases) a macOS build
+// never once shipped successfully, so build-desktop.yml covers Windows only.
+// If a macOS workflow is ever added for real, it needs the Gatekeeper
+// quarantine instructions these builds require (ad-hoc signed, not
+// notarized) -- re-add the equivalent of this section's old checks then,
+// not before there is an actual macOS publisher to check.
 const releaseWorkflows = fs.readdirSync(path.join(root, '.github', 'workflows'))
   .filter(name => name.endsWith('.yml'))
   .map(name => ({ name, text: read(path.join('.github', 'workflows', name)) }));
-const macPublishers = releaseWorkflows.filter(workflow =>
-  /mac-\$\{?arch|macos-artifacts|dist:mac/.test(workflow.text) && workflow.text.includes('gh release'));
-check('A workflow that publishes a macOS build exists', macPublishers.length > 0,
-  macPublishers.map(workflow => workflow.name).join(', '));
-check('Every release that ships a macOS build says how to get past Gatekeeper',
-  macPublishers.every(workflow => workflow.text.includes('xattr -dr com.apple.quarantine')),
-  macPublishers.filter(workflow => !workflow.text.includes('xattr -dr com.apple.quarantine'))
-    .map(workflow => workflow.name).join(', ') || 'all covered');
-// Right-click-Open is the bypass for a Developer ID app that is merely
-// un-notarized. It does nothing for an ad-hoc signed one, and macOS 15 removed
-// it outright, so telling anyone to try it sends them in a circle.
-check('No release note offers right-click Open as the way in',
-  macPublishers.every(workflow => !/or right-click the app and choose/i.test(workflow.text)),
-  macPublishers.filter(workflow => /or right-click the app and choose/i.test(workflow.text))
-    .map(workflow => workflow.name).join(', ') || 'none do');
+check('No workflow publishes an unsigned/un-notarized macOS build without Gatekeeper instructions',
+  releaseWorkflows
+    .filter(workflow => /mac-\$\{?arch|macos-artifacts|dist:mac/.test(workflow.text) && workflow.text.includes('gh release'))
+    .every(workflow => workflow.text.includes('xattr -dr com.apple.quarantine')),
+  'no macOS publisher in CI today (Windows only, see .ai/reports/OWNER_ACTIONS.md)');
 
 // --- Left panel grid ------------------------------------------------------
 // A grid whose row list is longer than its child list silently puts a child in

@@ -6,10 +6,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 const pkg = JSON.parse(read('package.json'));
 const bump = read('scripts/bump-build-version.js');
-const compute = read('scripts/compute-release-version.js');
-const windows = read('.github/workflows/build-windows.yml');
-const macos = read('.github/workflows/build-macos.yml');
-const release = read('.github/workflows/build-release.yml');
+const desktop = read('.github/workflows/build-desktop.yml');
 
 const checks = [];
 function check(name, condition, detail = '') {
@@ -20,14 +17,12 @@ function includesAll(name, text, parts) {
   const missing = parts.filter(part => !text.includes(part));
   check(name, missing.length === 0, missing.length ? `Missing: ${missing.join(', ')}` : '');
 }
-function before(text, left, right) {
-  const l = text.indexOf(left);
-  const r = text.indexOf(right);
-  return l >= 0 && r >= 0 && l < r;
-}
 
 check('Package exposes release version QA', pkg.scripts?.['qa:release-version'] === 'node scripts/qa-release-version-v0516.js');
 
+// Local manual builds (npm run dist:win/dist:mac*) still derive a bumped
+// version per invocation via bump-build-version.js -- unchanged by the CI
+// rework below, still worth a direct check since nothing else exercises it.
 includesAll('Build version script honors one explicit shared version', bump, [
   'const explicitVersion = process.env.LEAF_BUILD_VERSION || versionFromTag();',
   'const nextVersion = explicitVersion ||',
@@ -35,48 +30,17 @@ includesAll('Build version script honors one explicit shared version', bump, [
   'pkg.build.directories.output = `release-v${nextVersion}`'
 ]);
 
-includesAll('Shared version computation is non-mutating and deterministic per workflow invocation', compute, [
-  'const explicitVersion = String(process.env.LEAF_BUILD_VERSION || versionFromTag() ||',
-  'const buildNumber = positiveInteger(process.env.LEAF_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER) || 1',
-  'console.log(`version=${version}`)'
+// CI itself (build-desktop.yml) deliberately does NOT call bump-build-version
+// or compute-release-version -- it tags straight from the committed
+// package.json version, exactly like an already-approved pattern this
+// mirrors (see .ai/reports/OWNER_ACTIONS.md). That is what prevents the
+// drift that caused package.json to read 0.5.16 while CI had already auto-
+// bumped its way to windows-v0.5.239: there is no auto-bump left to drift.
+includesAll('CI tags a release straight from the committed package.json version, with no auto-bump', desktop, [
+  "version=$(node -p \"require('./package.json').version\")",
+  'tag="v${version}-build.${GITHUB_RUN_NUMBER}"'
 ]);
-
-includesAll('Unified release workflow computes version once before platform jobs', release, [
-  'name: Build Release',
-  'prepare-version:',
-  'outputs:',
-  'version: ${{ steps.version.outputs.version }}',
-  'node scripts/compute-release-version.js >> "$GITHUB_OUTPUT"',
-  'build-windows:',
-  'build-macos:',
-  'needs: prepare-version'
-]);
-check('Release workflow computes the version before Windows packages', before(release, 'prepare-version:', 'build-windows:'));
-check('Release workflow computes the version before macOS packages', before(release, 'prepare-version:', 'build-macos:'));
-
-includesAll('Windows and macOS release jobs use the exact same prepared version', release, [
-  'LEAF_BUILD_VERSION: ${{ needs.prepare-version.outputs.version }}',
-  'Leaf-Windows-${{ needs.prepare-version.outputs.version }}',
-  'Leaf-macOS-${{ needs.prepare-version.outputs.version }}',
-  'tag="release-v${version}"'
-]);
-
-includesAll('Platform-only workflows accept an explicit build_version override', windows, [
-  'build_version:',
-  'LEAF_BUILD_VERSION: ${{ inputs.build_version }}',
-  'LEAF_BUILD_NUMBER: ${{ github.run_number }}'
-]);
-includesAll('macOS workflow accepts the same explicit build_version override', macos, [
-  'build_version:',
-  'LEAF_BUILD_VERSION: ${{ inputs.build_version }}',
-  'LEAF_BUILD_NUMBER: ${{ github.run_number }}'
-]);
-
-includesAll('Pull-request verification still uploads non-publishing build artifacts', windows, [
-  'pull_request:',
-  'npm run dist:win',
-  'Upload build artifacts'
-]);
+check('CI does not invoke the version-bumping scripts', !desktop.includes('version:build') && !desktop.includes('compute-release-version'));
 check('Windows dist build disables electron-builder auto-publish', pkg.scripts?.['dist:win']?.includes('--publish=never'));
 
 console.log('\nLeaf release version QA');
