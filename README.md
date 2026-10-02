@@ -38,24 +38,25 @@ Release details and verification: `docs/RELEASE_v0.5.16.md`.
 
 ## Downloads
 
-| Platform | File | Source |
+| Platform | File | Always the newest build |
 | --- | --- | --- |
-| Windows x64 | `Leaf-Setup-0.5.16-x64.exe` (installer) / `Leaf-0.5.16-x64.zip` (portable, no install) | [`windows-v0.5.16`](../../releases/tag/windows-v0.5.16) |
-| macOS Apple Silicon | `Leaf-0.5.16-mac-arm64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
-| macOS Intel | `Leaf-0.5.16-mac-x64.dmg` / `.zip` | [`macos-v0.5.16`](../../releases/tag/macos-v0.5.16) |
+| Windows x64 | `Leaf-Setup-x64.exe` (installer) / `Leaf-x64-portable.zip` (portable, no install) | [`releases/latest`](../../releases/latest) |
 
-플랫폼 빌드는 GitHub Actions의 `Build macOS` / `Build Windows` 워크플로가 각각 macOS·Windows 러너에서 생성합니다.
-두 워크플로 모두 `claude/**` 브랜치 push, `v*` 태그 push, 수동 실행(Actions → 워크플로 선택 → Run workflow)으로 동작하며,
-결과물을 워크플로 아티팩트와 `macos-v<version>` / `windows-v<version>` 사전 릴리스에 함께 올립니다.
+Windows builds are produced by the `Build Desktop App` GitHub Actions workflow
+(`.github/workflows/build-desktop.yml`), on a standard Windows runner. It runs
+**only on manual request** (Actions → "Build Desktop App" → Run workflow) —
+never automatically on a push or a tag — and publishes a GitHub Release per
+run with both files attached, so the links above always resolve to the
+newest build with no login and no expiry. See
+`.ai/reports/OWNER_ACTIONS.md` (OA-1) for the approval record.
 
-Windows 빌드는 코드 서명 인증서가 없어 SmartScreen 경고가 표시될 수 있습니다. **추가 정보 → 실행**을 선택하세요.
+macOS is not currently built by CI — a macOS build has never shipped
+successfully from this repository. `npm run dist:mac`/`dist:mac:arm64`/
+`dist:mac:x64` still exist for a local build if needed; see "Building
+locally" below.
 
-macOS 빌드는 Apple Developer 인증서로 서명/공증되지 않았기 때문에 첫 실행이 차단됩니다.
-`Leaf.app`을 `/Applications`로 옮긴 뒤 아래 명령으로 격리 속성을 제거하거나, 앱을 우클릭한 다음 **열기**를 선택하세요.
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Leaf.app
-```
+Windows builds are unsigned, so SmartScreen may warn on first run. Choose
+**More info → Run anyway**.
 
 ## Building locally
 

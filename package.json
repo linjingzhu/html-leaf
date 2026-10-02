@@ -1,6 +1,6 @@
 {
   "name": "leaf",
-  "version": "0.5.16",
+  "version": "0.6.0",
   "private": true,
   "description": "Leaf visual project editor with document workspaces, source-fidelity guards, and HTML/Markdown/JSON/PDF page support.",
   "main": "src/main.js",
@@ -35,7 +35,7 @@
     "productName": "Leaf",
     "asar": true,
     "directories": {
-      "output": "release-v0.5.16",
+      "output": "release-v0.6.0",
       "buildResources": "build"
     },
     "files": [
