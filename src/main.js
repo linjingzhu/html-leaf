@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, clipboard, shell, net, session, safeStorage, utilityProcess } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -1068,6 +1068,47 @@ function installDevToolsShortcut(contents) {
   });
 }
 
+// Heavy, CPU-bound PDF work (OCR recognition, image re-encoding) runs in a
+// forked utility process rather than inline here. This process's main thread
+// also owns the renderer's IPC and the whole app's UI, unlike pdf-convertor's
+// serverless-per-request model where blocking one request never affected
+// anyone else -- blocking this process for the several seconds a real OCR or
+// compress pass can take would freeze the whole app. One task runs at a time;
+// a second request while one is in flight is rejected (kind: 'busy') rather
+// than queued, since there is exactly one window to report progress to.
+let activeTaskProcess = null;
+
+function runBackgroundTask(type, payload) {
+  if (activeTaskProcess) {
+    return Promise.reject(Object.assign(new Error('Another PDF task is already running.'), { kind: 'busy' }));
+  }
+  return new Promise((resolve, reject) => {
+    const child = utilityProcess.fork(path.join(__dirname, 'workers', 'task-runner.js'), [], {
+      serviceName: `leaf-task-${type}`,
+      stdio: 'pipe'
+    });
+    activeTaskProcess = child;
+    const finish = () => {
+      activeTaskProcess = null;
+      child.removeAllListeners();
+    };
+    child.once('message', message => {
+      finish();
+      child.kill();
+      if (message && message.ok) resolve(message.value);
+      else reject(Object.assign(new Error(message?.message || 'PDF task failed.'), { kind: message?.kind }));
+    });
+    child.once('exit', code => {
+      if (activeTaskProcess !== child) return; // already settled via the message above
+      finish();
+      reject(Object.assign(new Error(`PDF task process exited unexpectedly (code ${code}).`), { kind: 'crashed' }));
+    });
+    child.stdout?.on('data', chunk => process.stdout.write(`[task:${type}] ${chunk}`));
+    child.stderr?.on('data', chunk => process.stderr.write(`[task:${type}] ${chunk}`));
+    child.postMessage({ type, payload });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1660,
@@ -1104,6 +1145,14 @@ app.on('web-contents-created', (_event, contents) => installNavigationGuards(con
 
 app.whenReady().then(() => {
   beginStartupLog();
+  // Deny every permission request by default -- this app opens arbitrary
+  // user-supplied HTML as Preview content, so a blanket grant would be a real
+  // widening of what that content can do. The one exception (added for the
+  // OCR feature's "load a font installed on this PC" picker) is granted
+  // narrowly, by permission name only, not by origin or requesting frame.
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'local-fonts');
+  });
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('app:startupLogPath', () => startupLogPath());
   ipcMain.handle('file:importHtml', openHtmlFile);
@@ -1138,22 +1187,29 @@ app.whenReady().then(() => {
 
   // Envelopes rather than throws: an Error crossing contextBridge keeps only its
   // message, and it arrives wrapped in "Error invoking remote method ...". The
-  // kind is what decides whether the UI offers a re-sign-in, a wait, or a
-  // narrower folder, so it has to survive as data.
-  const githubReply = run => async (...args) => {
+  // kind is what decides whether the UI offers a re-sign-in, a wait, a narrower
+  // folder, or (for PDF tools) a retry/fallback, so it has to survive as data.
+  // One shared factory: each integration supplies how to classify an error
+  // into a `kind` and how to turn that into a message; a handler that just
+  // throws `Object.assign(new Error('...'), {kind: '...'})` needs neither.
+  const ipcReply = (run, { resolveKind, resolveMessage, fallbackMessage } = {}) => async (...args) => {
     try {
       return { ok: true, value: await run(...args) };
     } catch (error) {
-      const kind = error?.kind || githubTransportKind(error);
-      return {
-        ok: false,
-        kind,
-        message: kind === 'network'
-          ? githubTransportMessage(error)
-          : String(error?.message || 'GitHub could not be reached.')
-      };
+      const kind = error?.kind || (resolveKind ? resolveKind(error) : undefined);
+      const message = resolveMessage
+        ? resolveMessage(error, kind)
+        : String(error?.message || fallbackMessage || 'The operation failed.');
+      return { ok: false, kind, message };
     }
   };
+
+  const githubReply = run => ipcReply(run, {
+    resolveKind: error => githubTransportKind(error),
+    resolveMessage: (error, kind) => kind === 'network'
+      ? githubTransportMessage(error)
+      : String(error?.message || 'GitHub could not be reached.'),
+  });
 
   ipcMain.handle('github:status', githubReply(() => githubStatus()));
   ipcMain.handle('github:connect', githubReply((_e, payload) => githubConnect(payload)));
@@ -1167,22 +1223,16 @@ app.whenReady().then(() => {
   ipcMain.handle('github:commit', githubReply((_e, payload) => githubCommit(payload)));
   ipcMain.handle('github:merge', githubReply((_e, payload) => githubMerge(payload)));
 
-  // Same envelope, same reason: the kind decides whether the UI offers a
-  // re-sign-in, a wait, or the Drive picker, so it has to survive as data.
-  const driveReply = run => async (...args) => {
-    try {
-      return { ok: true, value: await run(...args) };
-    } catch (error) {
-      const kind = error?.kind || githubTransportKind(error);
-      return {
-        ok: false,
-        kind,
-        message: kind === 'network'
-          ? driveTransportMessage(error)
-          : String(error?.message || 'Google Drive could not be reached.')
-      };
-    }
-  };
+  // Same shared factory, same reason: the kind decides whether the UI offers
+  // a re-sign-in, a wait, or the Drive picker, so it has to survive as data.
+  // (Reuses githubTransportKind, same as before this was split out -- Drive's
+  // transport errors are classified the same way GitHub's are.)
+  const driveReply = run => ipcReply(run, {
+    resolveKind: error => githubTransportKind(error),
+    resolveMessage: (error, kind) => kind === 'network'
+      ? driveTransportMessage(error)
+      : String(error?.message || 'Google Drive could not be reached.'),
+  });
 
   ipcMain.handle('drive:status', driveReply(() => driveStatus()));
   ipcMain.handle('drive:connect', driveReply(() => driveConnect()));
