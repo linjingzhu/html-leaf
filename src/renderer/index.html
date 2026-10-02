@@ -561,6 +561,8 @@
   <div class="separator"></div>
   <button data-context="add-page">New Page</button>
   <button data-context="add-group">New Section</button>
+  <div class="separator"></div>
+  <button data-context="combine-to-pdf" hidden>Combine to PDF…</button>
 </div>
 
 <div id="treeAddMenu" class="context-menu tree-add-menu" role="menu" tabindex="-1" hidden>
@@ -674,6 +676,18 @@
     <div class="modal-actions">
       <button class="btn" id="ocrResultClose">Close</button>
       <button class="btn primary" id="ocrResultAddPage" hidden>Add retyped PDF as a new page</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="extractTextResultModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="extractTextResultTitle">
+    <h3 id="extractTextResultTitle">Extracted text</h3>
+    <p id="extractTextResultSummary"></p>
+    <textarea id="extractTextResultText" class="modal-textarea" readonly rows="8"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="extractTextResultClose">Close</button>
+      <button class="btn primary" id="extractTextResultSave">Save as Markdown…</button>
     </div>
   </div>
 </div>

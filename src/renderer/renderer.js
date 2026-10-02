@@ -48,7 +48,8 @@
     compressOptionsModal: $('#compressOptionsModal'), compressLevel: $('#compressLevel'), compressTargetMb: $('#compressTargetMb'),
     compressResultModal: $('#compressResultModal'), compressResultSizes: $('#compressResultSizes'), compressResultTargetNote: $('#compressResultTargetNote'),
     ocrOptionsModal: $('#ocrOptionsModal'), ocrLanguage: $('#ocrLanguage'), ocrFontFamily: $('#ocrFontFamily'), ocrLoadFonts: $('#ocrLoadFonts'),
-    ocrResultModal: $('#ocrResultModal'), ocrResultSummary: $('#ocrResultSummary'), ocrResultText: $('#ocrResultText'), ocrResultRetypedNote: $('#ocrResultRetypedNote')
+    ocrResultModal: $('#ocrResultModal'), ocrResultSummary: $('#ocrResultSummary'), ocrResultText: $('#ocrResultText'), ocrResultRetypedNote: $('#ocrResultRetypedNote'),
+    extractTextResultModal: $('#extractTextResultModal'), extractTextResultSummary: $('#extractTextResultSummary'), extractTextResultText: $('#extractTextResultText')
   };
 
   // The project is a per-run workspace: every launch opens a clean one, so the
@@ -984,6 +985,157 @@
     }
   }
 
+  // --- PDF tools: Convert (PDF <-> images) ------------------------------------
+  // Ported from pdf-convertor's app/convert/page.tsx. Both directions run in
+  // the same utility-process task harness compress/OCR use (not the renderer,
+  // despite that being pdf-convertor's own client-side approach -- Leaf's
+  // renderer has contextIsolation+nodeIntegration both off, so it cannot
+  // require() pdfjs-dist/pdf-lib directly; the utility process already has
+  // the native-dependency-free run loop this needs).
+  //
+  // PDF -> images has no confirmation step (nothing on disk is replaced, so
+  // there is nothing to confirm) and lands as a new sibling Group next to the
+  // source PDF Page, reusing Leaf's existing Group concept instead of
+  // inventing a multi-file result UI. Images -> PDF instead asks where to
+  // save, since a Group is not itself file-backed and so has no natural
+  // "sibling" location the way a Page does; on success the combined PDF is
+  // also added into the tree as a new sibling Page of the Group.
+  function addImageGroupToDocument(groupName,files,project,parentId){
+    const name=uniqueTreeName(groupName,children(project,parentId).map(node=>node.name));
+    const group={id:uid('group'),type:'group',name,parentId,order:children(project,parentId).length,expanded:true,container:true};
+    project.nodes.push(group);
+    files.forEach((file,index)=>{
+      const page={
+        id:uid('page'),type:'page',name:file.fileName.replace(/\.png$/i,''),fileName:file.fileName,
+        documentType:'image',parentId:group.id,order:index,source:'',loadedSource:'',baseUrl:null,
+        sourcePath:file.filePath,previewUrl:`file:///${String(file.filePath).replace(/\\/g,'/')}`,
+        initialSnapshotPath:null,isEmpty:false
+      };
+      project.nodes.push(page);
+    });
+    return group;
+  }
+
+  let convertRunning=false;
+
+  async function runConvertPdfToImages(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    if(convertRunning)return;
+    convertRunning=true;
+    showToast('Converting to images…');
+    try{
+      const envelope=await window.electronAPI.convert.pdfToImages({pagePath:target.sourcePath});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Convert failed: ${envelope.message}`);
+        return;
+      }
+      const context=nodeById(target.id);
+      if(!context?.project){showToast('Convert failed: the source page is no longer open.');return;}
+      addImageGroupToDocument(envelope.value.dirName,envelope.value.files,context.project,target.parentId);
+      renderAll();persist();
+      const count=envelope.value.files.length;
+      showToast(`Created ${count} image page${count===1?'':'s'}`);
+    }catch(error){
+      showToast(`Convert failed: ${error.message}`);
+    }finally{
+      convertRunning=false;
+    }
+  }
+
+  async function combineGroupToPdf(project,node){
+    if(!project||!node)return;
+    const imagePages=node.type==='group'
+      ?children(project,node.id).filter(child=>child.type==='page'&&child.documentType==='image').sort((a,b)=>a.order-b.order)
+      :(node.type==='page'&&node.documentType==='image'?[node]:[]);
+    if(!imagePages.length){showToast('No image pages to combine');return;}
+    const missing=imagePages.find(item=>!item.sourcePath);
+    if(missing){showToast(`Save "${missing.name}" to disk first`);return;}
+    if(convertRunning)return;
+    convertRunning=true;
+    showToast('Combining images…');
+    try{
+      const envelope=await window.electronAPI.convert.imagesToPdf({
+        imagePaths:imagePages.map(item=>item.sourcePath),
+        suggestedName:node.name
+      });
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Combine failed: ${envelope.message}`);
+        return;
+      }
+      if(!envelope.value)return; // user canceled the save dialog
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      await addPageResultToDocument(result,null,project,node.parentId);
+      showToast('Combined PDF added');
+    }catch(error){
+      showToast(`Combine failed: ${error.message}`);
+    }finally{
+      convertRunning=false;
+    }
+  }
+
+  // --- PDF tools: Export text as Markdown -------------------------------------
+  // Reads the PDF's own embedded text layer (pdfjs-dist getTextContent, not
+  // OCR -- fast and exact for any PDF that already has one). A scanned PDF
+  // with no text layer comes back with "No extractable text" per page;
+  // Recognize text (OCR) above is the tool for that case.
+  let extractTextPendingPage=null;
+  let extractTextPendingMarkdown=null;
+
+  async function runExtractText(page){
+    const target=page||pageById(currentActivePageId());
+    if(!target?.sourcePath||target.documentType!=='pdf'){showToast('Select a PDF page saved to a file first');return;}
+    showToast('Extracting text…');
+    try{
+      const envelope=await window.electronAPI.extractText.run({pagePath:target.sourcePath});
+      if(!envelope.ok){
+        showToast(envelope.kind==='busy'?'Another PDF task is already running. Try again shortly.':`Extract failed: ${envelope.message}`);
+        return;
+      }
+      extractTextPendingPage=target;
+      extractTextPendingMarkdown=envelope.value.markdown;
+      const{totalPages,pagesProcessed,truncated}=envelope.value;
+      refs.extractTextResultSummary.textContent=truncated
+        ?`Processed ${pagesProcessed} of ${totalPages} page(s). The rest of the document was not processed.`
+        :`Processed ${pagesProcessed} of ${totalPages} page(s).`;
+      refs.extractTextResultText.value=extractTextPendingMarkdown;
+      refs.extractTextResultModal.classList.add('show');
+      setTimeout(()=>$('#extractTextResultClose')?.focus(),0);
+    }catch(error){
+      showToast(`Extract failed: ${error.message}`);
+    }
+  }
+
+  function closeExtractTextResultDialog(){
+    refs.extractTextResultModal.classList.remove('show');
+    extractTextPendingPage=null;
+    extractTextPendingMarkdown=null;
+  }
+
+  async function saveExtractedMarkdown(){
+    const page=extractTextPendingPage;
+    const markdown=extractTextPendingMarkdown;
+    if(!page||markdown==null){refs.extractTextResultModal.classList.remove('show');return;}
+    const saveButton=$('#extractTextResultSave');
+    saveButton.disabled=true;
+    try{
+      const envelope=await window.electronAPI.extractText.save({suggestedName:page.name,markdown});
+      if(!envelope.ok){showToast(`Could not save: ${envelope.message}`);return;}
+      if(!envelope.value){return;} // user canceled the save dialog
+      refs.extractTextResultModal.classList.remove('show');
+      extractTextPendingPage=null;
+      extractTextPendingMarkdown=null;
+      const result=await window.electronAPI.readPageAtPath(envelope.value.filePath);
+      const context=nodeById(page.id);
+      await addPageResultToDocument(result,null,context?.project||null,page.parentId);
+      showToast('Markdown saved and added as a new page');
+    }catch(error){
+      showToast(`Could not save: ${error.message}`);
+    }finally{
+      saveButton.disabled=false;
+    }
+  }
+
   async function commitCompressResult(){
     const pending=compressPendingResult;
     if(!pending){refs.compressResultModal.classList.remove('show');return;}
@@ -1539,6 +1691,12 @@
 
   // ----- Context menu -----
   function openContextMenu(x,y){
+    const ctx=selectedContext();
+    const combineButton=refs.ctx.querySelector('[data-context="combine-to-pdf"]');
+    if(combineButton){
+      const eligible=ctx.node&&(ctx.node.type==='group'||(ctx.node.type==='page'&&ctx.node.documentType==='image'));
+      combineButton.hidden=!eligible;
+    }
     refs.ctx.hidden=false;
     refs.ctx.style.left=`${x}px`;
     refs.ctx.style.top=`${y}px`;
@@ -1577,6 +1735,7 @@
     if(action==='delete') return deleteSelectedTree();
     if(action==='add-page') return addEmptyPage(project,ctx.node);
     if(action==='add-group') return addGroup(project,ctx.node);
+    if(action==='combine-to-pdf') return combineGroupToPdf(project,ctx.node);
   }
 
   function renameSelected(){
@@ -5162,11 +5321,17 @@
       }else if(affectedPage?.documentType==='pdf'){
         refs.inspectorBody.innerHTML='<div class="edit-mode-message"><strong>PDF Edit</strong>Use the native PDF toolbar to highlight, draw, annotate, fill, sign, undo, redo, and download the edited PDF.'
           +'<div class="pdf-tools-group"><button class="btn" type="button" data-action="open-compress">Compress…</button>'
-          +'<button class="btn" type="button" data-action="open-ocr">Recognize text (OCR)…</button></div></div>';
+          +'<button class="btn" type="button" data-action="open-ocr">Recognize text (OCR)…</button>'
+          +'<button class="btn" type="button" data-action="export-images">Export as images…</button>'
+          +'<button class="btn" type="button" data-action="export-text">Export as text (Markdown)…</button></div></div>';
         const compressButton=refs.inspectorBody.querySelector('[data-action="open-compress"]');
         if(compressButton)compressButton.onclick=()=>openCompressOptionsDialog(affectedPage);
         const ocrButton=refs.inspectorBody.querySelector('[data-action="open-ocr"]');
         if(ocrButton)ocrButton.onclick=()=>openOcrOptionsDialog(affectedPage);
+        const exportImagesButton=refs.inspectorBody.querySelector('[data-action="export-images"]');
+        if(exportImagesButton)exportImagesButton.onclick=()=>runConvertPdfToImages(affectedPage);
+        const exportTextButton=refs.inspectorBody.querySelector('[data-action="export-text"]');
+        if(exportTextButton)exportTextButton.onclick=()=>runExtractText(affectedPage);
       }
     }
     if(affectedPage?.documentType==='pdf'&&affectedFrame)configureFrameRuntime(affectedFrame,affectedPage,affectedSlot);
@@ -7704,6 +7869,13 @@
   refs.ocrResultModal.addEventListener('keydown',event=>{
     trapDialogFocus(refs.ocrResultModal,event);
     if(event.key==='Escape'){event.preventDefault();closeOcrResultDialog();}
+  });
+
+  $('#extractTextResultClose').onclick=closeExtractTextResultDialog;
+  $('#extractTextResultSave').onclick=saveExtractedMarkdown;
+  refs.extractTextResultModal.addEventListener('keydown',event=>{
+    trapDialogFocus(refs.extractTextResultModal,event);
+    if(event.key==='Escape'){event.preventDefault();closeExtractTextResultDialog();}
   });
 
   function openAboutDialog(){refs.aboutModal.classList.add('show');setTimeout(()=>$('#aboutClose').focus(),0);}

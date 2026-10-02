@@ -1279,6 +1279,16 @@ app.whenReady().then(() => {
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'ocr')
     : path.join(__dirname, '..', 'resources', 'ocr');
 
+  // Same reasoning as ocrResourcesDir above, for pdfjs-dist's own bundled
+  // cmaps/standard_fonts directories (see package.json's build.asarUnpack):
+  // require.resolve('pdfjs-dist/package.json') from inside the task would
+  // return an asar-internal path even for these asarUnpack'd folders, which
+  // a plain fs.readFile cannot follow. Resolved once here, where
+  // app.isPackaged is reliably known.
+  const pdfjsRoot = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'pdfjs-dist')
+    : path.join(__dirname, '..', 'node_modules', 'pdfjs-dist');
+
   ipcMain.handle('ocr:run', pdfToolReply((_e, payload) => runBackgroundTask('ocr', { ...payload, resourcesDir: ocrResourcesDir })));
   // OCR's retyped output is a different document from the source PDF, so
   // (unlike compress) it is only ever added as a new sibling file -- the
@@ -1300,6 +1310,81 @@ app.whenReady().then(() => {
   ipcMain.handle('ocr:discardRetyped', pdfToolReply(async (_e, { tempPath }) => {
     if (tempPath) await fs.unlink(tempPath).catch(() => {});
     return {};
+  }));
+
+  // convert:pdfToImages renders every page to its own PNG (no confirmation
+  // step, unlike compress/OCR -- nothing on disk is replaced, so there is
+  // nothing to confirm) and places them in a collision-safe sibling folder
+  // next to the source PDF, mirroring the "-retyped.pdf" sibling-naming
+  // pattern ocr:addRetypedPage uses above.
+  ipcMain.handle('convert:pdfToImages', pdfToolReply(async (_e, payload) => {
+    const result = await runBackgroundTask('convert-pdf-to-images', { ...payload, pdfjsRoot });
+    const { pagePath } = payload || {};
+    const directory = path.dirname(pagePath);
+    const base = path.basename(pagePath, path.extname(pagePath));
+    let candidate = `${base}-images`;
+    let suffix = 2;
+    while (fsSync.existsSync(path.join(directory, candidate))) candidate = `${base}-images-${suffix++}`;
+    const finalDir = path.join(directory, candidate);
+    await fs.mkdir(finalDir, { recursive: true });
+    const files = [];
+    try {
+      for (const fileName of result.files) {
+        const data = await fs.readFile(path.join(result.tempDir, fileName));
+        const filePath = path.join(finalDir, fileName);
+        await atomicWriteFile(filePath, data);
+        files.push({ fileName, filePath });
+      }
+    } finally {
+      await fs.rm(result.tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    return { dirName: candidate, dirPath: finalDir, files };
+  }));
+
+  // convert:imagesToPdf combines an existing set of on-disk images (a
+  // Group's child image Pages, in tree order) into one new PDF. A Group has
+  // no file path of its own -- unlike the PDF/image pages everything else
+  // here works from -- so there is no natural "sibling" location to write
+  // to automatically; a save dialog is the same choice exportHtml already
+  // makes for this situation.
+  ipcMain.handle('convert:imagesToPdf', pdfToolReply(async (_e, payload) => {
+    const result = await runBackgroundTask('convert-images-to-pdf', payload);
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Combine Images to PDF',
+      defaultPath: `${payload?.suggestedName || 'images'}.pdf`,
+      filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+    });
+    if (saveResult.canceled || !saveResult.filePath) {
+      await fs.unlink(result.tempPath).catch(() => {});
+      return null;
+    }
+    let filePath = saveResult.filePath;
+    if (!/\.pdf$/i.test(filePath)) filePath += '.pdf';
+    const data = await fs.readFile(result.tempPath);
+    await atomicWriteFile(filePath, data);
+    await fs.unlink(result.tempPath).catch(() => {});
+    return { filePath };
+  }));
+
+  // extractText:run reads the PDF's own text layer (fast, exact -- not OCR)
+  // and returns it as Markdown for the UI to preview. Nothing is written
+  // until extractText:save, which asks where via a save dialog (the desktop
+  // equivalent of pdf-convertor's browser download) and, on success, also
+  // reports the new file's path so the renderer can offer it as a new
+  // sibling Page the same way OCR's retyped PDF is offered.
+  ipcMain.handle('extractText:run', pdfToolReply((_e, payload) => runBackgroundTask('extract-text', { ...payload, pdfjsRoot })));
+  ipcMain.handle('extractText:save', pdfToolReply(async (_e, { suggestedName, markdown }) => {
+    if (typeof markdown !== 'string') throw Object.assign(new Error('Missing extracted text to save.'), { kind: 'invalid' });
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Text as Markdown',
+      defaultPath: `${suggestedName || 'page'}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (saveResult.canceled || !saveResult.filePath) return null;
+    let filePath = saveResult.filePath;
+    if (!/\.md$/i.test(filePath)) filePath += '.md';
+    await atomicWriteFile(filePath, markdown, 'utf8');
+    return { filePath };
   }));
 
   createWindow();

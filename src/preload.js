@@ -134,5 +134,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     run: (payload) => ipcRenderer.invoke('ocr:run', payload),
     addRetypedPage: (payload) => ipcRenderer.invoke('ocr:addRetypedPage', payload),
     discardRetyped: (payload) => ipcRenderer.invoke('ocr:discardRetyped', payload)
+  }),
+  convert: Object.freeze({
+    pdfToImages: (payload) => ipcRenderer.invoke('convert:pdfToImages', payload),
+    imagesToPdf: (payload) => ipcRenderer.invoke('convert:imagesToPdf', payload)
+  }),
+  extractText: Object.freeze({
+    run: (payload) => ipcRenderer.invoke('extractText:run', payload),
+    save: (payload) => ipcRenderer.invoke('extractText:save', payload)
   })
 });

@@ -6,6 +6,9 @@
 const handlers = {
   compress: require('./compress-task'),
   ocr: require('./ocr-task'),
+  'convert-pdf-to-images': require('./convert-pdf-to-images-task'),
+  'convert-images-to-pdf': require('./convert-images-to-pdf-task'),
+  'extract-text': require('./extract-text-task'),
 };
 
 process.parentPort.once('message', async (event) => {
